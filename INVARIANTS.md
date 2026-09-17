@@ -1,0 +1,78 @@
+# INVARIANTS.md — rules that must never break
+
+Each rule below comes from a finding in the independent adversarial review (`docs/17-review-findings.md`, F1–F34), restated as a build requirement. Each has a **proving test** — the test that must exist and pass before the rule is considered implemented. When you implement a rule, add the test file path in the last column.
+
+Severity: **C** critical (blocks launch), **H** high (must ship in its originating phase), **M** medium, **L** low.
+
+Legend for phases: see `BUILD-PLAN.md`.
+
+## A. Send path — no duplicates, no loss, no stuck state
+
+| # | Sev | Phase | Rule | Proving test | Test path |
+|---|---|---|---|---|---|
+| R1 | C | 6 | Idempotency for sending lives in Postgres, not Redis. The send worker's first statement is `UPDATE campaign_recipients SET state='sending', attempt_count=attempt_count+1, provider_attempt_started_at=now(), attempt_token=gen_random_uuid() WHERE id=$1 AND state IN ('queued','retry_scheduled') RETURNING attempt_token`. Zero rows → exit without sending. `jobId` is an optimisation only. | Enqueue the same recipient twice after `removeOnComplete` eviction; assert exactly one provider call. | |
+| R2 | C | 6 | `email-send` queue: `lockDuration = 120_000`, `maxStalledCount = 0`, provider call timeout 30 s for API providers and 60 s for SMTP — always below the lock. | Fake SMTP adapter sleeps 50 s; run two workers; assert one provider call and no stalled-job requeue. | |
+| R3 | C | 6 | A `recipient-sweeper` job runs every 60 s and returns `queued` rows with `queued_at < now() - 5 min` (for campaigns in `sending`/`pausing`) to `pending`. | Mark 200 rows `queued` with no Redis job; run sweeper; assert all 200 are `pending` and get re-dispatched exactly once. | |
+| R5 | H | 6 | `provider_attempt_started_at` is written **before** the provider call. Rows in `sending` older than 10 min become `delivery_uncertain` (terminal, unmetered, surfaced to the customer). A later provider event with the message id may reconcile it to `sent`. | Kill worker after fake-provider accept and before commit; run sweeper; assert `delivery_uncertain`, `metered=false`, counters updated. | |
+| R7 | H | 6 | Redis loss must never lose intent. Flush Redis mid-campaign; the campaign still completes via R3. | Integration test: `FLUSHALL` after dispatch; assert campaign reaches `completed` with every recipient terminal. | |
+| R12 | H | 6 | Every transient campaign state (`validating`, `queueing`, `pausing`, `cancelling`) has a deadline; `campaign-reconcile` force-exits it after 10 min (`pausing → paused`, `cancelling → cancelled`, `validating/queueing → failed with reason`). | Put a campaign in `pausing` with one stuck recipient; run reconciler; assert `paused`. | |
+| R13 | H | 6 | Campaign progress and completion read `campaign_counters`, updated in the same transaction as every recipient transition. Completion = `pending + queued + sending = 0`. No `COUNT(*)` over recipients in any request path. | Grep test: no `count(` over `campaign_recipients` in `apps/api`. Property test: counters equal a recount after 10k random transitions. | |
+| R29 | M | 6 | Launch is a guarded transition: `UPDATE campaigns SET state='validating' WHERE id=$1 AND state IN ('draft','scheduled')`; zero rows → 409 `campaign_not_launchable`. Launch endpoint accepts `Idempotency-Key`. | Fire 20 concurrent launch requests; assert one snapshot and 19 × 409. | |
+| R30 | M | 6 | Suppression is re-checked at send time (indexed lookup on `suppressions`); a suppressed contact transitions to `suppressed`, never `sent`. | Unsubscribe a contact after snapshot and before dispatch; assert no provider call and state `suppressed`. | |
+| R31 | M | 6 | `sendBatch` size ≤ 100. On any ambiguous failure (timeout, connection reset after write) the whole batch becomes `delivery_uncertain`; only definitively pre-acceptance errors (connection refused, auth error) are retried. | Fake provider times out after accepting 40 of 100; assert 100 × `delivery_uncertain`, zero retries. | |
+| R28 | M | 6/8 | Entitlement checks at launch read the entitlement row `FOR SHARE` inside the launch transaction. | Concurrent downgrade + launch; assert launch either blocks until downgrade commits and then fails the limit, or commits first — never launches over the new limit. | |
+
+## B. Provider limits
+
+| # | Sev | Phase | Rule | Proving test | Test path |
+|---|---|---|---|---|---|
+| R8 | H | 6 | The 24-hour provider quota is tracked durably in `sender_daily_usage` (Postgres), incremented in the `sent` transaction. The Redis token bucket handles only the per-second rate. | Flush Redis; assert daily count is preserved and the cap is still enforced. | |
+| R9 | H | 6 | The rate limiter fails **closed**. Redis unreachable → throw retryable, do not send. | Stop Redis; run send worker; assert zero provider calls and jobs in delayed state. | |
+| R10 | H | 6 | Rate tokens are consumed in the worker immediately before the provider call, never in the dispatcher. The dispatcher window (5,000) is a backlog bound only. | Dispatch 5,000 with a 10/s bucket; assert provider call timestamps respect 10/s regardless of backlog. | |
+| R11 | H | 6 | Retries pass through the same limiter and quota check. Enforced structurally: the limiter lives inside the adapter call path (`packages/email-providers/src/send-with-limits.ts`), not in any consumer. | Grep test: no direct adapter `send()` call outside that wrapper. Retry-path test asserts token consumption. | |
+
+## C. Events, ordering and analytics
+
+| # | Sev | Phase | Rule | Proving test | Test path |
+|---|---|---|---|---|---|
+| R16 | H | 6 | Delivery state advances by a monotonic rank lattice: queued 0 → sent 1 → delivered 2 → soft_bounced 3 → hard_bounced 4 → complained 5. `UPDATE ... WHERE delivery_rank < $new`. Engagement events (open/click) are additive and outside the lattice. Raw events always write to `email_events`. | Deliver `delivered` after `hard_bounced`; assert state stays `hard_bounced` and suppression persists; assert both events stored. | |
+| R32 | M | 6 | Providers without a stable event id get `dedupe_key = sha256(connection_id || event_type || message_id || occurred_at)`. Inbox unique on `(provider_connection_id, dedupe_key)`. | Replay identical payload twice; assert one inbox row and one state change. | |
+| R6 | H | 6 | One-click unsubscribe is **POST only** with `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. GET renders a confirmation page and changes nothing. Clicks within 10 s of delivery, from datacenter ASNs, or with known scanner user agents are stored with `is_bot = true` and excluded from every rollup and from engagement scoring. | HTTP test: GET on unsubscribe URL → 200 HTML, contact unchanged; POST → contact suppressed. Rollup test: bot-flagged clicks excluded. | |
+| R24 | M | 7 | The hourly analytics rollup is a genuine recompute over a bounded window from `email_events`, never watermark-incremental. The Redis dirty set is a latency optimisation only. | Flush Redis between incremental and hourly runs; assert hourly output equals a from-scratch recount. | |
+| R25 | M | 7 | `email_events` partitions: weekly below ~1M events/day, daily above. Created 7 days ahead with `lock_timeout = '5s'`. | Scheduler test: partitions for the next 7 days exist; a held lock does not block the write path. | |
+| R26 | M | 7 | `contact_engagement` is derived from the hourly rollup, never updated per event. | Grep test: no writes to `contact_engagement` outside `packages/analytics/rollup`. | |
+
+## D. Billing correctness
+
+| # | Sev | Phase | Rule | Proving test | Test path |
+|---|---|---|---|---|---|
+| R14 | H | 6/8 | `metered` is write-once, enforced by trigger `trg_guard_metered`. `retry-failed` resets `state`, `attempt_count`, `last_error` and never `metered`. | Attempt `UPDATE ... SET metered=false` → exception. Retry-failed 1,000 rows; assert `usage_records` count unchanged. | |
+| R15 | H | 8 | `usage_aggregates.last_usage_record_id` watermark; aggregation reads `id > watermark` and advances it in the same transaction. Re-running is idempotent. | Run aggregation three times over the same ledger; assert identical totals. | |
+| R17 | H | 8 | `billing-webhook` never re-fetches inline. It marks `(provider, object_type, provider_obj_id)` dirty in `billing_refetch_queue`; `billing-refetch` fetches each object at most once per 30 s, bounded to stay inside Stripe's read budget. | Inject 500 events for 10 objects; assert ≤ 10 Stripe API calls per 30 s window. | |
+| R18 | H | 8 | `billing_customers` is written (status `pending`) **before** `stripe.customers.create`. Checkout Session carries `client_reference_id = workspaceId` and `metadata.billing_customer_id`. Webhooks resolve via metadata and never create a mapping. | Fail the local write path after Stripe customer creation; complete checkout; assert the webhook still resolves and applies via metadata. | |
+| R19 | H | 8 | `billing-reconcile` runs nightly: lists Stripe subscriptions modified in the last 48 h, compares to local rows, auto-corrects unambiguous divergence, emits `billing_divergence_total`. | Mutate a subscription in Stripe test mode with webhooks disabled; run job; assert local row corrected and metric incremented. | |
+
+## E. Tenant isolation and credentials
+
+| # | Sev | Phase | Rule | Proving test | Test path |
+|---|---|---|---|---|---|
+| R4 | C | 3 | Provider webhook ingest is per connection: `POST /ingest/v1/{provider}/{endpointToken}`. Token → exactly one `provider_connection`. Signature verified with that connection's secret. Event → recipient lookup scoped to `(workspace_id, provider_connection_id)`. Unmatched events stored `matched=false`, never applied; unmatched-rate alarm. | Post a valid-shaped bounce for workspace B's message id on workspace A's endpoint; assert no suppression in B, one unmatched inbox row. | |
+| R20 | H | 1/6 | Single-workspace jobs connect as `relayd_app` under RLS and `SET LOCAL app.workspace_id` from the job payload. `relayd_global` (BYPASSRLS) is used only by job types listed in `packages/queue/global-jobs.ts`. | Test enumerates all job consumers; every one not in the allowlist must set scope and use the RLS role. | |
+| R21 | H | 3/10 | Secrets at `relayd/{env}/ws/{workspaceId}/conn/{connectionId}`; IAM policy grants `GetSecretValue` by resource prefix only; in-memory cache ≤ 5 min; audit row per fetch. | Terraform policy test: no `Resource: "*"` on `secretsmanager:*`. Unit test: cache TTL. | |
+| R22 | M | 3 | Provider errors are reconstructed into typed `ProviderError { kind, affects, retryAfterMs }` at the adapter boundary; the original error object is discarded. Sentry `beforeSend` denylist covers `Authorization`, `password`, connection URLs. | Inject credential `SECRET-CANARY-9f3a`; force an SMTP auth failure; assert the string appears in no log line, Sentry event, or API response. | |
+
+## F. Durability and Postgres shape
+
+| # | Sev | Phase | Rule | Proving test | Test path |
+|---|---|---|---|---|---|
+| R23 | M | 5 | Recurring work is driven from `scheduled_jobs` (Postgres) by the `scheduler`. BullMQ repeatable jobs are not used anywhere. | Grep test: no `repeat:` option in any `queue.add`. Flush Redis; assert next tick still enqueues due jobs. | |
+| R27 | M | 6 | `campaign_recipients`: `fillfactor=80`; `autovacuum_vacuum_scale_factor=0.02`; the only state index is partial on `('pending','queued','sending')`; no index on `state` alone. | Migration test inspects `pg_class.reloptions` and `pg_indexes`. | |
+| R33 | M | 0 | Four process types: `api`, `edge`, `worker`, `scheduler`. No separate `track`/`ingest` apps. | Repo structure test: `apps/` contains exactly `web, api, edge, worker, scheduler`. | |
+| R34 | L | 10 | One Redis instance with keyspace prefixes (`bull:`, `rl:`, `cache:`) until measured. No Multi-AZ RDS in staging. VPC endpoints for S3, ECR, Secrets Manager, CloudWatch Logs. | Terraform plan assertions per environment. | |
+
+## G. Advisory-lock and pooling correctness (from the design self-review)
+
+| # | Sev | Phase | Rule | Proving test | Test path |
+|---|---|---|---|---|---|
+| R35 | H | 5 | Leader election uses `pg_try_advisory_xact_lock` inside a transaction spanning the tick. The `scheduler` connects directly to Postgres, never through PgBouncer. Drizzle statement caching is disabled on pooled connections. | Kill the leader mid-tick; assert exactly one successor within one tick; assert no duplicate scheduled enqueue. | |
+| R36 | H | 1 | `SET LOCAL app.workspace_id` only; a bare `SET app.workspace_id` never appears. | Grep test over `packages/**` and `apps/**`. | |
