@@ -8,4 +8,5 @@ export {
   redisEnv,
   processTypeEnv,
   workerEntrypointEnv,
+  ciEnv,
 } from './schema.js';

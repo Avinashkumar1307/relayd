@@ -62,3 +62,16 @@ export const processTypeEnv = z.object({
 export const workerEntrypointEnv = z.object({
   RELAYD_WORKER_ENTRYPOINT: z.enum(['send', 'campaign', 'events', 'billing', 'io']),
 });
+
+/**
+ * Set by every CI provider. Used to decide whether a missing dependency is a
+ * skip or a failure: locally, an absent Docker daemon skips the integration
+ * suite with a message; in CI it must fail, because a silently skipped
+ * integration suite is how coverage rots.
+ */
+export const ciEnv = z.object({
+  CI: z
+    .string()
+    .optional()
+    .transform((value) => value === 'true' || value === '1'),
+});
