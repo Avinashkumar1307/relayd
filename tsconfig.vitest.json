@@ -10,5 +10,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["apps/*/test/**/*.ts", "packages/*/test/**/*.ts", "vitest.config.ts"]
+  "include": ["apps/*/test/**/*.ts", "packages/*/test/**/*.ts", "vitest.config.ts"],
+  "exclude": ["packages/eslint-plugin-relayd/**"]
 }

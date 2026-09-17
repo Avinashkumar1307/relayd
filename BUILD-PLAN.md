@@ -15,7 +15,7 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 - [x] Root `tsconfig.base.json` with the strict settings from `docs/13`; branded id types in `packages/types`
 - [x] `packages/config`: Zod-parsed env, fails fast on missing vars; the only `process.env` reader
 - [x] `packages/logger`: Pino, redaction paths, `AsyncLocalStorage` trace context, request-id propagation
-- [ ] `packages/eslint-plugin-relayd` with the five custom rules from `CLAUDE.md` §7, wired as errors
+- [x] `packages/eslint-plugin-relayd` with the five custom rules from `CLAUDE.md` §7, wired as errors
 - [ ] `packages/db`: Drizzle configured for Postgres, migration runner, `uuidv7()` helper, `WorkspaceScope` branded type and `scoped(db, scope)` helper that issues `SET LOCAL app.workspace_id`
 - [ ] Throwaway migration `0001_init.sql` proving the runner works in staging
 - [ ] `apps/api`: Express 5 skeleton, error envelope middleware, request-id middleware, `/health` (dependency-free) and `/ready` (checks Postgres and Redis)

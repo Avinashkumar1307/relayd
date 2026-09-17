@@ -1,0 +1,16 @@
+{
+  "name": "eslint-plugin-relayd",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "peerDependencies": {
+    "eslint": "^9.13.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.13.0"
+  }
+}
