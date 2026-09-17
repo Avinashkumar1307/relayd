@@ -43,6 +43,12 @@ relayd/
 
 **Why `track` and `ingest` are separate apps.** Both are public, unauthenticated, high-RPS and latency-critical, with almost no dependencies. Keeping them in `api` means they inherit its cold start, its middleware stack, and its blast radius.
 
+> **Phase 0 correction (implemented).** The tree above is superseded: there is no `track/`
+> or `ingest/` app. The review merged them into `edge/` (F33), and INVARIANTS R33 fixes
+> `apps/` at exactly `web, api, edge, worker, scheduler`, with a test asserting it. The
+> reasoning in the paragraph above still applies, to `edge`: it is separate from `api` for
+> exactly those reasons.
+
 ## TypeScript configuration
 
 ```jsonc
@@ -121,6 +127,17 @@ Structured fields, never interpolated strings. Levels: `error` needs human actio
 ## Database conventions
 
 Covered in section 3. Additionally: migrations are numbered `0001_description.sql`, immutable once merged, with a `-- ROLLBACK:` comment block describing the reversal; every migration is reviewed by someone other than the author; index creation is always `CONCURRENTLY` and always in its own migration.
+
+> **Phase 0 correction (implementation form).** `scoped()` in `packages/db/src/scope.ts`
+> sets workspace scope with `set_config('app.workspace_id', $1, true)`. The third argument
+> `true` means is_local, so this is `SET LOCAL` semantics exactly. The literal statement
+> form is not used because `SET LOCAL` accepts no bind parameters and would require
+> interpolating the workspace id into SQL text.
+>
+> This matters when writing the INVARIANTS R36 grep test in Phase 1: the string
+> `SET LOCAL` does not appear in the codebase. The rule R36 protects — that a bare,
+> session-scoped `SET app.workspace_id` never appears anywhere — holds and is what the
+> grep should assert.
 
 ## Git
 

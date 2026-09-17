@@ -70,6 +70,13 @@ flowchart TD
 
 One multi-stage Dockerfile per app, \~150 MB final image on `node:22-alpine`:
 
+> **Phase 0 correction (implemented).** One image for all four process types, not one per
+> app. CLAUDE.md section 2 ("One monorepo, one container image") and the Phase 0 checklist
+> both require it and both outrank this file. `infra/docker/Dockerfile` builds it and
+> `infra/docker/entrypoint.sh` selects the process from `RELAYD_PROCESS`, execing an
+> explicit command when given one — which is how the one-off migration task runs the same
+> image as the services. The example below is otherwise accurate, including dumb-init.
+
 ```dockerfile
 FROM node:22-alpine AS base
 RUN corepack enable && apk add --no-cache dumb-init
@@ -113,6 +120,12 @@ Three distinct checks, because conflating them causes bad restarts:
 | `/health/deep` | Plus provider reachability, queue depths, replication lag | Monitoring only, never a load balancer |
 
 If `/ready` checked Postgres and Postgres hiccuped, the ALB would drain every task at once and turn a 10-second database blip into a full outage. Keep `/health` dependency-free.
+
+> **Phase 0 correction (scope).** `/ready` currently checks Postgres and Redis only. The
+> migration-version comparison and the `/health/deep` endpoint are not implemented: the
+> Phase 0 checklist scopes `/ready` to those two dependencies, and both of the others need
+> infrastructure that arrives in Phase 10. The dependency-free rule for `/health` is
+> implemented and tested.
 
 ## CI/CD
 
