@@ -62,7 +62,7 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 - [x] Auth: register, verify email, login (Argon2id), refresh (rotating), logout, password reset; session listing and revocation
 - [x] Workspace CRUD, invitations (create, accept, revoke), member role change, four preset roles and the full permission matrix from `docs/06` (`campaign:launch` ≠ `campaign:write`; `billing:write` owner-only)
 - [x] Authorization middleware: non-member → 404; member without permission → 403
-- [ ] Audit log writes for every mutating action, with actor, workspace, before/after
+- [x] Audit log writes for every mutating action, with actor, workspace, before/after
 - [ ] `packages/notifications`: transactional email for verification, invites and password reset via a single operator-owned provider connection — kept separate from customer sending forever
 - [ ] Frontend: `/login`, `/register`, verify-email, password reset, `/settings/workspace`, `/settings/team`, workspace switcher, auth guards, role-aware UI gating
 - [ ] **The six-part tenant-isolation suite** (`docs/06` §15) as `pnpm test:isolation`, promoted to a required CI check

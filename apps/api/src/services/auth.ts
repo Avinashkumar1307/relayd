@@ -2,6 +2,7 @@ import { AppError } from '@relayd/types';
 import type { SessionId, UserId, WorkspaceId, WorkspaceMemberId } from '@relayd/types';
 import { generateToken, hashPassword, hashToken, verifyPassword } from '@relayd/utils';
 import type {
+  AuditLogRepository,
   GlobalInvitationRepository,
   GlobalMembershipRepository,
   SessionRepository,
@@ -23,6 +24,7 @@ export interface Repositories {
   members: WorkspaceMemberRepository;
   invitations: WorkspaceInvitationRepository;
   globalInvitations: GlobalInvitationRepository;
+  auditLogs: AuditLogRepository;
 }
 
 /**

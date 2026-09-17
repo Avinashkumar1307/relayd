@@ -36,6 +36,8 @@ beforeEach(() => {
     notifier: notifier as never,
     newId: () => `gen-${++counter}`,
     now: world.now,
+    currentActor: () => ({ type: 'user', id: OWNER }),
+    currentContext: () => ({ ip: '203.0.113.7', userAgent: 'test-agent' }),
   });
 
   world.workspaces.push({ id: WS, name: 'Acme', ownerUserId: OWNER });

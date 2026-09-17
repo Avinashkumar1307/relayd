@@ -11,6 +11,7 @@ import { generateToken, hashToken } from '@relayd/utils';
 import { workspaceScope } from '@relayd/db';
 import type { WorkspaceScope } from '@relayd/db';
 import type { Repositories } from './auth.js';
+import { AUDIT_ACTIONS, buildAuditEntry, type Actor, type AuditContext } from './audit.js';
 
 /**
  * Workspace management: details, members, invitations.
@@ -38,6 +39,12 @@ export interface WorkspaceServiceOptions {
   newId: () => string;
   now: () => Date;
   invitationTtlDays?: number;
+  /**
+   * Who is acting, and from where. Read per call rather than threaded through
+   * every signature, so adding an audited action cannot forget the actor.
+   */
+  currentActor: () => Actor;
+  currentContext?: () => AuditContext;
 }
 
 export interface MemberView {
@@ -66,19 +73,40 @@ export class WorkspaceService {
 
   async updateDetails(scope: WorkspaceScope, patch: { name?: string; timezone?: string }) {
     return this.options.unitOfWork(async (repos) => {
+      // Read first, so the audit row shows what actually changed rather than
+      // only what was requested.
+      const before = await repos.workspaces.findCurrent(scope);
       const updated = await repos.workspaces.updateDetails(scope, patch);
       if (updated === null) {
         throw new AppError('not_found', 'Workspace not found', 404);
       }
+
+      await this.auditWrite(repos, scope, {
+        action: AUDIT_ACTIONS.workspaceUpdated,
+        resourceType: 'workspace',
+        resourceId: scope.workspaceId,
+        before: before === null ? undefined : { name: before.name, timezone: before.timezone },
+        after: { name: updated.name, timezone: updated.timezone },
+      });
+
       return updated;
     });
   }
 
   async softDelete(scope: WorkspaceScope): Promise<void> {
     await this.options.unitOfWork(async (repos) => {
+      const before = await repos.workspaces.findCurrent(scope);
       if (!(await repos.workspaces.softDelete(scope))) {
         throw new AppError('not_found', 'Workspace not found', 404);
       }
+
+      await this.auditWrite(repos, scope, {
+        action: AUDIT_ACTIONS.workspaceDeleted,
+        resourceType: 'workspace',
+        resourceId: scope.workspaceId,
+        before: before === null ? undefined : { name: before.name, status: before.status },
+        after: { status: 'deleted' },
+      });
     });
   }
 
@@ -117,6 +145,14 @@ export class WorkspaceService {
         throw new AppError('conflict', 'Member role could not be changed', 409);
       }
 
+      await this.auditWrite(repos, scope, {
+        action: AUDIT_ACTIONS.memberRoleChanged,
+        resourceType: 'workspace_member',
+        resourceId: userId,
+        before: { role: member.role },
+        after: { role: updated.role },
+      });
+
       return { userId: updated.userId, role: updated.role, joinedAt: updated.joinedAt };
     });
   }
@@ -136,6 +172,13 @@ export class WorkspaceService {
       if (!(await repos.members.remove(scope, userId))) {
         throw new AppError('conflict', 'Member could not be removed', 409);
       }
+
+      await this.auditWrite(repos, scope, {
+        action: AUDIT_ACTIONS.memberRemoved,
+        resourceType: 'workspace_member',
+        resourceId: userId,
+        before: { role: member.role },
+      });
     });
   }
 
@@ -165,7 +208,7 @@ export class WorkspaceService {
         }
       }
 
-      return repos.invitations.create(scope, {
+      const created = await repos.invitations.create(scope, {
         id: this.options.newId() as WorkspaceInvitationId,
         email: input.email,
         role: input.role,
@@ -175,6 +218,16 @@ export class WorkspaceService {
           this.options.now().getTime() + (this.options.invitationTtlDays ?? 7) * DAY_MS,
         ),
       });
+
+      await this.auditWrite(repos, scope, {
+        action: AUDIT_ACTIONS.invitationCreated,
+        resourceType: 'workspace_invitation',
+        resourceId: created.id,
+        // The address and role, never the token.
+        after: { email: created.email, role: created.role },
+      });
+
+      return created;
     });
 
     await this.options.notifier.sendWorkspaceInvitation(
@@ -197,6 +250,12 @@ export class WorkspaceService {
         // 404: distinguishing them would confirm invitation ids to a caller.
         throw new AppError('not_found', 'Invitation not found', 404);
       }
+
+      await this.auditWrite(repos, scope, {
+        action: AUDIT_ACTIONS.invitationRevoked,
+        resourceType: 'workspace_invitation',
+        resourceId: id,
+      });
     });
   }
 
@@ -249,8 +308,46 @@ export class WorkspaceService {
         role: invitation.role,
       });
 
+      await this.auditWrite(repos, scope, {
+        action: AUDIT_ACTIONS.invitationAccepted,
+        resourceType: 'workspace_member',
+        resourceId: acceptingUser.id,
+        after: { role: invitation.role, email: acceptingUser.email },
+      });
+
       return { workspaceId: invitation.workspaceId, role: invitation.role };
     });
+  }
+
+  /**
+   * Writes one audit row inside the caller transaction.
+   *
+   * Same transaction as the action it records, so an action cannot commit
+   * without its audit trail and an audit row cannot survive a rolled-back
+   * action (docs/03, "Transaction boundaries").
+   */
+  private async auditWrite(
+    repos: WorkspaceRepositories,
+    scope: WorkspaceScope,
+    entry: {
+      action: string;
+      resourceType: string;
+      resourceId?: string;
+      before?: unknown;
+      after?: unknown;
+    },
+  ): Promise<void> {
+    await repos.auditLogs.append(
+      scope,
+      buildAuditEntry({
+        id: this.options.newId(),
+        actor: this.options.currentActor(),
+        ...entry,
+        ...(this.options.currentContext === undefined
+          ? {}
+          : { context: this.options.currentContext() }),
+      }),
+    );
   }
 
   async #assertNotLastOwner(

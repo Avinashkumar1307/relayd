@@ -59,6 +59,7 @@ export function buildWorld() {
   const workspaces: { id: WorkspaceId; name: string; ownerUserId: UserId }[] = [];
   const members: { workspaceId: WorkspaceId; userId: UserId; role: string; joinedAt: Date }[] = [];
   const invitations: FakeInvitation[] = [];
+  const auditEntries: (Record<string, unknown> & { workspaceId: WorkspaceId })[] = [];
   const now = () => new Date('2026-09-17T12:00:00Z');
 
   const repos: Repositories = {
@@ -208,7 +209,8 @@ export function buildWorld() {
         return { id: input.id } as never;
       },
       async findCurrent(scope: { workspaceId: WorkspaceId }) {
-        return workspaces.find((w) => w.id === scope.workspaceId) ?? null;
+        const w = workspaces.find((x) => x.id === scope.workspaceId);
+        return w === undefined ? null : { ...w };
       },
       async findById(scope: { workspaceId: WorkspaceId }, id: WorkspaceId) {
         return workspaces.find((w) => w.id === id && w.id === scope.workspaceId) ?? null;
@@ -220,7 +222,7 @@ export function buildWorld() {
         const w = workspaces.find((x) => x.id === scope.workspaceId);
         if (w === undefined) return null;
         if (patch.name !== undefined) w.name = patch.name;
-        return w;
+        return { ...w };
       },
       async softDelete(scope: { workspaceId: WorkspaceId }) {
         const index = workspaces.findIndex((w) => w.id === scope.workspaceId);
@@ -237,12 +239,15 @@ export function buildWorld() {
         return row as never;
       },
       async findByUser(scope: { workspaceId: WorkspaceId }, userId: UserId) {
-        return (
-          members.find((m) => m.workspaceId === scope.workspaceId && m.userId === userId) ?? null
+        const m = members.find(
+          (x) => x.workspaceId === scope.workspaceId && x.userId === userId,
         );
+        return m === undefined ? null : { ...m };
       },
       async list(scope: { workspaceId: WorkspaceId }) {
-        return members.filter((m) => m.workspaceId === scope.workspaceId);
+        return members
+          .filter((m) => m.workspaceId === scope.workspaceId)
+          .map((m) => ({ ...m }));
       },
       async countByRole(scope: { workspaceId: WorkspaceId }, role: string) {
         return members.filter((m) => m.workspaceId === scope.workspaceId && m.role === role)
@@ -254,7 +259,7 @@ export function buildWorld() {
         );
         if (m === undefined) return null;
         m.role = role;
-        return m;
+        return { ...m };
       },
       async remove(scope: { workspaceId: WorkspaceId }, userId: UserId) {
         const index = members.findIndex(
@@ -330,6 +335,15 @@ export function buildWorld() {
       },
     } as unknown as Repositories['invitations'],
 
+    auditLogs: {
+      async append(scope: { workspaceId: WorkspaceId }, entry: Record<string, unknown>) {
+        auditEntries.push({ ...entry, workspaceId: scope.workspaceId, occurredAt: now() });
+      },
+      async list(scope: { workspaceId: WorkspaceId }) {
+        return auditEntries.filter((e) => e.workspaceId === scope.workspaceId);
+      },
+    } as unknown as Repositories['auditLogs'],
+
     globalInvitations: {
       async findLiveByTokenHash(hash: Buffer) {
         const i = invitations.find(
@@ -353,6 +367,6 @@ export function buildWorld() {
 
   };
 
-  return { users, sessions, tokens, workspaces, members, invitations, repos, now };
+  return { users, sessions, tokens, workspaces, members, invitations, auditEntries, repos, now };
 }
 
