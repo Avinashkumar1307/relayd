@@ -282,7 +282,15 @@ importers:
         specifier: ^22.7.5
         version: 22.20.3
 
-  packages/notifications: {}
+  packages/notifications:
+    dependencies:
+      '@relayd/logger':
+        specifier: workspace:^
+        version: link:../logger
+    devDependencies:
+      '@types/node':
+        specifier: ^22.7.5
+        version: 22.20.3
 
   packages/queue:
     dependencies:

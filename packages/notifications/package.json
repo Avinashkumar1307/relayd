@@ -15,5 +15,11 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@relayd/logger": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5"
   }
 }
