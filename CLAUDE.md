@@ -86,6 +86,8 @@ pnpm db:migrate     # run migrations (local); in ECS this is a one-off task, nev
 pnpm db:reset       # drop, recreate, migrate, seed (local only)
 ```
 
+**`pnpm test:billing` when `STRIPE_TEST_KEY` is absent.** It prints `SKIPPED: STRIPE_TEST_KEY not set` and exits 0, so a developer without Stripe credentials is never blocked. When `RELAYD_REQUIRE_BILLING_TESTS=1` is set and the key is absent it exits non-zero instead. CI sets that variable from Phase 8 onward, because a billing suite that silently skips in CI is indistinguishable from one that passes.
+
 ## 5. How to work this plan
 
 - **One phase at a time**, in `BUILD-PLAN.md` order. Do not start a phase until the previous phase's gate passes.

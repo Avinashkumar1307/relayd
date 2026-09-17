@@ -11,24 +11,38 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 **Read first:** `CLAUDE.md`, `docs/13-repo-and-coding-standards.md`, `docs/01-architecture.md`, `docs/10-infrastructure.md`
 **Invariants:** R33
 
-- [ ] pnpm workspace + Turborepo; `apps/{web,api,edge,worker,scheduler}` and every `packages/*` scaffolded as empty, typechecking packages
-- [ ] Root `tsconfig.base.json` with the strict settings from `docs/13`; branded id types in `packages/types`
-- [ ] `packages/config`: Zod-parsed env, fails fast on missing vars; the only `process.env` reader
-- [ ] `packages/logger`: Pino, redaction paths, `AsyncLocalStorage` trace context, request-id propagation
-- [ ] `packages/eslint-plugin-relayd` with the five custom rules from `CLAUDE.md` §7, wired as errors
-- [ ] `packages/db`: Drizzle configured for Postgres, migration runner, `uuidv7()` helper, `WorkspaceScope` branded type and `scoped(db, scope)` helper that issues `SET LOCAL app.workspace_id`
-- [ ] Throwaway migration `0001_init.sql` proving the runner works in staging
-- [ ] `apps/api`: Express 5 skeleton, error envelope middleware, request-id middleware, `/health` (dependency-free) and `/ready` (checks Postgres and Redis)
-- [ ] `apps/edge`: Express skeleton with the same health endpoints and **no** import from `apps/api`
-- [ ] `apps/worker`: BullMQ connection factory, graceful-shutdown harness (drain in-flight jobs on SIGTERM), five empty entrypoints
-- [ ] `apps/scheduler`: process skeleton with direct (non-pooled) Postgres connection
-- [ ] `apps/web`: Vite + React + Tailwind + React Router + TanStack Query provider, empty shell
-- [ ] `infra/docker`: one multi-stage Dockerfile (ARM64) producing one image; `CMD` selected by env var per process type; `docker-compose.yml` with Postgres 16 + Redis 7 for local dev
-- [ ] GitHub Actions: `lint`, `typecheck`, `test`, `build` on every PR; total under 8 minutes
-- [ ] `packages/testing`: Testcontainers Postgres + Redis harness; one integration test that migrates and rolls back
-- [ ] Root scripts from `CLAUDE.md` §4 all working
+- [x] pnpm workspace + Turborepo; `apps/{web,api,edge,worker,scheduler}` and every `packages/*` scaffolded as empty, typechecking packages
+- [x] Root `tsconfig.base.json` with the strict settings from `docs/13`; branded id types in `packages/types`
+- [x] `packages/config`: Zod-parsed env, fails fast on missing vars; the only `process.env` reader
+- [x] `packages/logger`: Pino, redaction paths, `AsyncLocalStorage` trace context, request-id propagation
+- [x] `packages/eslint-plugin-relayd` with the five custom rules from `CLAUDE.md` §7, wired as errors
+- [x] `packages/db`: Drizzle configured for Postgres, migration runner, `uuidv7()` helper, `WorkspaceScope` branded type and `scoped(db, scope)` helper that issues `SET LOCAL app.workspace_id`
+- [x] Throwaway migration `0001_init.sql` proving the runner works in staging
+- [x] `apps/api`: Express 5 skeleton, error envelope middleware, request-id middleware, `/health` (dependency-free) and `/ready` (checks Postgres and Redis)
+- [x] `apps/edge`: Express skeleton with the same health endpoints and **no** import from `apps/api`
+- [x] `apps/worker`: BullMQ connection factory, graceful-shutdown harness (drain in-flight jobs on SIGTERM), five empty entrypoints
+- [x] `apps/scheduler`: process skeleton with direct (non-pooled) Postgres connection
+- [x] `apps/web`: Vite + React + Tailwind + React Router + TanStack Query provider, empty shell
+- [x] `infra/docker`: one multi-stage Dockerfile (ARM64) producing one image; `CMD` selected by env var per process type; `docker-compose.yml` with Postgres 16 + Redis 7 for local dev
+- [x] GitHub Actions: `lint`, `typecheck`, `test`, `build` on every PR; total under 8 minutes
+- [x] `packages/testing`: Testcontainers Postgres + Redis harness; one integration test that migrates and rolls back
+- [x] Root scripts from `CLAUDE.md` §4 all working
 
-**Gate:** CI green on the empty app; one migration visible in the staging database; each of the five lint rules fails a deliberately bad commit; `apps/` contains exactly `web, api, edge, worker, scheduler`.
+**Gate:**
+
+1. **CI green on the empty app.** `lint`, `typecheck`, `test`, `build` and `docker-build` on every PR, in parallel, inside 8 minutes.
+2. **Migration runner — proven by CI.** The runner applies `0001_init.sql` against a fresh Postgres 16 started by Testcontainers, records it, refuses a tampered checksum, and reverses cleanly via the migration's own `-- ROLLBACK:` block. CI sets `CI=true`, so an unreachable Docker daemon fails the job instead of skipping it, and `scripts/assert-integration-ran.mjs` fails the job if any integration test was skipped rather than run.
+3. **`pnpm db:migrate` idempotent — proven by CI.** The real CLI is run twice against a fresh Postgres 16: the second run reports `no migrations pending`, exits 0, and leaves `_relayd_migrations` byte-identical (row dump plus an md5 over name, checksum and `applied_at`). The migration body does not re-execute either.
+4. **Each of the five lint rules fails a deliberately bad commit.**
+5. **`apps/` contains exactly `web, api, edge, worker, scheduler`** (INVARIANTS R33).
+
+**Also run when Docker is available** — useful confirmation, not required for the gate, since criteria 2 and 3 are proven by CI:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml up -d --wait
+pnpm db:migrate && pnpm db:migrate      # second run: "no migrations pending", exit 0
+docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
+```
 
 **Timebox hard at two weeks.** If tooling is still being tuned in week three, ship what runs and move on.
 
@@ -39,6 +53,7 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 **Read first:** `docs/02-database.md` §3 (identity tables), `docs/06-security-and-tracking.md` §15, `docs/03-api.md`
 **Invariants:** R20, R36
 
+- [ ] commitlint + husky enforcing Conventional Commits (`docs/13` § Git says "enforced by commitlint"; nothing enforces it yet). Add lint-staged in the same commit so the five custom rules reject at `git commit`, not only in CI
 - [ ] Tables: `users`, `sessions`, `workspaces`, `workspace_members`, `workspace_invitations`, `audit_logs` (DDL in `docs/02`)
 - [ ] Two Postgres roles: `relayd_app` (RLS enforced) and `relayd_global` (BYPASSRLS); RLS policies on every tenant table using `current_setting('app.workspace_id', true)`
 - [ ] Repository layer: every method takes `WorkspaceScope` first; `packages/db/repositories/global/` for the named cross-tenant exceptions
@@ -237,7 +252,7 @@ The gate before external signups open.
 - [ ] Observability: Sentry, CloudWatch dashboards and alarms (queue depth, DLQ size, unmatched-webhook rate, billing divergence, complaint rate), Prometheus endpoint, trace-id chain verified end to end
 - [ ] Backups: PITR enabled; **timed restore drill** documented and executed
 
-**Gate:** Restore from PITR inside the one-hour RTO with a stopwatch; a single email traceable from request id → recipient id → provider message id in one query; a deliberately broken deploy rolls back in under five minutes.
+**Gate:** Restore from PITR inside the one-hour RTO with a stopwatch; first migration visible in the staging database; a single email traceable from request id → recipient id → provider message id in one query; a deliberately broken deploy rolls back in under five minutes.
 
 ---
 

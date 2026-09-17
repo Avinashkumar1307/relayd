@@ -1,0 +1,50 @@
+# Local development dependencies only: Postgres 16 and Redis 7, matching the
+# managed versions in docs/10 (RDS Postgres 16, ElastiCache Redis 7).
+#
+# The apps themselves run on the host under `tsx watch` via `pnpm dev`, so a
+# code change does not wait for an image rebuild.
+#
+# docs/10 also lists Mailpit, LocalStack and the Stripe CLI for full local
+# development. Those arrive with the phases that need them — product email in
+# Phase 1, S3 uploads in Phase 2, Stripe webhooks in Phase 8.
+
+name: relayd
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: relayd
+      POSTGRES_PASSWORD: relayd
+      POSTGRES_DB: relayd
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # -U and -d are required: without them pg_isready checks the default
+      # database and reports ready before ours exists.
+      test: ['CMD-SHELL', 'pg_isready -U relayd -d relayd']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    # appendonly on, per docs/10. Redis is transport, but losing the append
+    # log locally makes queue behaviour differ from production for no reason.
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  postgres-data:
+  redis-data:

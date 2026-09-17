@@ -60,6 +60,12 @@ Keep Express 5. Add the structure it lacks:
 
 - Every route handler is a thin adapter: parse with Zod, call one service method, serialise one response. No business logic in routes.
 - A single `asyncHandler` wrapper and one error middleware. No `try/catch` in handlers.
+
+  > **Phase 0 correction (implemented).** No `asyncHandler` wrapper exists. It was an
+  > Express 4 necessity: Express 5 forwards a rejected promise from a handler to the error
+  > middleware itself, which is all `asyncHandler` ever did. The rule it served — no
+  > `try/catch` in handlers — still holds, and `apps/api/test/app.test.ts` proves an async
+  > handler's rejection reaches the error envelope without one.
 - Request-scoped context (`requestId`, `userId`, `workspaceId`, `actor`) via `AsyncLocalStorage`, never passed manually through 6 layers.
 - Zod schemas are the single source of truth for validation **and** OpenAPI generation (`zod-to-openapi`). Section 16.
 
@@ -94,6 +100,13 @@ These supersede the baseline where they differ.
 ## E — revised architecture
 
 **Services: four, not five.** `api` (authenticated application and public API), `edge` (tracking pixel, click redirect, unsubscribe, provider webhook ingest — public, merged from `track` and `ingest`), `worker` (all queue consumers), `scheduler` (leader-elected ticker, direct Postgres connection, no PgBouncer).
+
+> **Phase 0 correction (scope).** `edge` also depends on `packages/config`,
+> `packages/logger` and `packages/types`, which the word "only" in CLAUDE.md section 6.3
+> does not list. Those are layers 1 and 2 in the package table above; a process cannot
+> parse its environment or log without them. The ban actually enforced, by
+> `apps/edge/test/isolation.test.ts`, is on `apps/api` and on every layer-5 domain
+> package — which is what the rule exists to prevent.
 
 **The durability rule, stated once and applied everywhere:** Postgres is the system of record for *intent* and *state*. Redis holds *work in progress* and *caches*. Every place where Redis holds the only copy of something gets a Postgres-backed reconciler. That single rule produces the sweeper, the durable daily quota, the Postgres-driven scheduler, the coalescing refetch table and the full hourly rollup.
 

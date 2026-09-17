@@ -1,0 +1,25 @@
+{
+  "name": "@relayd/edge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@relayd/config": "workspace:^",
+    "@relayd/db": "workspace:^",
+    "@relayd/logger": "workspace:^",
+    "@relayd/queue": "workspace:^",
+    "@relayd/types": "workspace:^",
+    "express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.1"
+  }
+}

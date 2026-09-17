@@ -1,0 +1,175 @@
+name: CI
+
+# Every pull request, and main itself so the branch protection check has a
+# baseline. Budget for the whole workflow is 8 minutes (BUILD-PLAN Phase 0),
+# which is why the four checks run as parallel jobs rather than one script.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push supersedes the run in flight for the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # CLAUDE.md section 2 locks Node 22 LTS.
+  NODE_VERSION: '22'
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Includes the five custom architecture rules, as errors
+      # (CLAUDE.md section 7).
+      - run: pnpm lint
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # tsc -b across the workspace, plus the test files.
+      - run: pnpm typecheck
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      # GitHub sets CI already. It is stated here because the integration
+      # suite's behaviour hangs off it: with CI set, an unreachable Docker
+      # daemon throws instead of skipping, so this must not depend on a
+      # runner default staying what it is today.
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The workspace packages resolve through their dist entry points, so
+      # tests exercise what actually ships rather than src.
+      - name: Build workspace packages
+        run: pnpm turbo run build
+
+      # This is `pnpm test` with an extra JSON reporter, so the next step can
+      # inspect what actually ran. Testcontainers uses the runner's daemon.
+      - name: Unit and integration tests
+        run: pnpm exec vitest run --reporter=default --reporter=json --outputFile=.vitest-results.json
+
+      # The suite policing itself is not enough. If the CI guard regressed, or
+      # a file stopped matching the naming convention, or someone added .skip,
+      # the job above would go green having tested nothing — a skipped
+      # integration suite looks exactly like a passing one in every signal CI
+      # produces. This checks from outside and fails the job on any skip.
+      - name: Integration tests must have run, not skipped
+        run: node scripts/assert-integration-ran.mjs .vitest-results.json
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+  # Proves the single ARM64 image builds and that RELAYD_PROCESS selects the
+  # process. No `needs:`, so this runs alongside the other four jobs and the
+  # workflow's wall-clock is the slowest job, not the sum.
+  #
+  # NOTE ON SPEED: this cross-builds arm64 on an amd64 runner under QEMU, which
+  # is several times slower than native for the pnpm install and turbo build
+  # layers. Registry-independent layer caching keeps repeat runs cheap, but a
+  # cold cache may approach the 8-minute budget. If it does, the fix is a
+  # native arm64 runner — change runs-on to ubuntu-24.04-arm — which needs no
+  # QEMU and no emulation.
+  docker-build:
+    name: docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      # Registers binfmt handlers so an arm64 image can be both built and RUN
+      # on this amd64 runner.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+
+      # The Phase 0 checklist command. --load and -t are added so the built
+      # image lands in the local image store and the next steps can run it;
+      # --load requires a single platform, which is what we build.
+      - name: Build the ARM64 image
+        run: >-
+          docker buildx build
+          --platform linux/arm64
+          -f infra/docker/Dockerfile
+          --load -t relayd:ci
+          --cache-from type=gha --cache-to type=gha,mode=max
+          .
+
+      # Positive control, first. Without it, an image so broken that every
+      # container exits 1 would pass the negative test below for the wrong
+      # reason.
+      - name: The image runs at all
+        run: |
+          out=$(docker run --rm relayd:ci node -e 'process.stdout.write("image-ok")')
+          test "$out" = "image-ok" || { echo "expected image-ok, got: $out" >&2; exit 1; }
+          echo "OK: node runs, and an explicit command overrides the entrypoint"
+
+      - name: An unknown RELAYD_PROCESS exits 1
+        run: |
+          set +e
+          output=$(docker run --rm -e RELAYD_PROCESS=nope relayd:ci 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ "$code" -ne 1 ]; then
+            echo "expected exit 1, got $code" >&2
+            exit 1
+          fi
+          case "$output" in
+            *"Unknown RELAYD_PROCESS"*) ;;
+            *) echo "exit 1 but not from the entrypoint's own check" >&2; exit 1 ;;
+          esac
+          echo "OK: exit 1"
+
+      - name: An unset RELAYD_PROCESS exits 1
+        run: |
+          set +e
+          docker run --rm relayd:ci >/dev/null 2>&1
+          code=$?
+          set -e
+          test "$code" -eq 1 || { echo "expected exit 1, got $code" >&2; exit 1; }
+          echo "OK: exit 1"
