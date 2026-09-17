@@ -1,3 +1,12 @@
-// @relayd/logger — Pino, redaction, AsyncLocalStorage trace context
-// Scaffolded in Phase 0. Implementation lands in the phase that owns this package.
-export {};
+// @relayd/logger — Pino, redaction, AsyncLocalStorage trace context.
+export { createLogger } from './logger.js';
+export type { CreateLoggerOptions, LogLevel, Logger } from './logger.js';
+export { REDACTION_PATHS, REDACTION_CENSOR } from './redaction.js';
+export {
+  runWithTrace,
+  getTraceContext,
+  updateTraceContext,
+  newRequestId,
+  newTraceId,
+} from './trace.js';
+export type { TraceContext } from './trace.js';
