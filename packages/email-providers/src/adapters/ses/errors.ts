@@ -1,4 +1,4 @@
-import { classifyStatus, providerError } from '../../errors.js';
+import { asProviderError, classifyStatus, providerError } from '../../errors.js';
 import type { ErrorKind, ProviderError } from '../../port.js';
 
 /**
@@ -159,15 +159,4 @@ function isRetryableFlag(cause: unknown): boolean {
   if (typeof cause !== 'object' || cause === null) return false;
   const retryable = (cause as { $retryable?: unknown }).$retryable;
   return typeof retryable === 'object' && retryable !== null;
-}
-
-function asProviderError(cause: unknown): ProviderError | null {
-  if (typeof cause !== 'object' || cause === null) return null;
-
-  const candidate = cause as Partial<ProviderError>;
-  return typeof candidate.kind === 'string' &&
-    typeof candidate.affects === 'string' &&
-    typeof candidate.retryable === 'boolean'
-    ? (candidate as ProviderError)
-    : null;
 }

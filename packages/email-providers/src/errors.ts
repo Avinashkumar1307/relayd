@@ -101,6 +101,18 @@ export function fromUnknown(cause: unknown): ProviderError {
   return providerError(classifyThrown(cause), message);
 }
 
+/**
+ * An error an adapter already typed, or null.
+ *
+ * Adapters throw ProviderError for their own refusals — credentials for the
+ * wrong provider, for instance. Passing one back through classification would
+ * turn a definite auth failure into `unknown`, which is retryable, and the
+ * send path would keep trying it.
+ */
+export function asProviderError(value: unknown): ProviderError | null {
+  return isProviderError(value) ? value : null;
+}
+
 function isProviderError(value: unknown): value is ProviderError {
   return (
     typeof value === 'object' &&
