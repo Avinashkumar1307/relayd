@@ -395,6 +395,37 @@ is the first thing that needed it: the repository method is guarded on status
 like every other transition, because re-mapping an import that is already
 processing would change what it is doing halfway through the file.
 
+### 2026-09-18 — what "mixed encodings" means, since no document says
+
+`docs/15` requires the import corpus to cover "mixed encodings" and no
+document says which. Two decisions, both made to fail loudly rather than
+quietly:
+
+**Byte-order marks are honoured; content is never sniffed.** UTF-16LE and
+UTF-16BE are decoded correctly when marked, because Excel's "Unicode Text
+(*.txt)" export is UTF-16LE with a mark and is a common way for a
+non-technical user to produce a tab-separated file. Read as UTF-8 it arrives
+with a NUL between every character: no error, just unusable contacts. UTF-32
+is refused by name rather than mis-decoded. Guessing an encoding from content
+is deliberately not done — that is how a file of English names reads correctly
+and a file of Turkish ones does not.
+
+**Bytes that are not valid UTF-8 are refused, not replaced.** A Windows-1252
+file read as UTF-8 yields U+FFFD wherever an accented letter was, so "José"
+imports as "Jos<?>" — a corrupted contact with no error attached, discovered
+by the customer months later in a campaign. The parser now decodes with
+`fatal: true` and returns a message naming the fix ("re-save as CSV UTF-8").
+`onInvalidBytes: 'replace'` restores the old behaviour for a caller that wants
+it; nothing sets it.
+
+**Open question for the owner.** Windows-1252 and ISO-8859-1 files are common
+in older CRM exports and carry no mark, so they are indistinguishable from
+corrupt UTF-8. The options are to keep refusing them (current behaviour), or
+to offer the user a "this file is Western European" choice on the mapping step
+and decode accordingly. Automatic fallback is the one option not worth having:
+it silently turns a genuinely corrupt UTF-8 file into plausible-looking
+nonsense. Flagged rather than decided.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

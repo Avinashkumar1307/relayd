@@ -82,7 +82,7 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 - [x] `contact-import` consumer: stream from S3, parse CSV/XLSX, validate, dedupe within file and against DB, `COPY` into staging table, merge, per-row errors; flat memory on 500k rows
 - [x] Formula-injection neutralisation on export (cells beginning `= + - @`)
 - [x] Frontend: `/audience/contacts` (server-side pagination and filtering), `/audience/lists`, `/audience/tags`, `/audience/imports` with live progress and failed-row CSV download, `/audience/suppressions`, column-mapping step
-- [ ] Tests: malformed CSV corpus, mixed encodings, BOM, CRLF, formula injection, 500k-row memory profile, duplicate-within-file and duplicate-against-db
+- [x] Tests: malformed CSV corpus, mixed encodings, BOM, CRLF, formula injection, 500k-row memory profile, duplicate-within-file and duplicate-against-db
 
 **Gate:** 500k-row import with flat resident memory; report distinguishes created / updated / skipped-duplicate / failed with reasons; export neutralises every formula-injection cell.
 
