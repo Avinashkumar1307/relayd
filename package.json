@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "bash scripts/dev.sh",
     "build": "turbo run build",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.vitest.json",
     "lint": "eslint .",
     "test": "vitest run",
     "test:isolation": "bash scripts/test-isolation.sh",
@@ -21,7 +21,9 @@
     "db:reset": "bash scripts/db-reset.sh"
   },
   "devDependencies": {
+    "@types/node": "^22.7.5",
     "turbo": "^2.1.3",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
   }
 }

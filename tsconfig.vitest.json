@@ -1,0 +1,14 @@
+{
+  // Test files are excluded from every package build so `tsc -b` never emits
+  // them into dist/. They are still typechecked, here, under the same strict
+  // settings as source.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["apps/*/test/**/*.ts", "packages/*/test/**/*.ts", "vitest.config.ts"]
+}
