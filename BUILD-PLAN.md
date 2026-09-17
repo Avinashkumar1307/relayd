@@ -21,7 +21,7 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 - [x] `apps/api`: Express 5 skeleton, error envelope middleware, request-id middleware, `/health` (dependency-free) and `/ready` (checks Postgres and Redis)
 - [x] `apps/edge`: Express skeleton with the same health endpoints and **no** import from `apps/api`
 - [x] `apps/worker`: BullMQ connection factory, graceful-shutdown harness (drain in-flight jobs on SIGTERM), five empty entrypoints
-- [ ] `apps/scheduler`: process skeleton with direct (non-pooled) Postgres connection
+- [x] `apps/scheduler`: process skeleton with direct (non-pooled) Postgres connection
 - [ ] `apps/web`: Vite + React + Tailwind + React Router + TanStack Query provider, empty shell
 - [ ] `infra/docker`: one multi-stage Dockerfile (ARM64) producing one image; `CMD` selected by env var per process type; `docker-compose.yml` with Postgres 16 + Redis 7 for local dev
 - [ ] GitHub Actions: `lint`, `typecheck`, `test`, `build` on every PR; total under 8 minutes

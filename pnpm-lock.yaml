@@ -101,7 +101,21 @@ importers:
         specifier: ^22.7.5
         version: 22.20.3
 
-  apps/scheduler: {}
+  apps/scheduler:
+    dependencies:
+      '@relayd/config':
+        specifier: workspace:^
+        version: link:../../packages/config
+      '@relayd/db':
+        specifier: workspace:^
+        version: link:../../packages/db
+      '@relayd/logger':
+        specifier: workspace:^
+        version: link:../../packages/logger
+    devDependencies:
+      '@types/node':
+        specifier: ^22.7.5
+        version: 22.20.3
 
   apps/web: {}
 

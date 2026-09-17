@@ -53,3 +53,24 @@ export function createDatabase(pool: pg.Pool): Database {
 export async function pingDatabase(pool: pg.Pool): Promise<void> {
   await pool.query('SELECT 1');
 }
+
+/**
+ * A single, direct, never-pooled connection. The scheduler's connection, and
+ * only the scheduler's.
+ *
+ * INVARIANTS R35: leader election takes pg_try_advisory_xact_lock inside a
+ * transaction that spans the whole tick. A transaction pooler would hand the
+ * connection to someone else between statements, so the lock would not mean
+ * what the scheduler thinks it means and two leaders could tick at once. This
+ * takes a connection string that must point at Postgres directly, never at
+ * PgBouncer — which is why packages/config carries DATABASE_DIRECT_URL as a
+ * separate variable from DATABASE_URL.
+ *
+ * A Client rather than a Pool for the same reason: one process, one
+ * connection, one session, for the life of the process.
+ */
+export function createDirectClient(connectionString: string): pg.Client {
+  return new pg.Client({ connectionString });
+}
+
+export type DirectClient = pg.Client;
