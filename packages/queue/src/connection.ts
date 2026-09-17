@@ -43,3 +43,21 @@ export async function pingRedis(connection: Redis): Promise<void> {
     throw new Error(`Unexpected PING reply from Redis: ${reply}`);
   }
 }
+
+/**
+ * A connection configured the way BullMQ requires it.
+ *
+ * `maxRetriesPerRequest: null` is not optional: BullMQ issues blocking
+ * commands (BRPOPLPUSH and friends) that ioredis would otherwise abandon
+ * mid-wait, which surfaces as jobs that appear to vanish.
+ *
+ * The `bull:` key prefix is the queue's share of the single Redis instance
+ * (INVARIANTS R34: one instance with keyspace prefixes until measured).
+ */
+export function createBullConnection(url: string): RedisConnection {
+  return createRedisConnection({
+    url,
+    keyPrefix: 'bull:',
+    maxRetriesPerRequest: null,
+  });
+}

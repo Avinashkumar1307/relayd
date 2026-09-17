@@ -17,6 +17,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "bullmq": "^5.25.0",
     "ioredis": "^5.4.1"
   },
   "devDependencies": {
