@@ -72,6 +72,9 @@ importers:
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.3
+      tsx:
+        specifier: ^4.19.1
+        version: 4.23.13
 
   apps/edge:
     dependencies:
@@ -100,6 +103,9 @@ importers:
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.3
+      tsx:
+        specifier: ^4.19.1
+        version: 4.23.13
 
   apps/scheduler:
     dependencies:
@@ -116,6 +122,9 @@ importers:
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.3
+      tsx:
+        specifier: ^4.19.1
+        version: 4.23.13
 
   apps/web:
     dependencies:
@@ -172,6 +181,9 @@ importers:
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.3
+      tsx:
+        specifier: ^4.19.1
+        version: 4.23.13
 
   packages/analytics: {}
 
