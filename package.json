@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "typecheck": "tsc -b && tsc -p tsconfig.vitest.json",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "turbo run build && vitest run",
     "test:isolation": "bash scripts/test-isolation.sh",
     "test:contract": "bash scripts/test-contract.sh",
     "test:billing": "bash scripts/test-billing.sh",
