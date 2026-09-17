@@ -76,7 +76,7 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 **Read first:** `docs/02-database.md` §3 (audience tables), `docs/00-product-and-scope.md`
 **Invariants:** none new — but every repository here is scoped (R20)
 
-- [ ] Tables: `contacts` (partial unique index on lowercased email per workspace), `contact_lists`, `contact_list_members`, `tags`, `contact_tags`, `segments`, `suppressions`, `import_jobs`, `import_row_errors`
+- [x] Tables: `contacts` (partial unique index on lowercased email per workspace), `contact_lists`, `contact_list_members`, `tags`, `contact_tags`, `segments`, `suppressions`, `import_jobs`, `import_row_errors`
 - [ ] API: contact CRUD, bulk tag/untag, list membership, segment definition + preview with a hard count cap, suppression CRUD, presigned S3 upload, import start and status
 - [ ] Segments: a **fixed set of predicates** with preview count. No general query builder.
 - [ ] `contact-import` consumer: stream from S3, parse CSV/XLSX, validate, dedupe within file and against DB, `COPY` into staging table, merge, per-row errors; flat memory on 500k rows

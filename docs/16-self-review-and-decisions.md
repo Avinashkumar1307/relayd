@@ -276,6 +276,40 @@ Single use is the part that matters: a reset link that still works after the
 password changed is a second chance for whoever intercepted the email. A
 successful reset also consumes every other outstanding reset for that user.
 
+## 2026-09-17 — import tables renamed, and composite keys on the audience joins
+
+**Changed:** `docs/02-database.md` section 3, in migration `0005_audience.sql`.
+
+Two departures from `docs/02`, for different reasons.
+
+**Naming.** `docs/02` defines `contact_imports`. `BUILD-PLAN.md` Phase 2 and
+`docs/15-roadmap.md` both name `import_jobs` and `import_row_errors`, and
+`BUILD-PLAN.md` outranks `docs/02` under `CLAUDE.md` section 1. Two documents
+against one, and the higher authority is among the two. Implemented as
+`import_jobs` with the columns `docs/02` specifies, plus `import_row_errors`
+for the per-row failures Phase 2 requires. `error_report_s3_key` and
+`error_summary` are kept, so the exported report still works; the table is
+what lets the UI page failures without an object store, which also means local
+development needs none.
+
+**Composite foreign keys.** `docs/02` gives `contact_list_members` plain
+foreign keys on `list_id` and `contact_id`. Each is satisfiable independently,
+so a list belonging to workspace A and a contact belonging to workspace B
+together produce a membership row that straddles two tenants — and RLS does
+not catch it, because the row carries a single `workspace_id` and reads as
+legitimate from both sides. The only thing standing between that and a
+cross-tenant leak would be a service remembering to check.
+
+`docs/06` section 15 lists exactly this as part 4 of the tenant-isolation
+suite: "Cross-tenant FK test. Adding B's contact to A's list fails."
+Referencing `(id, workspace_id)` makes it fail in the database. `contacts`,
+`contact_lists`, `tags` and `import_jobs` each gained a `UNIQUE (id,
+workspace_id)` to be referenceable that way — redundant against their primary
+keys, and the price of making the wrong row unrepresentable.
+
+The same shape will be wanted for every later join table that spans two
+tenant-owned entities: campaign recipients, pool members, tracked links.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

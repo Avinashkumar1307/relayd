@@ -11,3 +11,14 @@ export {
   auditLogs,
   userTokens,
 } from './identity.js';
+export {
+  contacts,
+  contactLists,
+  contactListMembers,
+  tags,
+  contactTags,
+  segments,
+  suppressions,
+  importJobs,
+  importRowErrors,
+} from './audience.js';

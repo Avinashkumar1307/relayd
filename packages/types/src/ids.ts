@@ -19,3 +19,11 @@ export type RecipientId = Brand<string, 'RecipientId'>;
 export type SessionId = Brand<string, 'SessionId'>;
 export type WorkspaceMemberId = Brand<string, 'WorkspaceMemberId'>;
 export type WorkspaceInvitationId = Brand<string, 'WorkspaceInvitationId'>;
+
+// Phase 2 audience tables.
+export type ContactId = Brand<string, 'ContactId'>;
+export type ContactListId = Brand<string, 'ContactListId'>;
+export type TagId = Brand<string, 'TagId'>;
+export type SegmentId = Brand<string, 'SegmentId'>;
+export type SuppressionId = Brand<string, 'SuppressionId'>;
+export type ImportJobId = Brand<string, 'ImportJobId'>;

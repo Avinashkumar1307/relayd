@@ -147,6 +147,19 @@ CREATE TABLE contact_lists (
   CONSTRAINT uq_list_name UNIQUE (workspace_id, name)
 );
 
+> **Phase 2 correction (implemented).** `contact_list_members` and
+> `contact_tags` reference `(id, workspace_id)` compositely rather than
+> `id` alone, and `contacts`, `contact_lists`, `tags` and `import_jobs` each
+> carry a `UNIQUE (id, workspace_id)` to support that.
+>
+> With plain foreign keys, a list from workspace A and a contact from
+> workspace B satisfy both constraints independently and produce a membership
+> row straddling two tenants. RLS does not catch it either: the row carries one
+> `workspace_id` and looks legitimate from both sides. `docs/06` section 15
+> part 4 requires that "adding B's contact to A's list fails" — the composite
+> key is what makes it fail in the database rather than only in a service that
+> remembered to check.
+
 CREATE TABLE contact_list_members (
   workspace_id uuid NOT NULL,
   list_id      uuid NOT NULL REFERENCES contact_lists(id) ON DELETE CASCADE,
@@ -226,6 +239,18 @@ Segments are stored as a validated JSON AST and compiled to SQL server-side. Nev
 The compiler emits parameterised SQL with a hard cap on AST depth (6) and node count (40). `engaged` predicates resolve against the pre-aggregated `contact_engagement` rollup, not the raw event partitions, because a segment preview must return in under 2 seconds.
 
 ## Import staging
+
+> **Phase 2 correction (implemented).** The table below is named `import_jobs`,
+> not `contact_imports`, and a second table `import_row_errors` holds per-row
+> failures. `BUILD-PLAN.md` Phase 2 and `docs/15-roadmap.md` both name those
+> two tables, and `BUILD-PLAN.md` outranks this file (`CLAUDE.md` section 1).
+> Columns are otherwise exactly as given below.
+>
+> `import_row_errors` exists because Phase 2 requires per-row errors and a
+> failed-row CSV download. Keeping them in a table means the UI can page
+> through failures without fetching an object from S3, and local development
+> needs no object store at all. `error_report_s3_key` and `error_summary`
+> remain for the exported report.
 
 ```sql
 CREATE TABLE contact_imports (
