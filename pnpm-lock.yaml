@@ -320,7 +320,11 @@ importers:
         specifier: ^0.31.10
         version: 0.31.10
 
-  packages/email-providers: {}
+  packages/email-providers:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.7.5
+        version: 22.20.3
 
   packages/eslint-plugin-relayd:
     devDependencies:
