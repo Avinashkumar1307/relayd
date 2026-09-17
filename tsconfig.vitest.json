@@ -8,8 +8,10 @@
     "declaration": false,
     "declarationMap": false,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
   },
-  "include": ["apps/*/test/**/*.ts", "packages/*/test/**/*.ts", "vitest.config.ts"],
+  "include": ["apps/*/test/**/*.ts", "apps/*/test/**/*.tsx", "packages/*/test/**/*.ts", "vitest.config.ts"],
   "exclude": ["packages/eslint-plugin-relayd/**"]
 }

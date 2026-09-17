@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     // Tests live in test/ alongside src/, never inside src/, so that
     // `tsc -b` never emits them into dist/.
-    include: ['{apps,packages}/*/test/**/*.test.{ts,js}'],
+    include: ['{apps,packages}/*/test/**/*.test.{ts,tsx,js}'],
     environment: 'node',
     passWithNoTests: false,
   },
