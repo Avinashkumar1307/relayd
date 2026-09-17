@@ -26,7 +26,7 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 - [x] `infra/docker`: one multi-stage Dockerfile (ARM64) producing one image; `CMD` selected by env var per process type; `docker-compose.yml` with Postgres 16 + Redis 7 for local dev
 - [x] GitHub Actions: `lint`, `typecheck`, `test`, `build` on every PR; total under 8 minutes
 - [x] `packages/testing`: Testcontainers Postgres + Redis harness; one integration test that migrates and rolls back
-- [ ] Root scripts from `CLAUDE.md` §4 all working
+- [x] Root scripts from `CLAUDE.md` §4 all working
 
 **Gate:** CI green on the empty app; the migration runner works against the docker-compose Postgres 16 via a connection string, and in CI via Testcontainers; `pnpm db:migrate` is idempotent — running it twice in a row is a clean no-op, exit 0, no changes; each of the five lint rules fails a deliberately bad commit; `apps/` contains exactly `web, api, edge, worker, scheduler`.
 
