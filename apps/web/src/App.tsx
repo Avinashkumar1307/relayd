@@ -12,10 +12,13 @@ import { TeamSettingsPage, WorkspaceSettingsPage } from './routes/settings-pages
 import { ContactsPage } from './routes/audience/contacts.js';
 import { ListsPage, SuppressionsPage, TagsPage } from './routes/audience/collections.js';
 import { ImportsPage } from './routes/audience/imports.js';
+import { ProvidersPage } from './routes/providers/providers.js';
+import { SendersPage } from './routes/providers/senders.js';
 
 /**
- * Phases 1 and 2: authentication, workspace settings and audience. Campaigns,
- * analytics and billing arrive with the phases that own them.
+ * Phases 1 to 3: authentication, workspace settings, audience, and provider
+ * connections. Campaigns, analytics and billing arrive with the phases that
+ * own them.
  */
 export function App() {
   return (
@@ -52,6 +55,9 @@ export function App() {
         <Route path="/audience/tags" element={<TagsPage />} />
         <Route path="/audience/imports" element={<ImportsPage />} />
         <Route path="/audience/suppressions" element={<SuppressionsPage />} />
+
+        <Route path="/providers" element={<ProvidersPage />} />
+        <Route path="/senders" element={<SendersPage />} />
 
         <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
         <Route path="/settings/team" element={<TeamSettingsPage />} />
@@ -108,6 +114,13 @@ function AppShell() {
             <NavLink to="/audience/tags">Tags</NavLink>
             <NavLink to="/audience/imports">Imports</NavLink>
             <NavLink to="/audience/suppressions">Suppressions</NavLink>
+
+            <span aria-hidden="true" className="text-slate-300">
+              |
+            </span>
+
+            <NavLink to="/providers">Providers</NavLink>
+            <NavLink to="/senders">Senders</NavLink>
 
             <span aria-hidden="true" className="text-slate-300">
               |
