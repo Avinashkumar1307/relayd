@@ -91,7 +91,13 @@ export function scanSource(relativePath: string, source: string): ScopeViolation
     record('set-config-session', match.index ?? 0, match[0]);
   }
 
-  if (relativePath !== SCOPE_OWNER) {
+  // A test that proves RLS works must itself set scope, so the single-owner
+  // rule applies to source only. The two FORBIDDEN forms above are still
+  // checked everywhere, tests included: a session-scoped write is wrong in a
+  // test too, and one copied out of a test is how it reaches production.
+  const isTest = /(^|\/)test\//u.test(relativePath) || relativePath.includes('.test.');
+
+  if (relativePath !== SCOPE_OWNER && !isTest) {
     for (const pattern of SCOPE_WRITES) {
       for (const match of code.matchAll(pattern)) {
         record('scope-write-outside-owner', match.index ?? 0, match[0]);

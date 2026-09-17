@@ -103,6 +103,30 @@ jobs:
       - name: Integration tests must have run, not skipped
         run: node scripts/assert-integration-ran.mjs .vitest-results.json
 
+  # The tenant-isolation suite, as its own required check.
+  #
+  # A separate job rather than a step inside `test` so that branch protection
+  # can require it by name, and so a failure reads as "isolation broke" in the
+  # checks list rather than being buried in a general test run. docs/06: "A
+  # dedicated suite, run in CI, that must never be skipped."
+  isolation:
+    name: isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      # Parts 3-5 need real Postgres via Testcontainers. With CI set, an
+      # unreachable daemon fails the job instead of skipping it.
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:isolation
+
   build:
     name: build
     runs-on: ubuntu-latest

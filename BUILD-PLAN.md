@@ -65,7 +65,7 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 - [x] Audit log writes for every mutating action, with actor, workspace, before/after
 - [x] `packages/notifications`: transactional email for verification, invites and password reset via a single operator-owned provider connection — kept separate from customer sending forever
 - [x] Frontend: `/login`, `/register`, verify-email, password reset, `/settings/workspace`, `/settings/team`, workspace switcher, auth guards, role-aware UI gating
-- [ ] **The six-part tenant-isolation suite** (`docs/06` §15) as `pnpm test:isolation`, promoted to a required CI check
+- [x] **The six-part tenant-isolation suite** (`docs/06` §15) as `pnpm test:isolation`, promoted to a required CI check
 
 **Gate:** A member of workspace A receives 404 for every workspace B resource; a repository method without `WorkspaceScope` fails to compile and fails the reflection test; `billing:write` cannot be attached to an API key (test exists even though API keys arrive in Phase 9); isolation suite is required on `main`.
 

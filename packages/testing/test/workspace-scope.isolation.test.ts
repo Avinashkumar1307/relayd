@@ -65,6 +65,20 @@ describe('R36 detector', () => {
     expect(kinds(ALLOWED.setLocal)).toContain('scope-write-outside-owner');
   });
 
+  it('allows a test to set scope, since proving RLS requires it', () => {
+    expect(
+      kinds(ALLOWED.setConfigTrue, 'packages/testing/test/rls.isolation.test.ts'),
+    ).toEqual([]);
+  });
+
+  it('still forbids the session-scoped forms inside a test', () => {
+    // Wrong in a test too, and a test is where it gets copied from.
+    expect(kinds(FORBIDDEN.bareSet, 'packages/x/test/a.test.ts')).toContain('bare-set');
+    expect(kinds(FORBIDDEN.setConfigFalse, 'packages/x/test/a.test.ts')).toContain(
+      'set-config-session',
+    );
+  });
+
   it('ignores the forbidden forms inside comments', () => {
     // scope.ts explains at length why a bare SET is banned; that explanation
     // must not trip the scanner enforcing it.
