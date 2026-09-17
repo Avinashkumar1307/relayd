@@ -296,6 +296,9 @@ importers:
       '@testcontainers/redis':
         specifier: ^10.13.2
         version: 10.28.0
+      drizzle-orm:
+        specifier: ^0.36.0
+        version: 0.36.4(@types/pg@8.23.1)(@types/react@18.3.31)(pg@8.23.0)(react@18.3.1)
       pg:
         specifier: ^8.13.0
         version: 8.23.0

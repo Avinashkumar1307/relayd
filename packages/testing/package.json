@@ -22,6 +22,7 @@
     "@relayd/queue": "workspace:^",
     "@testcontainers/postgresql": "^10.13.2",
     "@testcontainers/redis": "^10.13.2",
+    "drizzle-orm": "^0.36.0",
     "pg": "^8.13.0",
     "testcontainers": "^10.13.2"
   },
