@@ -240,12 +240,18 @@ importers:
       '@relayd/db':
         specifier: workspace:^
         version: link:../../packages/db
+      '@relayd/email-providers':
+        specifier: workspace:^
+        version: link:../../packages/email-providers
       '@relayd/logger':
         specifier: workspace:^
         version: link:../../packages/logger
       '@relayd/queue':
         specifier: workspace:^
         version: link:../../packages/queue
+      '@relayd/types':
+        specifier: workspace:^
+        version: link:../../packages/types
     devDependencies:
       '@types/node':
         specifier: ^22.7.5

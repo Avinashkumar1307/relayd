@@ -11,6 +11,8 @@
     { "path": "../../packages/config" },
     { "path": "../../packages/logger" },
     { "path": "../../packages/queue" },
-    { "path": "../../packages/db" }
+    { "path": "../../packages/db" },
+    { "path": "../../packages/types" },
+    { "path": "../../packages/email-providers" }
   ]
 }
