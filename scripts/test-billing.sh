@@ -12,12 +12,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if [[ -f "$ROOT/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  . "$ROOT/.env"
-  set +a
-fi
+# shellcheck source=scripts/lib/load-env.sh
+. "$ROOT/scripts/lib/load-env.sh"
+load_env_defaults "$ROOT/.env"
 
 if [[ -z "${STRIPE_TEST_KEY:-}" ]]; then
   if [[ "${RELAYD_REQUIRE_BILLING_TESTS:-}" == "1" ]]; then
