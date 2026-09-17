@@ -5,6 +5,7 @@ import {
   parseRetryAfter,
   providerError,
   redact,
+  secretsOf,
 } from '../src/errors.js';
 import { ERROR_POLICY, type ErrorKind } from '../src/port.js';
 
@@ -216,5 +217,50 @@ describe('Retry-After', () => {
     expect(parseRetryAfter(undefined)).toBeUndefined();
     expect(parseRetryAfter('')).toBeUndefined();
     expect(parseRetryAfter('soon')).toBeUndefined();
+  });
+});
+
+describe('redacting the credential actually in use', () => {
+  it('removes a secret the patterns would never recognise', () => {
+    // The patterns are guesses about shape. A provider that echoes the key
+    // back inside its own prose defeats every one of them — and is defeated
+    // by knowing what the key is.
+    const odd = 'hunter2-but-longer';
+    expect(redact(`Bad key ${odd} rejected`, [odd])).not.toContain(odd);
+  });
+
+  it('is applied by providerError when the caller supplies it', () => {
+    const error = providerError('auth_failed', `rejected key ${CANARY}`, { secrets: [CANARY] });
+    expect(error.message).not.toContain(CANARY);
+  });
+
+  it('redacts it out of the provider code too', () => {
+    const error = providerError('unknown', 'x', { providerCode: CANARY, secrets: [CANARY] });
+    expect(error.providerCode).not.toContain(CANARY);
+  });
+
+  it('ignores a secret too short to be one', () => {
+    // A two-character password would match everywhere and redact the message
+    // into uselessness.
+    expect(redact('a cat sat on a mat', ['at'])).toBe('a cat sat on a mat');
+  });
+
+  it('finds the credential material in every credential shape', () => {
+    expect(secretsOf({ type: 'sendgrid', apiKey: 'k1' })).toEqual(['k1']);
+    expect(
+      secretsOf({ type: 'ses', accessKeyId: 'a1', secretAccessKey: 's1', region: 'eu-west-1' }),
+    ).toEqual(['s1', 'a1']);
+    expect(
+      secretsOf({ type: 'smtp', host: 'h', port: 1, secure: false, user: 'u', pass: 'p1' }),
+    ).toEqual(['p1']);
+    expect(secretsOf({ type: 'google', refreshToken: 'r1', clientId: 'c', clientSecret: 's2' })).toEqual([
+      'r1',
+      's2',
+    ]);
+  });
+
+  it('never returns a non-secret field such as a host or region', () => {
+    const secrets = secretsOf({ type: 'smtp', host: 'smtp.example.com', port: 587, secure: true, user: 'u', pass: 'p1' });
+    expect(secrets).not.toContain('smtp.example.com');
   });
 });

@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { providerError } from '../../errors.js';
+import { providerError, secretsOf } from '../../errors.js';
 import { classifySmtpError } from './errors.js';
 import type {
   EmailProviderAdapter,
@@ -112,7 +112,11 @@ export function createSmtpAdapter(
         acceptedAt: new Date(),
       };
     } catch (cause) {
-      return { ok: false, recipientId: message.recipientId, error: classifySmtpError(cause) };
+      return {
+        ok: false,
+        recipientId: message.recipientId,
+        error: classifySmtpError(cause, secretsOf(credentials)),
+      };
     }
   };
 
@@ -138,7 +142,7 @@ export function createSmtpAdapter(
           },
         };
       } catch (cause) {
-        return { ok: false, error: classifySmtpError(cause) };
+        return { ok: false, error: classifySmtpError(cause, secretsOf(credentials)) };
       }
     },
 

@@ -6,7 +6,7 @@ import {
   SendEmailCommand,
   SESv2Client,
 } from '@aws-sdk/client-sesv2';
-import { providerError } from '../../errors.js';
+import { providerError, secretsOf } from '../../errors.js';
 import { classifySesError } from './errors.js';
 import { verifySnsSignature } from './sns.js';
 import type {
@@ -125,7 +125,11 @@ export function createSesAdapter(
         acceptedAt: new Date(),
       };
     } catch (cause) {
-      return { ok: false, recipientId: message.recipientId, error: classifySesError(cause) };
+      return {
+        ok: false,
+        recipientId: message.recipientId,
+        error: classifySesError(cause, secretsOf(credentials)),
+      };
     }
   };
 
@@ -159,7 +163,7 @@ export function createSesAdapter(
           },
         };
       } catch (cause) {
-        return { ok: false, error: classifySesError(cause) };
+        return { ok: false, error: classifySesError(cause, secretsOf(credentials)) };
       }
     },
 

@@ -96,7 +96,7 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 - [x] Tables: `provider_connections` (holds Secrets Manager ARN, `endpoint_token`, `webhook_secret_arn` — never a secret), `sender_accounts`, `sender_identities`, `provider_webhook_events` (with `provider_connection_id`, `dedupe_key`, `matched`)
 - [x] `ProviderPort` interface per `docs/07`: `send`, `sendBatch`, `verifyCredentials`, `getLimits`, `capabilities`; `ProviderError { kind, affects, retryAfterMs }`; stateless credentials per call; `recipientId` correlation on input and outcome
 - [x] `send-with-limits.ts` wrapper — the **only** entry point to any adapter (rate limiter and daily quota are wired in Phase 6, but the wrapper and the grep test exist now)
-- [ ] Adapters in this order: **SES**, then **SMTP**, then **SendGrid**. Mailgun and Brevo are SHOULD-tier; do not build them now. No Google Workspace (D6).
+- [x] Adapters in this order: **SES**, then **SMTP**, then **SendGrid**. Mailgun and Brevo are SHOULD-tier; do not build them now. No Google Workspace (D6).
 - [ ] Error scrubbing at the adapter boundary; Sentry `beforeSend` denylist; credential-canary test (R22)
 - [ ] Secrets: path scheme `relayd/{env}/ws/{workspaceId}/conn/{connectionId}`; in-memory cache ≤ 5 min; audit row per fetch
 - [ ] **Per-connection webhook ingest** in `apps/edge`: `POST /ingest/v1/{provider}/{endpointToken}`; token → connection; signature verified with that connection's secret; persist to inbox; return 200 < 200 ms; unmatched events stored, never applied (R4)

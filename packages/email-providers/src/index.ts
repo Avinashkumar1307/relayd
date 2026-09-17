@@ -17,7 +17,15 @@ export type {
 } from './port.js';
 export { ERROR_POLICY } from './port.js';
 
-export { providerError, fromUnknown, redact, classifyStatus, parseRetryAfter } from './errors.js';
+export {
+  providerError,
+  fromUnknown,
+  asProviderError,
+  redact,
+  secretsOf,
+  classifyStatus,
+  parseRetryAfter,
+} from './errors.js';
 
 export { sendWithLimits } from './send-with-limits.js';
 export type { RateLimiter, SendContext } from './send-with-limits.js';

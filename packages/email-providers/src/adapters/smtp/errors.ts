@@ -170,7 +170,7 @@ function fromReplyCode(code: number): ProviderError | null {
   }
 }
 
-export function classifySmtpError(cause: unknown): ProviderError {
+export function classifySmtpError(cause: unknown, secrets: readonly string[] = []): ProviderError {
   const passthrough = asProviderError(cause);
   if (passthrough !== null) return passthrough;
 
@@ -234,5 +234,5 @@ export function classifySmtpError(cause: unknown): ProviderError {
 
   // The message is redacted by providerError. It is included because without
   // it an unclassified SMTP failure is undiagnosable.
-  return providerError('unknown', error.message ?? 'The SMTP server returned an error');
+  return providerError('unknown', error.message ?? 'The SMTP server returned an error', { secrets });
 }

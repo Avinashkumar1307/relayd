@@ -78,7 +78,10 @@ const SENDER_PHRASES = [
   'from address',
 ];
 
-export function classifySesError(cause: unknown): ProviderError {
+export function classifySesError(
+  cause: unknown,
+  secrets: readonly string[] = [],
+): ProviderError {
   // Already typed — thrown by the adapter itself, for instance when handed
   // credentials for another provider. Reclassifying it would turn a definite
   // auth failure into `unknown`, which is retryable.
@@ -95,12 +98,12 @@ export function classifySesError(cause: unknown): ProviderError {
     // Sender first: an unverified *identity* is a sender problem, and its
     // text also contains "email address is not verified".
     if (SENDER_PHRASES.some((phrase) => lower.includes(phrase))) {
-      return providerError('invalid_sender', message, { providerCode: 'MessageRejected' });
+      return providerError('invalid_sender', message, { providerCode: 'MessageRejected', secrets });
     }
     if (RECIPIENT_PHRASES.some((phrase) => lower.includes(phrase))) {
-      return providerError('invalid_recipient', message, { providerCode: 'MessageRejected' });
+      return providerError('invalid_recipient', message, { providerCode: 'MessageRejected', secrets });
     }
-    return providerError('content_rejected', message, { providerCode: 'MessageRejected' });
+    return providerError('content_rejected', message, { providerCode: 'MessageRejected', secrets });
   }
 
   // A payload-too-large is unambiguous from the status, and SES reports it
@@ -108,33 +111,33 @@ export function classifySesError(cause: unknown): ProviderError {
   // for this one case, or "message too large" would be classified as content
   // and the campaign would never learn to split its batches.
   if (status === 413) {
-    return providerError('message_too_large', message, { providerCode: name || code });
+    return providerError('message_too_large', message, { providerCode: name || code, secrets });
   }
 
   const byName = BY_NAME[name] ?? BY_NAME[code];
   if (byName !== undefined) {
-    return providerError(byName, message, { providerCode: name || code });
+    return providerError(byName, message, { providerCode: name || code, secrets });
   }
 
   // SES marks a subset of exceptions retryable itself; when it does, trust it
   // over the status code.
   if (isRetryableFlag(cause) && status !== 429) {
-    return providerError('provider_unavailable', message, { providerCode: name || code });
+    return providerError('provider_unavailable', message, { providerCode: name || code, secrets });
   }
 
   if (status !== undefined) {
-    return providerError(classifyStatus(status), message, { providerCode: name || code });
+    return providerError(classifyStatus(status), message, { providerCode: name || code, secrets });
   }
 
   const socket = readString(cause, 'code');
   if (socket === 'ETIMEDOUT' || socket === 'ESOCKETTIMEDOUT') {
-    return providerError('timeout', message);
+    return providerError('timeout', message, { secrets });
   }
   if (socket === 'ECONNREFUSED' || socket === 'ENOTFOUND' || socket === 'ECONNRESET') {
-    return providerError('provider_unavailable', message);
+    return providerError('provider_unavailable', message, { secrets });
   }
 
-  return providerError('unknown', message);
+  return providerError('unknown', message, { secrets });
 }
 
 function readString(cause: unknown, key: string): string {

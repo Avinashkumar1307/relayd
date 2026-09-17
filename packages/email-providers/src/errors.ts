@@ -48,10 +48,44 @@ const SECRET_PATTERNS: readonly RegExp[] = [
   /\b[A-Za-z0-9+/]{40,}={0,2}\b/gu,
 ];
 
-export function redact(text: string): string {
+/**
+ * Removes known secrets, then anything that merely looks like one.
+ *
+ * `known` is the credential material the caller is actually holding, and it
+ * matters more than the patterns do. The patterns are guesses about shape —
+ * they catch a real SendGrid key because real keys look like `SG.x.y`, and
+ * they miss anything that does not. A provider that echoes the key back inside
+ * its own prose ("Bad key <key> rejected") defeats every pattern and is
+ * defeated by this.
+ */
+export function redact(text: string, known: readonly string[] = []): string {
   let out = text;
+
+  for (const secret of known) {
+    // Short strings are skipped: a two-character password would match
+    // everywhere and redact the whole message into uselessness.
+    if (typeof secret !== 'string' || secret.length < 6) continue;
+    out = out.split(secret).join('[redacted]');
+  }
+
   for (const pattern of SECRET_PATTERNS) out = out.replace(pattern, '[redacted]');
   return out;
+}
+
+/**
+ * The credential material inside a ProviderCredentials, whatever its shape.
+ *
+ * Used to redact the exact secret in play rather than guessing at its form.
+ */
+export function secretsOf(credentials: unknown): string[] {
+  if (typeof credentials !== 'object' || credentials === null) return [];
+
+  const record = credentials as Record<string, unknown>;
+  const fields = ['apiKey', 'secretAccessKey', 'accessKeyId', 'pass', 'refreshToken', 'clientSecret'];
+
+  return fields
+    .map((field) => record[field])
+    .filter((value): value is string => typeof value === 'string' && value !== '');
 }
 
 /**
@@ -64,18 +98,19 @@ export function redact(text: string): string {
 export function providerError(
   kind: ErrorKind,
   message: string,
-  extra: { providerCode?: string; retryAfterMs?: number } = {},
+  extra: { providerCode?: string; retryAfterMs?: number; secrets?: readonly string[] } = {},
 ): ProviderError {
   const policy = ERROR_POLICY[kind];
+  const secrets = extra.secrets ?? [];
 
   return {
     kind,
     retryable: policy.retryable,
     affects: policy.affects,
-    message: redact(message).slice(0, MAX_MESSAGE_LENGTH),
+    message: redact(message, secrets).slice(0, MAX_MESSAGE_LENGTH),
     ...(extra.providerCode === undefined
       ? {}
-      : { providerCode: redact(extra.providerCode).slice(0, 64) }),
+      : { providerCode: redact(extra.providerCode, secrets).slice(0, 64) }),
     ...(extra.retryAfterMs === undefined ? {} : { retryAfterMs: extra.retryAfterMs }),
   };
 }

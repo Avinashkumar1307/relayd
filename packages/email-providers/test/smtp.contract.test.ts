@@ -170,6 +170,46 @@ describe('the credential never escapes', () => {
     expect(JSON.stringify(outcome)).not.toContain('SECRET-CANARY-9f3a');
   });
 
+  it('is absent even when no pattern could recognise it', async () => {
+    // Every classified branch writes its own message and never quotes the
+    // server, so nothing can escape through those. The one branch that does
+    // echo the original is the unclassified fallback — reached here with a
+    // code nothing recognises — and the password in it is a bare word that no
+    // pattern can distinguish from prose. Only knowing the credential in play
+    // removes it.
+    const plain: ProviderCredentials = {
+      type: 'smtp',
+      host: 'smtp.example.com',
+      port: 587,
+      secure: false,
+      user: 'postmaster@example.com',
+      pass: 'correcthorsebatterystaple',
+    };
+
+    const adapter = createSmtpAdapter(() => ({
+      async sendMail() {
+        throw smtpError('ENOVELCODE', 'rejected: the password correcthorsebatterystaple is wrong');
+      },
+    }));
+
+    const outcome = await adapter.send(plain, outboundMessage('r1'));
+
+    expect(outcome.ok === false && outcome.error.kind).toBe('unknown');
+    expect(JSON.stringify(outcome)).not.toContain('correcthorsebatterystaple');
+  });
+
+  it('quotes the server only in the unclassified case, and never otherwise', async () => {
+    // Worth pinning: the classified branches are safe because they
+    // reconstruct rather than filter, and a future branch that started
+    // quoting error.message would silently change that.
+    const classified = classifySmtpError(
+      smtpError('EENVELOPE', 'secret-in-message', 550, '550 5.1.1 secret-in-response'),
+    );
+
+    expect(classified.message).not.toContain('secret-in-message');
+    expect(classified.message).not.toContain('secret-in-response');
+  });
+
   it('is absent from a failed verification', async () => {
     const adapter = createSmtpAdapter(() => ({
       async sendMail() {

@@ -481,6 +481,40 @@ false for a kind that provider cannot produce) readable.
 The fake provider is exported alongside it, so packages downstream of the port
 can drive it without a real provider.
 
+### 2026-09-18 — SendGrid over fetch, not @sendgrid/mail
+
+CLAUDE.md §7 forbids importing `@sendgrid/*` outside its adapter directory; it
+does not require importing it at all. The adapter calls the v3 API with
+`fetch`.
+
+Three reasons. The SDK is a thin wrapper over one POST. It holds the API key in
+module state, which fights the port's rule that adapters are stateless and
+credentials arrive per call — with the SDK, two workspaces sending
+concurrently would race over one global key. And an injected `fetch` makes the
+whole adapter testable without a network, which is the difference between the
+contract suite running here and not running at all.
+
+### 2026-09-18 — redaction knows the credential, not just its shape
+
+R22 says a known credential string must never appear in a serialised error.
+The original implementation redacted by pattern — connection URLs,
+Authorization headers, things shaped like an AWS or SendGrid key. Patterns are
+guesses about shape, and the SendGrid contract test found the gap immediately:
+a provider that echoes the key back inside its own prose ("Bad key <key>
+rejected") defeats every pattern.
+
+`redact` now takes the credential material actually in play, and every adapter
+passes it via `secretsOf(credentials)`. The patterns remain as a second layer
+for anything the caller did not know it was holding.
+
+Secrets shorter than six characters are skipped: a two-character password
+would match everywhere and redact the message into uselessness.
+
+The classified branches never needed it — each writes its own message and
+never quotes the provider, which is the reconstruction R22 actually asks for.
+It matters for the unclassified fallback, which does quote the original
+because an unclassifiable failure is otherwise undiagnosable.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
