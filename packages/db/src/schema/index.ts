@@ -22,3 +22,14 @@ export {
   importJobs,
   importRowErrors,
 } from './audience.js';
+export {
+  providerConnections,
+  senderIdentities,
+  senderAccounts,
+  providerWebhookEvents,
+} from './providers.js';
+export type {
+  ProviderType,
+  ConnectionStatus,
+  SenderStatus,
+} from './providers.js';

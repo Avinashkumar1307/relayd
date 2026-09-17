@@ -27,3 +27,8 @@ export type TagId = Brand<string, 'TagId'>;
 export type SegmentId = Brand<string, 'SegmentId'>;
 export type SuppressionId = Brand<string, 'SuppressionId'>;
 export type ImportJobId = Brand<string, 'ImportJobId'>;
+
+// Phase 3 provider tables.
+export type ProviderConnectionId = Brand<string, 'ProviderConnectionId'>;
+export type SenderIdentityId = Brand<string, 'SenderIdentityId'>;
+export type SenderAccountId = Brand<string, 'SenderAccountId'>;

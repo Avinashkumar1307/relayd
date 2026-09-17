@@ -14,6 +14,9 @@ export type {
   SegmentId,
   SuppressionId,
   ImportJobId,
+  ProviderConnectionId,
+  SenderIdentityId,
+  SenderAccountId,
 } from './ids.js';
 export { ERROR_CODES, AppError, ValidationError, NotFoundError, ConflictError, EntitlementError } from './errors.js';
 export type { ErrorCode, ErrorDetail } from './errors.js';

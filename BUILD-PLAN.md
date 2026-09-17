@@ -93,7 +93,7 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 **Read first:** `docs/07-providers-and-routing.md` §9, `docs/06-security-and-tracking.md` (credentials, webhook ingest), `docs/17-review-findings.md` F4, F21, F22
 **Invariants:** **R4**, R21, R22
 
-- [ ] Tables: `provider_connections` (holds Secrets Manager ARN, `endpoint_token`, `webhook_secret_arn` — never a secret), `sender_accounts`, `sender_identities`, `provider_webhook_events` (with `provider_connection_id`, `dedupe_key`, `matched`)
+- [x] Tables: `provider_connections` (holds Secrets Manager ARN, `endpoint_token`, `webhook_secret_arn` — never a secret), `sender_accounts`, `sender_identities`, `provider_webhook_events` (with `provider_connection_id`, `dedupe_key`, `matched`)
 - [ ] `ProviderPort` interface per `docs/07`: `send`, `sendBatch`, `verifyCredentials`, `getLimits`, `capabilities`; `ProviderError { kind, affects, retryAfterMs }`; stateless credentials per call; `recipientId` correlation on input and outcome
 - [ ] `send-with-limits.ts` wrapper — the **only** entry point to any adapter (rate limiter and daily quota are wired in Phase 6, but the wrapper and the grep test exist now)
 - [ ] Adapters in this order: **SES**, then **SMTP**, then **SendGrid**. Mailgun and Brevo are SHOULD-tier; do not build them now. No Google Workspace (D6).

@@ -426,6 +426,43 @@ and decode accordingly. Automatic fallback is the one option not worth having:
 it silently turns a genuinely corrupt UTF-8 file into plausible-looking
 nonsense. Flagged rather than decided.
 
+### 2026-09-18 — provider_webhook_events has no base table in any document
+
+docs/02 and docs/17 both ALTER `provider_webhook_events` to add
+`provider_connection_id`, `matched` and `dedupe_key`, and no document ever
+creates it. Its columns in 0006 are derived from the ingest flow in docs/06
+and the `NormalisedEmailEvent` shape there: the raw payload, the normalised
+fields needed to match an event to a recipient, and the processing state.
+
+Two choices inside that worth recording. `dedupe_key` is NOT NULL with no
+default — an event that cannot be deduplicated is an event that will be
+applied twice, so there is no sensible fallback and the adapter must produce
+one (the provider's event id, or a hash of the payload). And the F4 amendments
+are folded into the CREATE rather than applied as ALTERs, because adding a NOT
+NULL column by ALTER to a table created three statements earlier is the same
+thing written twice.
+
+### 2026-09-18 — the secrets path in docs/07 is out of date
+
+docs/07 §"Credential handling" gives
+`relayd/{env}/workspace/{workspaceId}/provider/{providerId}`. INVARIANTS R21
+and CLAUDE.md §11 both give `relayd/{env}/ws/{workspaceId}/conn/{connectionId}`.
+INVARIANTS is the highest authority (CLAUDE.md §1), so 0006 and everything
+after it use the `ws`/`conn` form. Noted here rather than edited into docs/07,
+which carries a header saying INVARIANTS wins where they differ.
+
+### 2026-09-18 — nothing checked the Drizzle schema against the migrations
+
+The migrations are what runs; the Drizzle schema is what queries are built
+from. When they drift, `tsc` is perfectly happy and the failure arrives at
+runtime as `column "foo" does not exist`, from whichever query touches it
+first — possibly months later.
+
+`packages/db/test/schema-matches-migrations.test.ts` parses the committed SQL
+and compares it with `getTableConfig` in both directions. It is weaker than
+introspecting a live catalogue and available now, which introspection is not.
+It found no existing drift across migrations 0001-0006.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
