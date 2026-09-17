@@ -1,7 +1,9 @@
 import express, { type Express } from 'express';
+import cookieParser from 'cookie-parser';
 import { errorEnvelope, notFoundHandler } from './middleware/error-envelope.js';
 import { requestId } from './middleware/request-id.js';
 import { healthRoutes, type HealthDependencies } from './routes/health.js';
+import { authRoutes, type AuthRouterOptions } from './routes/auth.js';
 
 /**
  * Express 5, with the guard rails docs/01 asks for: thin route handlers, one
@@ -14,7 +16,15 @@ import { healthRoutes, type HealthDependencies } from './routes/health.js';
  * here would be dead weight, so there is none; handlers still contain no
  * try/catch.
  */
-export function createApp(deps: HealthDependencies): Express {
+export interface AppDependencies extends HealthDependencies {
+  /**
+   * Absent in tests that only exercise the probes, and in any process that has
+   * no database to build repositories against.
+   */
+  auth?: AuthRouterOptions;
+}
+
+export function createApp(deps: AppDependencies): Express {
   const app = express();
 
   // Express advertising its own version buys an attacker a free hint.
@@ -22,8 +32,13 @@ export function createApp(deps: HealthDependencies): Express {
 
   app.use(requestId);
   app.use(express.json({ limit: '1mb' }));
+  app.use(cookieParser());
 
   app.use(healthRoutes(deps));
+
+  if (deps.auth !== undefined) {
+    app.use('/api/v1/auth', authRoutes(deps.auth));
+  }
 
   app.use(notFoundHandler);
   app.use(errorEnvelope(deps.logger));

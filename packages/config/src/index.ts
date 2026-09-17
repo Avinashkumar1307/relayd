@@ -9,4 +9,5 @@ export {
   processTypeEnv,
   workerEntrypointEnv,
   ciEnv,
+  authEnv,
 } from './schema.js';

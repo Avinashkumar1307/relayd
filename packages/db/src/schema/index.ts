@@ -9,4 +9,5 @@ export {
   workspaceInvitations,
   sessions,
   auditLogs,
+  userTokens,
 } from './identity.js';

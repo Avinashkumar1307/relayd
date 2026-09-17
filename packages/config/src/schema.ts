@@ -75,3 +75,24 @@ export const ciEnv = z.object({
     .optional()
     .transform((value) => value === 'true' || value === '1'),
 });
+
+/**
+ * Access-token signing. RS256 with a key id for rotation (docs/06 s15).
+ *
+ * Keys are supplied as PEM, never generated at boot: a key generated per
+ * process means a token issued by one api task is rejected by the next, and
+ * the failure looks like random logouts under load rather than a
+ * misconfiguration.
+ */
+export const authEnv = z.object({
+  JWT_PRIVATE_KEY: z.string().min(1),
+  JWT_PUBLIC_KEY: z.string().min(1),
+  /** Identifies which key signed a token, so keys can be rotated. */
+  JWT_KEY_ID: z.string().min(1).default('k1'),
+  /** Short by design: 15 minutes, per docs/06. */
+  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  /** 30 days, rotated on every use. */
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  /** Public origin, used to build links in verification and invite emails. */
+  APP_BASE_URL: z.string().url().default('http://localhost:5173'),
+});

@@ -31,6 +31,7 @@ const migrationsDir = path.join(repoRoot, 'packages/db/migrations');
 const NON_TENANT_TABLES = new Map<string, string>([
   ['users', 'spans workspaces; exists before one is chosen'],
   ['sessions', 'belongs to a user, not a workspace; used before scope exists'],
+  ['user_tokens', 'verification and reset tokens belong to a person; reset runs before scope exists'],
 ]);
 
 async function allMigrationSql(): Promise<string> {

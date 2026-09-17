@@ -255,6 +255,27 @@ and cannot map the `.js` specifiers that `NodeNext` requires TypeScript sources
 to write, so `pnpm db:generate` broke as soon as one schema file imported
 another. Same tool, same locked ORM decision; a version bump only.
 
+## 2026-09-17 — user_tokens table added, where docs/02 had no storage
+
+**Added:** migration `0004_user_tokens.sql`.
+
+`BUILD-PLAN` Phase 1 requires "verify email" and "password reset", and
+`docs/03` lists `/auth/verify-email`, `/auth/forgot-password` and
+`/auth/reset-password`. `docs/02` section 3 defines token storage for workspace
+invitations and for session refresh, and for nothing else. The flows were
+specified with no table to hold their tokens.
+
+`user_tokens` fills that gap, shaped to match the invitation pattern docs/02
+already uses: a sha256 of the emailed token, an expiry, and a `consumed_at`
+that makes redemption single-use. Cross-tenant, like `users` and `sessions`,
+because a password reset is performed by someone who cannot log in and has no
+workspace in context — so it has no RLS policy and its repository lives in
+`packages/db/repositories/global/`.
+
+Single use is the part that matters: a reset link that still works after the
+password changed is a second chance for whoever intercepted the email. A
+successful reset also consumes every other outstanding reset for that user.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

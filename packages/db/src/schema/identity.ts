@@ -215,3 +215,35 @@ export const auditLogs = pgTable(
   },
   (table) => [index('ix_audit_ws_time').on(table.workspaceId, table.occurredAt.desc())],
 );
+
+/**
+ * Single-use tokens for email verification and password reset.
+ *
+ * Cross-tenant like users and sessions: a token belongs to a person, and
+ * password reset runs before any workspace is in context. See migration
+ * 0004 for why this table exists at all — docs/02 specified the flows but
+ * no storage for them.
+ */
+export const userTokens = pgTable(
+  'user_tokens',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' })
+      .$type<UserId>(),
+    purpose: text('purpose').notNull().$type<'email_verification' | 'password_reset'>(),
+    /** sha256 of the emailed token; the token itself is never stored. */
+    tokenHash: bytea('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+    /** Single use: set on redemption. */
+    consumedAt: timestamp('consumed_at', { withTimezone: true, mode: 'date' }),
+    createdAt,
+  },
+  (table) => [
+    uniqueIndex('uq_user_tokens_hash').on(table.tokenHash),
+    index('ix_user_tokens_live')
+      .on(table.userId, table.purpose)
+      .where(sql`${table.consumedAt} IS NULL`),
+  ],
+);

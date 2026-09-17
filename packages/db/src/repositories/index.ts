@@ -28,6 +28,9 @@ export type { UserRow, CreateUserInput, UserStatus } from './global/users.js';
 export { SessionRepository } from './global/sessions.js';
 export type { SessionRow, CreateSessionInput } from './global/sessions.js';
 
+export { UserTokenRepository } from './global/user-tokens.js';
+export type { UserTokenRow, IssueTokenInput, TokenPurpose } from './global/user-tokens.js';
+
 export {
   GlobalMembershipRepository,
   GlobalInvitationRepository,

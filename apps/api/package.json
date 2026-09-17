@@ -15,9 +15,15 @@
     "@relayd/logger": "workspace:^",
     "@relayd/queue": "workspace:^",
     "@relayd/types": "workspace:^",
-    "express": "^5.0.1"
+    "@relayd/utils": "workspace:^",
+    "@relayd/validation": "workspace:^",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.0.1",
+    "jose": "^5.9.6",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.7",
     "@types/express": "^5.0.0",
     "@types/node": "^22.7.5",
     "tsx": "^4.19.1"
