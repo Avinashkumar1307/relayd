@@ -21,3 +21,11 @@ export { providerError, fromUnknown, redact, classifyStatus, parseRetryAfter } f
 
 export { sendWithLimits } from './send-with-limits.js';
 export type { RateLimiter, SendContext } from './send-with-limits.js';
+
+// Test support. Exported from the package so other packages can drive the
+// port without a real provider, and so an adapter's own tests can run the
+// shared contract.
+export { createFakeProvider, signFakeWebhook } from './testing/fake-provider.js';
+export type { FakeProvider, FakeProviderScript } from './testing/fake-provider.js';
+export { runProviderContract, outboundMessage } from './testing/contract.js';
+export type { ContractHarness } from './testing/contract.js';

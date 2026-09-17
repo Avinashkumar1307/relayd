@@ -20,10 +20,15 @@ import { describe, expect, it } from 'vitest';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
-/** The wrapper itself, and the fake used to test consumers of it. */
+/**
+ * The wrapper itself, the fake used to test consumers of it, and the contract
+ * suite — whose whole job is to call an adapter directly and check what comes
+ * back. Three names, each of which a reviewer can weigh.
+ */
 const ALLOWED = [
   'packages/email-providers/src/send-with-limits.ts',
   'packages/email-providers/src/testing/fake-provider.ts',
+  'packages/email-providers/src/testing/contract.ts',
 ];
 
 const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', '.turbo', '.git', 'coverage']);

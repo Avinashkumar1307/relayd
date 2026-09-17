@@ -463,6 +463,24 @@ and compares it with `getTableConfig` in both directions. It is weaker than
 introspecting a live catalogue and available now, which introspection is not.
 It found no existing drift across migrations 0001-0006.
 
+### 2026-09-18 — the contract suite lives in @relayd/email-providers, not @relayd/testing
+
+BUILD-PLAN Phase 3 item 11 calls it `packages/testing/contract.spec.ts` and
+docs/07 puts it at `packages/email-providers/src/testing/contract.spec.ts`.
+It is at the latter, exported as `runProviderContract` from
+`@relayd/email-providers`.
+
+Two reasons. The suite imports the port and `sendWithLimits`, so putting it in
+`packages/testing` makes that package depend on `email-providers` purely to
+host a file that belongs to it. And the root vitest config only collects
+`{apps,packages}/*/test/**/*.test.ts`, so a `.spec.ts` inside `src/` would
+never run — the suite is a function, and each adapter's own test file calls
+it, which is also what makes the per-adapter skips (`scriptFailure` returning
+false for a kind that provider cannot produce) readable.
+
+The fake provider is exported alongside it, so packages downstream of the port
+can drive it without a real provider.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
