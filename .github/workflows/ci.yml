@@ -102,3 +102,74 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+
+  # Proves the single ARM64 image builds and that RELAYD_PROCESS selects the
+  # process. No `needs:`, so this runs alongside the other four jobs and the
+  # workflow's wall-clock is the slowest job, not the sum.
+  #
+  # NOTE ON SPEED: this cross-builds arm64 on an amd64 runner under QEMU, which
+  # is several times slower than native for the pnpm install and turbo build
+  # layers. Registry-independent layer caching keeps repeat runs cheap, but a
+  # cold cache may approach the 8-minute budget. If it does, the fix is a
+  # native arm64 runner — change runs-on to ubuntu-24.04-arm — which needs no
+  # QEMU and no emulation.
+  docker-build:
+    name: docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      # Registers binfmt handlers so an arm64 image can be both built and RUN
+      # on this amd64 runner.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+
+      # The Phase 0 checklist command. --load and -t are added so the built
+      # image lands in the local image store and the next steps can run it;
+      # --load requires a single platform, which is what we build.
+      - name: Build the ARM64 image
+        run: >-
+          docker buildx build
+          --platform linux/arm64
+          -f infra/docker/Dockerfile
+          --load -t relayd:ci
+          --cache-from type=gha --cache-to type=gha,mode=max
+          .
+
+      # Positive control, first. Without it, an image so broken that every
+      # container exits 1 would pass the negative test below for the wrong
+      # reason.
+      - name: The image runs at all
+        run: |
+          out=$(docker run --rm relayd:ci node -e 'process.stdout.write("image-ok")')
+          test "$out" = "image-ok" || { echo "expected image-ok, got: $out" >&2; exit 1; }
+          echo "OK: node runs, and an explicit command overrides the entrypoint"
+
+      - name: An unknown RELAYD_PROCESS exits 1
+        run: |
+          set +e
+          output=$(docker run --rm -e RELAYD_PROCESS=nope relayd:ci 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ "$code" -ne 1 ]; then
+            echo "expected exit 1, got $code" >&2
+            exit 1
+          fi
+          case "$output" in
+            *"Unknown RELAYD_PROCESS"*) ;;
+            *) echo "exit 1 but not from the entrypoint's own check" >&2; exit 1 ;;
+          esac
+          echo "OK: exit 1"
+
+      - name: An unset RELAYD_PROCESS exits 1
+        run: |
+          set +e
+          docker run --rm relayd:ci >/dev/null 2>&1
+          code=$?
+          set -e
+          test "$code" -eq 1 || { echo "expected exit 1, got $code" >&2; exit 1; }
+          echo "OK: exit 1"
