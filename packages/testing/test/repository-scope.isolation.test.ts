@@ -100,18 +100,29 @@ describe('repository scope detector', () => {
 
 describe('repository scope across packages/db', () => {
   /**
-   * TRIPWIRE. There are no repositories yet — checklist item 4 creates them —
-   * so the sweep below is vacuous today. This test asserts that vacuity
-   * explicitly, so that the moment the first repository lands it FAILS and
-   * forces whoever adds it to flip the assertion, rather than letting a
-   * permanently empty scan read as a passing proof.
+   * The tripwire from the harness commit, now flipped: repositories exist, so
+   * the sweep below is a real proof rather than a vacuous one. If this ever
+   * drops back to zero, the scan has stopped finding the directory and the
+   * compliance test below would pass while checking nothing.
    */
-  it('has no repositories yet: flip this when checklist item 4 lands', async () => {
+  it('finds repositories to enumerate', async () => {
     const { present, methods } = await scanRepositories(repoRoot);
-    expect({ present, methodCount: methods.length }).toEqual({
-      present: false,
-      methodCount: 0,
-    });
+    expect(present).toBe(true);
+    expect(methods.length).toBeGreaterThan(20);
+  });
+
+  it('covers both tenant-scoped and cross-tenant repositories', async () => {
+    const { methods } = await scanRepositories(repoRoot);
+    const tenant = methods.filter((m) => !m.isGlobal);
+    const global = methods.filter((m) => m.isGlobal);
+
+    expect(tenant.length).toBeGreaterThan(0);
+    expect(global.length).toBeGreaterThan(0);
+    // Every cross-tenant repository sits under global/, which is the only
+    // exception CLAUDE.md section 6.2 permits.
+    for (const method of global) {
+      expect(method.file).toContain('/global/');
+    }
   });
 
   it('every repository method takes WorkspaceScope first', async () => {

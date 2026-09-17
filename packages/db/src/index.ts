@@ -12,3 +12,4 @@ export type {
   MigrationsResult,
   RunMigrationsOptions,
 } from './migrate.js';
+export * from './repositories/index.js';
