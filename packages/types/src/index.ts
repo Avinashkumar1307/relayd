@@ -11,3 +11,12 @@ export type {
 } from './ids.js';
 export { ERROR_CODES, AppError, ValidationError, NotFoundError, ConflictError, EntitlementError } from './errors.js';
 export type { ErrorCode, ErrorDetail } from './errors.js';
+export {
+  PERMISSIONS,
+  WORKSPACE_ROLES,
+  can,
+  permissionsFor,
+  canApiKeyHold,
+  partitionApiKeyScopes,
+} from './permissions.js';
+export type { Permission, WorkspaceRole } from './permissions.js';
