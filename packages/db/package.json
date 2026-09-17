@@ -15,5 +15,18 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@relayd/config": "workspace:^",
+    "@relayd/logger": "workspace:^",
+    "@relayd/types": "workspace:^",
+    "drizzle-orm": "^0.36.0",
+    "pg": "^8.13.0",
+    "uuid": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/pg": "^8.11.10",
+    "drizzle-kit": "^0.28.0"
   }
 }

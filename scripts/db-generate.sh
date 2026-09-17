@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# scripts/db-generate.sh — placeholder. Final implementation lands with the Phase 0
-# checklist item that owns it; see BUILD-PLAN.md Phase 0.
+# Generates SQL from the Drizzle schema. The output is then hand-edited and
+# committed as an immutable numbered migration (docs/01).
 set -euo pipefail
-echo "[db-generate] not yet implemented in this commit"
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT/packages/db"
+
+exec pnpm exec drizzle-kit generate

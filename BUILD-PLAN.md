@@ -16,7 +16,7 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 - [x] `packages/config`: Zod-parsed env, fails fast on missing vars; the only `process.env` reader
 - [x] `packages/logger`: Pino, redaction paths, `AsyncLocalStorage` trace context, request-id propagation
 - [x] `packages/eslint-plugin-relayd` with the five custom rules from `CLAUDE.md` §7, wired as errors
-- [ ] `packages/db`: Drizzle configured for Postgres, migration runner, `uuidv7()` helper, `WorkspaceScope` branded type and `scoped(db, scope)` helper that issues `SET LOCAL app.workspace_id`
+- [x] `packages/db`: Drizzle configured for Postgres, migration runner, `uuidv7()` helper, `WorkspaceScope` branded type and `scoped(db, scope)` helper that issues `SET LOCAL app.workspace_id`
 - [ ] Throwaway migration `0001_init.sql` proving the runner works in staging
 - [ ] `apps/api`: Express 5 skeleton, error envelope middleware, request-id middleware, `/health` (dependency-free) and `/ready` (checks Postgres and Redis)
 - [ ] `apps/edge`: Express skeleton with the same health endpoints and **no** import from `apps/api`
@@ -28,7 +28,7 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 - [ ] `packages/testing`: Testcontainers Postgres + Redis harness; one integration test that migrates and rolls back
 - [ ] Root scripts from `CLAUDE.md` §4 all working
 
-**Gate:** CI green on the empty app; one migration visible in the staging database; each of the five lint rules fails a deliberately bad commit; `apps/` contains exactly `web, api, edge, worker, scheduler`.
+**Gate:** CI green on the empty app; the migration runner works against the docker-compose Postgres 16 via a connection string, and in CI via Testcontainers; `pnpm db:migrate` is idempotent — running it twice in a row is a clean no-op, exit 0, no changes; each of the five lint rules fails a deliberately bad commit; `apps/` contains exactly `web, api, edge, worker, scheduler`.
 
 **Timebox hard at two weeks.** If tooling is still being tuned in week three, ship what runs and move on.
 
@@ -237,7 +237,7 @@ The gate before external signups open.
 - [ ] Observability: Sentry, CloudWatch dashboards and alarms (queue depth, DLQ size, unmatched-webhook rate, billing divergence, complaint rate), Prometheus endpoint, trace-id chain verified end to end
 - [ ] Backups: PITR enabled; **timed restore drill** documented and executed
 
-**Gate:** Restore from PITR inside the one-hour RTO with a stopwatch; a single email traceable from request id → recipient id → provider message id in one query; a deliberately broken deploy rolls back in under five minutes.
+**Gate:** Restore from PITR inside the one-hour RTO with a stopwatch; first migration visible in the staging database; a single email traceable from request id → recipient id → provider message id in one query; a deliberately broken deploy rolls back in under five minutes.
 
 ---
 
