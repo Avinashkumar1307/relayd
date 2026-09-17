@@ -17,3 +17,38 @@ export {
   formatRow,
   toCsvLines,
 } from './export/csv.js';
+export {
+  parseDelimited,
+  detectDelimiter,
+  normaliseHeader,
+  CsvParseError,
+} from './import/csv-parser.js';
+export type { ParsedRow, ParseOptions } from './import/csv-parser.js';
+export { runImport, importRows, isPlausibleEmail } from './import/pipeline.js';
+export type {
+  ImportSink,
+  ImportOptions,
+  ImportSummary,
+  ImportCallbacks,
+  NormalisedContact,
+  RowFailure,
+  BatchResult,
+} from './import/pipeline.js';
+export {
+  readXlsxRows,
+  hasZipMagic,
+  columnIndex,
+  excelSerialToIso,
+  XlsxError,
+} from './import/xlsx-reader.js';
+export type { XlsxOptions } from './import/xlsx-reader.js';
+export { runContactImport } from './import/consumer.js';
+export type {
+  ContactImportJob,
+  ContactImportDeps,
+  ImportFileSource,
+  ImportFileType,
+  ImportJobStore,
+  ImportOutcome,
+} from './import/consumer.js';
+export { localFileSource, spoolingSource } from './import/sources.js';

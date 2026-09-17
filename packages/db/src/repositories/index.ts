@@ -59,3 +59,6 @@ export type { SuppressionRow, SuppressionReason } from './suppressions.js';
 
 export { ImportJobRepository, MAX_STORED_ROW_ERRORS } from './import-jobs.js';
 export type { ImportJobRow, ImportStatus, RowError } from './import-jobs.js';
+
+export { ContactImportRepository } from './contact-import.js';
+export type { ImportRow, MergeResult, MergeOptions } from './contact-import.js';

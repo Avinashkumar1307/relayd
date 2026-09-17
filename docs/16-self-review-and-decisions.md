@@ -310,6 +310,56 @@ keys, and the price of making the wrong row unrepresentable.
 The same shape will be wanted for every later join table that spans two
 tenant-owned entities: campaign recipients, pool members, tracked links.
 
+### 2026-09-17 — xlsx is read from a path, not a byte stream
+
+`docs/06` section 12 requires a "streaming reader in a worker" for xlsx
+uploads, and `BUILD-PLAN` Phase 2 item 4 says the consumer streams from S3.
+The xlsx reader takes a filesystem path instead.
+
+This is not a shortcut. An xlsx is a zip, and a zip's central directory — the
+index naming every entry and its offset — is written at the *end* of the file.
+A reader that only moves forwards cannot locate `xl/worksheets/sheet1.xml`
+without first buffering the entire archive in memory, which is precisely what
+the 512 MB cap exists to prevent. Every correct xlsx reader spools to disk
+first.
+
+The streaming requirement is met where it can be: the worksheet XML is parsed
+incrementally with a SAX parser and rows are yielded as they are found, so
+resident memory stays flat regardless of how many rows the sheet holds.
+`spoolingSource` in `packages/audience/src/import/sources.ts` turns any
+stream-only source into one that satisfies both halves of the port, streaming
+to a temp file rather than collecting chunks.
+
+Delimited files are unaffected and are still read as a pure byte stream, never
+touching the disk.
+
+### 2026-09-17 — the S3 import source is a port without an implementation
+
+`BUILD-PLAN` Phase 2 item 4 says the consumer streams from S3. `ImportFileSource`
+defines that contract and `localFileSource` implements it for development and
+tests; the S3 adapter is not written.
+
+This matches how `FileStorage` was already left in `apps/api` when the
+presigned-upload item was taken: there is no bucket, no LocalStack and no
+credentials on this machine, so an S3 adapter written now could not be run,
+and an adapter nobody has run is not an implementation — it is a guess with an
+import statement. The consumer is written entirely against the port, so the
+adapter is a swap rather than a rewrite when the bucket exists in Phase 10.
+
+### 2026-09-17 — the COPY-and-merge sink is unverified against a database
+
+`packages/db/src/repositories/contact-import.ts` has never been executed. It is
+the most database-specific code in the phase — a `COPY FROM STDIN` into a TEMP
+staging table, then one upsert using `xmax = 0` to tell an insert from an
+update — and none of it has met a real Postgres.
+
+What is proven without one: the COPY text-format escaping, via a decoder
+written to the documented rules and a round trip through it
+(`packages/db/test/copy-escape.test.ts`). That is the part where a mistake is
+silent — an unescaped tab does not error, it shifts every later column — so it
+is the part worth proving early. The statements themselves are checked the
+first time the runner meets the database.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

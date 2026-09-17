@@ -8,7 +8,7 @@ import { sql, type SQL } from 'drizzle-orm';
  * directory takes a WorkspaceScope as its first parameter, enforced by a CI
  * reflection test, and the rule is worth more absolute than with a list of
  * exceptions attached — a rule with exceptions is a rule people argue with.
- * Neither of these touches a tenant row, so neither belongs there.
+ * None of these touches a tenant row, so none belongs there.
  */
 
 /**
@@ -54,4 +54,21 @@ export function bindPlaceholders(text: string, params: readonly unknown[]): SQL 
 
   pieces.push(sql.raw(text.slice(lastIndex)));
   return sql.join(pieces);
+}
+
+/**
+ * Escapes one value for COPY's text format.
+ *
+ * Postgres reads backslash, tab, newline and carriage return as control
+ * sequences in this format. A name containing a tab would otherwise shift
+ * every subsequent column by one — silently, with no error, producing
+ * contacts whose last name is their country.
+ */
+export function escapeCopyValue(value: string | null): string {
+  if (value === null) return String.raw`\N`;
+  return value
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll('\t', String.raw`\t`)
+    .replaceAll('\n', String.raw`\n`)
+    .replaceAll('\r', String.raw`\r`);
 }

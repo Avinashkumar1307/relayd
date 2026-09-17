@@ -26,11 +26,13 @@
     "@relayd/types": "workspace:^",
     "drizzle-orm": "^0.36.0",
     "pg": "^8.13.0",
+    "pg-copy-streams": "^6.0.6",
     "uuid": "^11.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
     "@types/pg": "^8.11.10",
+    "@types/pg-copy-streams": "^1.2.5",
     "drizzle-kit": "^0.31.10"
   }
 }
