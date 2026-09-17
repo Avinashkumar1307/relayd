@@ -28,7 +28,21 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 - [x] `packages/testing`: Testcontainers Postgres + Redis harness; one integration test that migrates and rolls back
 - [x] Root scripts from `CLAUDE.md` §4 all working
 
-**Gate:** CI green on the empty app; the migration runner works against the docker-compose Postgres 16 via a connection string, and in CI via Testcontainers; `pnpm db:migrate` is idempotent — running it twice in a row is a clean no-op, exit 0, no changes; each of the five lint rules fails a deliberately bad commit; `apps/` contains exactly `web, api, edge, worker, scheduler`.
+**Gate:**
+
+1. **CI green on the empty app.** `lint`, `typecheck`, `test`, `build` and `docker-build` on every PR, in parallel, inside 8 minutes.
+2. **Migration runner — proven by CI.** The runner applies `0001_init.sql` against a fresh Postgres 16 started by Testcontainers, records it, refuses a tampered checksum, and reverses cleanly via the migration's own `-- ROLLBACK:` block. CI sets `CI=true`, so an unreachable Docker daemon fails the job instead of skipping it, and `scripts/assert-integration-ran.mjs` fails the job if any integration test was skipped rather than run.
+3. **`pnpm db:migrate` idempotent — proven by CI.** The real CLI is run twice against a fresh Postgres 16: the second run reports `no migrations pending`, exits 0, and leaves `_relayd_migrations` byte-identical (row dump plus an md5 over name, checksum and `applied_at`). The migration body does not re-execute either.
+4. **Each of the five lint rules fails a deliberately bad commit.**
+5. **`apps/` contains exactly `web, api, edge, worker, scheduler`** (INVARIANTS R33).
+
+**Also run when Docker is available** — useful confirmation, not required for the gate, since criteria 2 and 3 are proven by CI:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml up -d --wait
+pnpm db:migrate && pnpm db:migrate      # second run: "no migrations pending", exit 0
+docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
+```
 
 **Timebox hard at two weeks.** If tooling is still being tuned in week three, ship what runs and move on.
 
