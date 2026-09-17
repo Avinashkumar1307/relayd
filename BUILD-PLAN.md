@@ -99,7 +99,7 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 - [x] Adapters in this order: **SES**, then **SMTP**, then **SendGrid**. Mailgun and Brevo are SHOULD-tier; do not build them now. No Google Workspace (D6).
 - [x] Error scrubbing at the adapter boundary; Sentry `beforeSend` denylist; credential-canary test (R22)
 - [x] Secrets: path scheme `relayd/{env}/ws/{workspaceId}/conn/{connectionId}`; in-memory cache ≤ 5 min; audit row per fetch
-- [ ] **Per-connection webhook ingest** in `apps/edge`: `POST /ingest/v1/{provider}/{endpointToken}`; token → connection; signature verified with that connection's secret; persist to inbox; return 200 < 200 ms; unmatched events stored, never applied (R4)
+- [x] **Per-connection webhook ingest** in `apps/edge`: `POST /ingest/v1/{provider}/{endpointToken}`; token → connection; signature verified with that connection's secret; persist to inbox; return 200 < 200 ms; unmatched events stored, never applied (R4)
 - [ ] API: connect / verify / rotate / disconnect per provider; sender CRUD; identity verification status; test-send; endpoint URL shown once per connection
 - [ ] `provider-verify` recurring job (via `scheduled_jobs`, Phase 5 — stub the schedule now)
 - [ ] Frontend: `/providers` connection cards with health, per-provider credential forms, `/senders` with verification status and daily-limit display, SMTP labelled **best-effort** (D4)

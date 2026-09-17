@@ -515,6 +515,39 @@ never quotes the provider, which is the reconstruction R22 actually asks for.
 It matters for the unclassified fallback, which does quote the original
 because an unclassifiable failure is otherwise undiagnosable.
 
+### 2026-09-18 — edge imports @relayd/email-providers/webhooks, which CLAUDE.md §6.3 appears to forbid
+
+**This one needs the owner's confirmation.** It is implemented, it is narrow,
+and it is trivially reversible.
+
+CLAUDE.md §6.3 says `edge` "depends on `packages/queue`, `packages/db`
+(read-mostly) and `packages/utils` only", and the edge isolation test listed
+`@relayd/email-providers` as forbidden. The reason is sound: `edge` is public,
+unauthenticated and unpredictable in volume, and it must not inherit the
+sending machinery's cold start or blast radius.
+
+INVARIANTS R4 says the signature on an inbound provider event is verified with
+that connection's own secret *at the ingest endpoint* — and the ingest
+endpoint is in `edge`. That cannot be deferred to a worker: an endpoint that
+enqueues before verifying accepts whatever anyone posts to it, and the queue
+becomes the amplifier for exactly the attack F4 describes.
+
+INVARIANTS outranks CLAUDE.md (CLAUDE.md §1), so R4 wins where they conflict.
+But they need not conflict. `@relayd/email-providers/webhooks` is a subpath
+containing only verification and parsing: everything reachable from it is
+node:crypto and JSON. `apps/edge/test/isolation.test.ts` now allows that exact
+specifier — never the package root — and a second test walks the subpath's
+transitive imports and fails if any provider SDK becomes reachable from it. So
+`edge` still does not carry the AWS SDK or nodemailer, which is what the rule
+was protecting.
+
+Both tests were negative-controlled: importing the root, adding an SDK import
+to the subpath, and adding one transitively all fail.
+
+**If the owner prefers the rule as written**, the alternative is a separate
+package holding the two pure functions, at the cost of one more workspace
+entry. Nothing else changes.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

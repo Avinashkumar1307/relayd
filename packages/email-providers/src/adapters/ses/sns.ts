@@ -1,4 +1,5 @@
-import { createVerify } from 'node:crypto';
+import { createHash, createVerify } from 'node:crypto';
+import type { NormalisedEmailEvent } from '../../port.js';
 
 /**
  * SNS message signature verification.
@@ -146,4 +147,135 @@ export function verifySnsSignature(raw: Buffer, certificatePem: string): boolean
   } catch {
     return false;
   }
+}
+
+/**
+ * Unwraps an SNS envelope and normalises the SES notification inside it.
+ *
+ * SES posts JSON inside a JSON string inside the SNS envelope, which is why
+ * this parses twice.
+ */
+export function parseSnsNotification(raw: Buffer): NormalisedEmailEvent[] {
+  let envelope: { Type?: string; Message?: string; MessageId?: string };
+
+  try {
+    envelope = JSON.parse(raw.toString('utf8')) as typeof envelope;
+  } catch {
+    return [];
+  }
+
+  // A subscription confirmation is not an event. It is handled by the ingest
+  // route, which must fetch the SubscribeURL; returning [] here keeps it out
+  // of the event stream.
+  if (envelope.Type === 'SubscriptionConfirmation') return [];
+  if (typeof envelope.Message !== 'string') return [];
+
+  let notification: SesNotification;
+  try {
+    notification = JSON.parse(envelope.Message) as SesNotification;
+  } catch {
+    return [];
+  }
+
+  const messageId = notification.mail?.messageId;
+  const fallbackId = envelope.MessageId ?? hashOf(envelope.Message);
+
+  const at = (value: string | undefined): Date => {
+    const parsed = value === undefined ? Number.NaN : Date.parse(value);
+    return Number.isNaN(parsed) ? new Date() : new Date(parsed);
+  };
+
+  const base = (recipient: string, suffix: string): Pick<
+    NormalisedEmailEvent,
+    'providerEventId' | 'recipientEmail' | 'raw'
+  > & { providerMessageId?: string } => ({
+    // Stable across redelivery: the same notification must produce the same
+    // id or the inbox deduplication does nothing.
+    providerEventId: `${messageId ?? fallbackId}:${suffix}:${recipient}`,
+    recipientEmail: recipient,
+    raw: notification,
+    ...(messageId === undefined ? {} : { providerMessageId: messageId }),
+  });
+
+  switch (notification.eventType ?? notification.notificationType) {
+    case 'Bounce': {
+      const bounce = notification.bounce;
+      const bounceClass =
+        bounce?.bounceType === 'Permanent' ? 'hard' : bounce?.bounceType === 'Transient' ? 'soft' : 'block';
+
+      return (bounce?.bouncedRecipients ?? []).map((recipient) => ({
+        ...base(recipient.emailAddress, 'bounce'),
+        type: 'bounce' as const,
+        bounceClass,
+        occurredAt: at(bounce?.timestamp),
+      }));
+    }
+
+    case 'Complaint': {
+      const complaint = notification.complaint;
+      return (complaint?.complainedRecipients ?? []).map((recipient) => ({
+        ...base(recipient.emailAddress, 'complaint'),
+        type: 'complaint' as const,
+        occurredAt: at(complaint?.timestamp),
+      }));
+    }
+
+    case 'Delivery': {
+      const delivery = notification.delivery;
+      return (delivery?.recipients ?? []).map((recipient) => ({
+        ...base(recipient, 'delivery'),
+        type: 'delivered' as const,
+        occurredAt: at(delivery?.timestamp),
+      }));
+    }
+
+    case 'Open': {
+      const recipients = notification.mail?.destination ?? [];
+      return recipients.map((recipient) => ({
+        ...base(recipient, 'open'),
+        type: 'open' as const,
+        occurredAt: at(notification.open?.timestamp),
+      }));
+    }
+
+    case 'Click': {
+      const recipients = notification.mail?.destination ?? [];
+      return recipients.map((recipient) => ({
+        ...base(recipient, 'click'),
+        type: 'click' as const,
+        occurredAt: at(notification.click?.timestamp),
+      }));
+    }
+
+    case 'Reject': {
+      const recipients = notification.mail?.destination ?? [];
+      return recipients.map((recipient) => ({
+        ...base(recipient, 'reject'),
+        type: 'reject' as const,
+        occurredAt: at(notification.mail?.timestamp),
+      }));
+    }
+
+    default:
+      return [];
+  }
+}
+
+function hashOf(text: string): string {
+  return createHash('sha256').update(text).digest('hex').slice(0, 32);
+}
+
+interface SesNotification {
+  eventType?: string;
+  notificationType?: string;
+  mail?: { messageId?: string; timestamp?: string; destination?: string[] };
+  bounce?: {
+    bounceType?: string;
+    timestamp?: string;
+    bouncedRecipients?: { emailAddress: string }[];
+  };
+  complaint?: { timestamp?: string; complainedRecipients?: { emailAddress: string }[] };
+  delivery?: { timestamp?: string; recipients?: string[] };
+  open?: { timestamp?: string };
+  click?: { timestamp?: string };
 }
