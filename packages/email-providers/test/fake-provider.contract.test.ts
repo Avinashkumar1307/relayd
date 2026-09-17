@@ -70,6 +70,23 @@ describe('fake provider', () => {
         headers: { 'x-fake-signature': signFakeWebhook(WEBHOOK_BODY, SECRET) },
         secret: SECRET,
         expectedEvents: 2,
+        invalid: [
+          {
+            label: 'a byte appended after signing',
+            body: Buffer.concat([WEBHOOK_BODY, Buffer.from(' ')]),
+            headers: { 'x-fake-signature': signFakeWebhook(WEBHOOK_BODY, SECRET) },
+          },
+          {
+            label: 'no signature header at all',
+            body: WEBHOOK_BODY,
+            headers: {},
+          },
+          {
+            label: 'a signature from another connection',
+            body: WEBHOOK_BODY,
+            headers: { 'x-fake-signature': signFakeWebhook(WEBHOOK_BODY, 'someone-elses-secret') },
+          },
+        ],
       },
     };
   });

@@ -50,6 +50,16 @@ export interface ContractHarness {
     secret: string;
     /** How many events `body` should parse into. */
     expectedEvents: number;
+    /**
+     * Variants that must be rejected, each named.
+     *
+     * Supplied by the adapter because only it knows what tampering means for
+     * its scheme. A header-signed scheme over raw bytes and SNS — which signs
+     * a canonical subset of fields inside the body — are broken in different
+     * ways, and a contract that assumed either one would be asserting nothing
+     * against the other.
+     */
+    invalid: { label: string; body: Buffer; headers: Record<string, string> }[];
   };
 }
 
@@ -311,21 +321,20 @@ export function runProviderContract(makeHarness: () => ContractHarness | Promise
       });
     });
 
-    it('rejects a tampered body', async () => {
+    it('rejects every variant the adapter says is invalid', async () => {
       await withHarness(async ({ adapter, webhook }) => {
         if (webhook === undefined) return;
 
-        const tampered = Buffer.concat([webhook.body, Buffer.from(' ')]);
-        expect(adapter.verifyWebhookSignature(tampered, webhook.headers, webhook.secret)).toBe(
-          false,
-        );
-      });
-    });
+        // At least tampering and a missing signature, or the adapter is not
+        // really being asked anything.
+        expect(webhook.invalid.length).toBeGreaterThanOrEqual(2);
 
-    it('rejects a missing signature rather than defaulting to trust', async () => {
-      await withHarness(async ({ adapter, webhook }) => {
-        if (webhook === undefined) return;
-        expect(adapter.verifyWebhookSignature(webhook.body, {}, webhook.secret)).toBe(false);
+        for (const variant of webhook.invalid) {
+          expect(
+            adapter.verifyWebhookSignature(variant.body, variant.headers, webhook.secret),
+            variant.label,
+          ).toBe(false);
+        }
       });
     });
 

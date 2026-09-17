@@ -17,6 +17,11 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "devDependencies": {
-    "@types/node": "^22.7.5"
+    "@types/node": "^22.7.5",
+    "@types/nodemailer": "^6.4.16"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.670.0",
+    "nodemailer": "^6.9.15"
   }
 }
