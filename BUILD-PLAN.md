@@ -11,7 +11,7 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 **Read first:** `CLAUDE.md`, `docs/13-repo-and-coding-standards.md`, `docs/01-architecture.md`, `docs/10-infrastructure.md`
 **Invariants:** R33
 
-- [ ] pnpm workspace + Turborepo; `apps/{web,api,edge,worker,scheduler}` and every `packages/*` scaffolded as empty, typechecking packages
+- [x] pnpm workspace + Turborepo; `apps/{web,api,edge,worker,scheduler}` and every `packages/*` scaffolded as empty, typechecking packages
 - [ ] Root `tsconfig.base.json` with the strict settings from `docs/13`; branded id types in `packages/types`
 - [ ] `packages/config`: Zod-parsed env, fails fast on missing vars; the only `process.env` reader
 - [ ] `packages/logger`: Pino, redaction paths, `AsyncLocalStorage` trace context, request-id propagation
