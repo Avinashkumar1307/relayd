@@ -16,3 +16,4 @@ apps/web/dist/
 *.log
 npm-debug.log*
 pnpm-debug.log*
+.vitest-results.json

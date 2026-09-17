@@ -56,6 +56,12 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    env:
+      # GitHub sets CI already. It is stated here because the integration
+      # suite's behaviour hangs off it: with CI set, an unreachable Docker
+      # daemon throws instead of skipping, so this must not depend on a
+      # runner default staying what it is today.
+      CI: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -64,10 +70,24 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # `pnpm test` builds first: the workspace packages resolve through their
-      # dist entry points, so tests exercise what actually ships. Integration
-      # tests use Testcontainers against the Docker daemon on the runner.
-      - run: pnpm test
+
+      # The workspace packages resolve through their dist entry points, so
+      # tests exercise what actually ships rather than src.
+      - name: Build workspace packages
+        run: pnpm turbo run build
+
+      # This is `pnpm test` with an extra JSON reporter, so the next step can
+      # inspect what actually ran. Testcontainers uses the runner's daemon.
+      - name: Unit and integration tests
+        run: pnpm exec vitest run --reporter=default --reporter=json --outputFile=.vitest-results.json
+
+      # The suite policing itself is not enough. If the CI guard regressed, or
+      # a file stopped matching the naming convention, or someone added .skip,
+      # the job above would go green having tested nothing — a skipped
+      # integration suite looks exactly like a passing one in every signal CI
+      # produces. This checks from outside and fails the job on any skip.
+      - name: Integration tests must have run, not skipped
+        run: node scripts/assert-integration-ran.mjs .vitest-results.json
 
   build:
     name: build
