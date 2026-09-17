@@ -10,3 +10,10 @@ export {
 export type { SegmentNode } from './segments/ast.js';
 export { compileSegment, compilePreviewCount } from './segments/compile.js';
 export type { CompiledSegment } from './segments/compile.js';
+export {
+  looksLikeFormula,
+  neutraliseCell,
+  formatCell,
+  formatRow,
+  toCsvLines,
+} from './export/csv.js';
