@@ -37,3 +37,23 @@ export { createFakeProvider, signFakeWebhook } from './testing/fake-provider.js'
 export type { FakeProvider, FakeProviderScript } from './testing/fake-provider.js';
 export { runProviderContract, outboundMessage } from './testing/contract.js';
 export type { ContractHarness } from './testing/contract.js';
+
+export {
+  CredentialCache,
+  credentialPath,
+  workspacePrefix,
+  parseCredentials,
+  MAX_CACHE_MS,
+} from './secrets.js';
+export type {
+  SecretReader,
+  SecretWriter,
+  CredentialAudit,
+  CredentialCacheOptions,
+  CredentialRequest,
+} from './secrets.js';
+
+export { createSesAdapter } from './adapters/ses/index.js';
+export { isAmazonCertificateUrl, verifySnsSignature } from './adapters/ses/sns.js';
+export { createSmtpAdapter } from './adapters/smtp/index.js';
+export { createSendgridAdapter } from './adapters/sendgrid/index.js';
