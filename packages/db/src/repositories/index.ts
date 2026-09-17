@@ -36,3 +36,26 @@ export {
   GlobalInvitationRepository,
 } from './global/cross-tenant-lookups.js';
 export type { MembershipSummary, PendingInvitation } from './global/cross-tenant-lookups.js';
+
+// --- audience (Phase 2) ---
+export { ContactRepository } from './contacts.js';
+export type {
+  ContactRow,
+  CreateContactInput,
+  ContactPage,
+  ContactStatus,
+  ContactSource,
+  ConsentStatus,
+} from './contacts.js';
+
+export { ContactListRepository, TagRepository } from './contact-lists.js';
+export type { ListRow, TagRow } from './contact-lists.js';
+
+export { SegmentRepository } from './segments.js';
+export type { SegmentRow, CompiledPreview } from './segments.js';
+
+export { SuppressionRepository } from './suppressions.js';
+export type { SuppressionRow, SuppressionReason } from './suppressions.js';
+
+export { ImportJobRepository, MAX_STORED_ROW_ERRORS } from './import-jobs.js';
+export type { ImportJobRow, ImportStatus, RowError } from './import-jobs.js';
