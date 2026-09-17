@@ -13,6 +13,7 @@
     "@relayd/audience": "workspace:^",
     "@relayd/config": "workspace:^",
     "@relayd/db": "workspace:^",
+    "@relayd/email-providers": "workspace:^",
     "@relayd/logger": "workspace:^",
     "@relayd/queue": "workspace:^",
     "@relayd/types": "workspace:^",

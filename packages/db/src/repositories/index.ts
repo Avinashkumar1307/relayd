@@ -62,3 +62,12 @@ export type { ImportJobRow, ImportStatus, RowError } from './import-jobs.js';
 
 export { ContactImportRepository } from './contact-import.js';
 export type { ImportRow, MergeResult, MergeOptions } from './contact-import.js';
+
+export { ProviderConnectionRepository } from './providers.js';
+export type { ProviderConnectionRow } from './providers.js';
+export { SenderIdentityRepository, SenderAccountRepository } from './senders.js';
+export type { SenderIdentityRow, SenderAccountRow } from './senders.js';
+export { WebhookEventRepository } from './webhook-events.js';
+export type { WebhookEventRow } from './webhook-events.js';
+export { GlobalEndpointTokenRepository } from './global/endpoint-tokens.js';
+export type { EndpointResolution } from './global/endpoint-tokens.js';

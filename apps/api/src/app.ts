@@ -11,6 +11,7 @@ import {
 } from './routes/workspaces.js';
 import { requestContext } from './middleware/authorize.js';
 import { audienceRoutes, type AudienceRouterOptions } from './routes/audience.js';
+import { providerRoutes, type ProviderRouterOptions } from './routes/providers.js';
 
 /**
  * Express 5, with the guard rails docs/01 asks for: thin route handlers, one
@@ -32,6 +33,7 @@ export interface AppDependencies extends HealthDependencies {
   /** Absent in probe-only tests and in any process without a database. */
   workspaces?: WorkspaceRouterOptions;
   audience?: AudienceRouterOptions;
+  providers?: ProviderRouterOptions;
 }
 
 export function createApp(deps: AppDependencies): Express {
@@ -59,6 +61,10 @@ export function createApp(deps: AppDependencies): Express {
 
   if (deps.audience !== undefined) {
     app.use('/api/v1', audienceRoutes(deps.audience));
+  }
+
+  if (deps.providers !== undefined) {
+    app.use('/api/v1', providerRoutes(deps.providers));
   }
 
   app.use(notFoundHandler);

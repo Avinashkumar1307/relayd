@@ -32,3 +32,18 @@ export type {
   CreateImportRequest,
   ImportMappingRequest,
 } from './audience.js';
+export {
+  providerTypeSchema,
+  providerCredentialsSchema,
+  connectProviderSchema,
+  rotateCredentialsSchema,
+  renameConnectionSchema,
+  createSenderSchema,
+  updateSenderSchema,
+  testSendSchema,
+} from './providers.js';
+export type {
+  ConnectProviderRequest,
+  CreateSenderRequest,
+  TestSendRequest,
+} from './providers.js';

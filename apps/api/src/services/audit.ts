@@ -83,3 +83,12 @@ export const AUDIT_ACTIONS_AUDIENCE = {
   suppressionRemoved: 'suppression.removed',
   importStarted: 'import.started',
 } as const;
+
+export const AUDIT_ACTIONS_PROVIDERS = {
+  connected: 'provider.connected',
+  rotated: 'provider.credential_rotated',
+  disconnected: 'provider.disconnected',
+  senderCreated: 'sender.created',
+  senderRemoved: 'sender.removed',
+  testSent: 'sender.test_sent',
+} as const;

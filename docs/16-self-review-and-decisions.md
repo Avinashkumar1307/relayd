@@ -548,6 +548,37 @@ to the subpath, and adding one transitively all fail.
 package holding the two pure functions, at the cost of one more workspace
 entry. Nothing else changes.
 
+### 2026-09-18 — a test send is a job, not an API action
+
+BUILD-PLAN Phase 3 item 8 lists "test-send" among the API endpoints. The API
+cannot perform one.
+
+docs/06 gives the API task role permission to *write* secrets and not to read
+them; only the worker role reads, and that is the whole point — "a compromised
+API container therefore cannot exfiltrate customer sending credentials"
+(docs/07). So the API has no way to obtain the credential a test send would
+need.
+
+`POST /senders/:id/test` therefore validates everything it can — the sender
+exists and is active, its connection is usable, its identity is still verified
+— and enqueues. The consumer lands with the send path in Phase 6. Until the
+queue is wired the endpoint answers 503 with a plain message rather than
+pretending.
+
+The alternative, asking the customer to re-enter credentials to test, defeats
+the reason the split exists.
+
+### 2026-09-18 — the ingest URL is returned exactly once
+
+An endpoint token is a bearer credential for writing events into a workspace
+(F4). `POST /providers` returns the full ingest URL; no other route returns it,
+and `ProviderConnectionRow` does not carry it, so a list response cannot leak
+one by a future field being added and not stripped.
+
+Losing it means rotating the connection. That is the correct trade: a token
+that can be re-read is a token that leaks through every logging, screenshot
+and support path that ever touches a connection page.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

@@ -15,6 +15,7 @@
     { "path": "../../packages/queue" },
     { "path": "../../packages/utils" },
     { "path": "../../packages/validation" },
-    { "path": "../../packages/audience" }
+    { "path": "../../packages/audience" },
+    { "path": "../../packages/email-providers" }
   ]
 }

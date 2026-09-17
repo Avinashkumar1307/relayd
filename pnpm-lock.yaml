@@ -77,6 +77,9 @@ importers:
       '@relayd/db':
         specifier: workspace:^
         version: link:../../packages/db
+      '@relayd/email-providers':
+        specifier: workspace:^
+        version: link:../../packages/email-providers
       '@relayd/logger':
         specifier: workspace:^
         version: link:../../packages/logger
