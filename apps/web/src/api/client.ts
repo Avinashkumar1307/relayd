@@ -153,12 +153,27 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
 }
 
 /**
+ * The response envelope from docs/03.
+ *
+ * `meta` carries pagination. It is separated from `data` deliberately: a
+ * cursor is not part of the resource, and folding it in would mean every
+ * caller had to know which of its fields the server invented.
+ */
+export interface Envelope<T> {
+  data: T;
+  meta?: { hasMore?: boolean; nextCursor?: string };
+}
+
+/**
  * Performs a request, refreshing once on a 401 and retrying.
  *
  * Exactly once: if the retry also 401s, the session is genuinely gone and
  * looping would turn an expired login into an infinite request storm.
  */
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function apiRequestEnvelope<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Envelope<T>> {
   let response = await send(path, options);
 
   if (response.status === 401 && !path.startsWith('/auth/')) {
@@ -168,10 +183,15 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   if (!response.ok) throw await toApiError(response);
-  if (response.status === 204) return undefined as T;
+  if (response.status === 204) return { data: undefined as T };
 
-  const body = (await response.json()) as { data: T };
-  return body.data;
+  return (await response.json()) as Envelope<T>;
+}
+
+/** The common case: the resource itself, with `meta` discarded. */
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const envelope = await apiRequestEnvelope<T>(path, options);
+  return envelope.data;
 }
 
 export const api = {

@@ -496,6 +496,64 @@ export class AudienceService {
     });
   }
 
+  /**
+   * Stores the column mapping and readies the job for the importer.
+   *
+   * The consent declaration is mandatory and lands in `options`, where the
+   * consumer copies it onto every contact the import creates. docs/02: it is
+   * what lets a workspace be defended when a provider asks, and what lets one
+   * that lied be suspended.
+   */
+  async setImportMapping(
+    scope: WorkspaceScope,
+    id: ImportJobId,
+    input: {
+      mapping: Record<string, string>;
+      options: {
+        updateExisting: boolean;
+        addToListIds: string[];
+        tagIds: string[];
+        consentDeclaration: string;
+      };
+    },
+  ) {
+    return this.options.unitOfWork(async (repos) => {
+      const job = await repos.imports.findById(scope, id);
+      if (job === null) throw new AppError('not_found', 'Import not found', 404);
+
+      const mapped = Object.values(input.mapping);
+      if (!mapped.includes('email')) {
+        throw new AppError(
+          'validation_failed',
+          'One column must be mapped to the email field',
+          422,
+        );
+      }
+
+      const accepted = await repos.imports.setMapping(scope, id, input.mapping, input.options);
+      if (!accepted) {
+        // Already validating, processing or finished. Re-mapping a running
+        // import would change what it is doing halfway through the file.
+        throw new AppError(
+          'conflict',
+          `This import is ${job.status} and its mapping can no longer be changed`,
+          409,
+        );
+      }
+
+      await this.audit(repos, scope, {
+        action: AUDIT_ACTIONS_AUDIENCE.importStarted,
+        resourceType: 'import_job',
+        resourceId: id,
+        after: { mappedColumns: Object.keys(input.mapping).length },
+      });
+
+      const updated = await repos.imports.findById(scope, id);
+      if (updated === null) throw new AppError('not_found', 'Import not found', 404);
+      return updated;
+    });
+  }
+
   async cancelImport(scope: WorkspaceScope, id: ImportJobId): Promise<void> {
     await this.options.unitOfWork(async (repos) => {
       const cancelled = await repos.imports.transition(

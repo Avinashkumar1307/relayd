@@ -1,4 +1,4 @@
-import { Link, Navigate, Outlet, Route, Routes } from 'react-router';
+import { Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router';
 import { useAuth } from './auth/AuthProvider.js';
 import { RequireAnonymous, RequireAuth } from './auth/guards.js';
 import {
@@ -9,10 +9,13 @@ import {
   VerifyEmailPage,
 } from './routes/auth-pages.js';
 import { TeamSettingsPage, WorkspaceSettingsPage } from './routes/settings-pages.js';
+import { ContactsPage } from './routes/audience/contacts.js';
+import { ListsPage, SuppressionsPage, TagsPage } from './routes/audience/collections.js';
+import { ImportsPage } from './routes/audience/imports.js';
 
 /**
- * Phase 1 routes only: authentication and workspace settings. Audience,
- * campaigns, analytics and billing arrive with the phases that own them.
+ * Phases 1 and 2: authentication, workspace settings and audience. Campaigns,
+ * analytics and billing arrive with the phases that own them.
  */
 export function App() {
   return (
@@ -44,11 +47,18 @@ export function App() {
           </RequireAuth>
         }
       >
+        <Route path="/audience/contacts" element={<ContactsPage />} />
+        <Route path="/audience/lists" element={<ListsPage />} />
+        <Route path="/audience/tags" element={<TagsPage />} />
+        <Route path="/audience/imports" element={<ImportsPage />} />
+        <Route path="/audience/suppressions" element={<SuppressionsPage />} />
+
         <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
         <Route path="/settings/team" element={<TeamSettingsPage />} />
       </Route>
 
-      <Route path="/" element={<Navigate to="/settings/workspace" replace />} />
+      <Route path="/" element={<Navigate to="/audience/contacts" replace />} />
+      <Route path="/audience" element={<Navigate to="/audience/contacts" replace />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
@@ -65,7 +75,7 @@ function AppShell() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-6 py-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-3">
           <div className="flex items-center gap-4">
             <span className="text-sm font-semibold text-slate-900">Relayd</span>
 
@@ -92,13 +102,19 @@ function AppShell() {
             )}
           </div>
 
-          <nav className="flex items-center gap-4 text-sm">
-            <Link to="/settings/workspace" className="text-slate-600 hover:text-slate-900">
-              Workspace
-            </Link>
-            <Link to="/settings/team" className="text-slate-600 hover:text-slate-900">
-              Team
-            </Link>
+          <nav className="flex flex-wrap items-center gap-4 text-sm">
+            <NavLink to="/audience/contacts">Contacts</NavLink>
+            <NavLink to="/audience/lists">Lists</NavLink>
+            <NavLink to="/audience/tags">Tags</NavLink>
+            <NavLink to="/audience/imports">Imports</NavLink>
+            <NavLink to="/audience/suppressions">Suppressions</NavLink>
+
+            <span aria-hidden="true" className="text-slate-300">
+              |
+            </span>
+
+            <NavLink to="/settings/workspace">Workspace</NavLink>
+            <NavLink to="/settings/team">Team</NavLink>
             <button
               type="button"
               onClick={() => void logout()}
@@ -112,6 +128,27 @@ function AppShell() {
 
       <Outlet />
     </div>
+  );
+}
+
+/**
+ * A navigation link that marks the current page.
+ *
+ * aria-current is what tells a screen reader which one is active; the colour
+ * alone tells it nothing.
+ */
+function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const active = pathname === to;
+
+  return (
+    <Link
+      to={to}
+      aria-current={active ? 'page' : undefined}
+      className={active ? 'font-medium text-slate-900' : 'text-slate-600 hover:text-slate-900'}
+    >
+      {children}
+    </Link>
   );
 }
 

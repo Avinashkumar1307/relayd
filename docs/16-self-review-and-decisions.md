@@ -360,6 +360,41 @@ silent — an unescaped tab does not error, it shifts every later column — so 
 is the part worth proving early. The statements themselves are checked the
 first time the runner meets the database.
 
+### 2026-09-17 — @relayd/audience needs a browser entry point
+
+The import and export helpers are shared between the API, the worker and the
+web app deliberately: the column-mapping form must offer exactly the columns
+the importer will find — same BOM handling, same quoting rules — and the
+failed-row download must be neutralised by the same code that neutralises an
+export. Reimplementing either in the web app is how the two drift apart.
+
+The package root cannot be imported by a bundler, because it re-exports the
+xlsx reader, which needs `node:fs`, `zlib` and a zip library. Vite does not
+fail on these; it externalises them and ships stubs that throw when the code
+runs, which is worse than a build error. `@relayd/audience/browser` exports
+only the pure modules, and the root is unchanged for Node consumers.
+
+### 2026-09-17 — the mapping step reads headers in the browser, except for xlsx
+
+BUILD-PLAN Phase 2 item 6 requires a column-mapping step. For csv and tsv the
+first 64 KB of the chosen file is parsed in the browser with the importer's own
+parser, so the columns offered are the columns it will find.
+
+An xlsx cannot be read there for the reason above, so the form asks for the
+headings to be typed. The alternative — a second spreadsheet reader written
+against browser APIs — is a large amount of security-sensitive code duplicated
+for a form. A server-side header preview would be better and belongs with the
+worker in Phase 5, when there is a queue to run it on.
+
+### 2026-09-17 — POST /audience/imports/:id/mapping was missing
+
+`importMappingSchema` existed in `packages/validation` from Phase 2 item 2 but
+no route used it, so a created import had nowhere to send its column mapping
+and `import_jobs.column_mapping` was never written. Added with item 6, which
+is the first thing that needed it: the repository method is guarded on status
+like every other transition, because re-mapping an import that is already
+processing would change what it is doing halfway through the file.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

@@ -19,6 +19,7 @@ export interface ImportJobRow {
   originalFilename: string;
   fileType: 'csv' | 'tsv' | 'xlsx';
   status: ImportStatus;
+  columnMapping: Record<string, string> | null;
   totalRows: number | null;
   processedRows: number;
   createdCount: number;
@@ -110,6 +111,34 @@ export class ImportJobRepository {
    * that started before the cancellation landed. The caller exits cleanly on
    * false (CLAUDE.md section 9: "zero rows means exit cleanly").
    */
+  /**
+   * Records the column mapping and moves the job to `mapping`.
+   *
+   * Guarded on the current status like every other transition: a mapping
+   * submitted twice, or submitted for a job already processing, must not
+   * change what a running import is doing halfway through the file.
+   */
+  async setMapping(
+    scope: WorkspaceScope,
+    id: ImportJobId,
+    mapping: Record<string, string>,
+    options: Record<string, unknown>,
+  ): Promise<boolean> {
+    const rows = await this.db
+      .update(importJobs)
+      .set({ columnMapping: mapping, options, status: 'mapping' })
+      .where(
+        and(
+          eq(importJobs.id, id),
+          eq(importJobs.workspaceId, scope.workspaceId),
+          sql`${importJobs.status} = ANY(${sql.param(['pending', 'mapping'])})`,
+        ),
+      )
+      .returning({ id: importJobs.id });
+
+    return rows.length > 0;
+  }
+
   async transition(
     scope: WorkspaceScope,
     id: ImportJobId,
@@ -236,6 +265,7 @@ function toRow(row: typeof importJobs.$inferSelect): ImportJobRow {
     originalFilename: row.originalFilename,
     fileType: row.fileType,
     status: row.status,
+    columnMapping: (row.columnMapping as Record<string, string> | null) ?? null,
     totalRows: row.totalRows,
     processedRows: row.processedRows,
     createdCount: row.createdCount,

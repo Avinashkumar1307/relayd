@@ -13,6 +13,7 @@ import {
   bulkTagSchema,
   createContactSchema,
   createImportSchema,
+  importMappingSchema,
   createListSchema,
   createSegmentSchema,
   createSuppressionSchema,
@@ -349,6 +350,22 @@ export function audienceRoutes(options: AudienceRouterOptions): Router {
     );
     res.json({ data: errors });
   });
+
+  router.post(
+    '/imports/:id/mapping',
+    ...chain,
+    runImport,
+    validateBody(importMappingSchema),
+    async (req: Request, res: Response) => {
+      const job = await audience.setImportMapping(
+        requireScope(),
+        req.params['id'] as ImportJobId,
+        req.body as Parameters<AudienceService['setImportMapping']>[2],
+      );
+
+      res.json({ data: job });
+    },
+  );
 
   router.post('/imports/:id/cancel', ...chain, runImport, async (req: Request, res: Response) => {
     await audience.cancelImport(requireScope(), req.params['id'] as ImportJobId);

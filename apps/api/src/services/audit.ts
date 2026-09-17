@@ -81,4 +81,5 @@ export const AUDIT_ACTIONS_AUDIENCE = {
   listDeleted: 'list.deleted',
   suppressionAdded: 'suppression.added',
   suppressionRemoved: 'suppression.removed',
+  importStarted: 'import.started',
 } as const;
