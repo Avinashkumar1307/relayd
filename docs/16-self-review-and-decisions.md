@@ -168,4 +168,41 @@ Once those are settled, I would start with phase 0 and phase 1 together, deliver
 
 ---
 
+# 27. Implementation decision log
+
+Dated record of every point where implementation departed from this document or
+from `INVARIANTS.md`, and why. Added as the phases run.
+
+## 2026-09-17 — R36 broadened to cover `set_config(..., false)`
+
+**Changed:** the R36 row in `INVARIANTS.md`.
+
+R36 originally read "`SET LOCAL app.workspace_id` only; a bare `SET
+app.workspace_id` never appears", with a grep over `packages/**` and `apps/**`
+as its proving test.
+
+Phase 0 implemented scope setting as `set_config('app.workspace_id', $1, true)`
+rather than the literal `SET LOCAL` statement, because `SET LOCAL` is a utility
+statement that accepts no bind parameters and the literal form would require
+interpolating a workspace id into SQL text. The third argument `true` means
+`is_local`, so the semantics are identical.
+
+That creates a hole the original rule cannot see. `set_config('app.workspace_id',
+x, false)` is exactly the banned session-scoped write, and a grep for `SET` will
+never match it. Under PgBouncer transaction pooling either form outlives the
+transaction and is inherited by whichever tenant borrows the connection next —
+which is the cross-tenant read R36 exists to prevent.
+
+R36 now names both forbidden forms and names `packages/db/src/scope.ts` as the
+only file permitted to write the setting at all. The proving test enforces all
+three claims and is itself tested against known-bad and known-good fixtures,
+because a scanner that matches nothing is indistinguishable from one that works.
+
+Approved by the owner before the change. The correction belongs in
+`INVARIANTS.md` rather than only here, since `INVARIANTS.md` is the highest
+authority in `CLAUDE.md` section 1 and a rule that is wrong there is wrong
+everywhere.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

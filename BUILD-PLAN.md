@@ -58,7 +58,7 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 - [ ] Two Postgres roles: `relayd_app` (RLS enforced) and `relayd_global` (BYPASSRLS); RLS policies on every tenant table using `current_setting('app.workspace_id', true)`
 - [ ] Repository layer: every method takes `WorkspaceScope` first; `packages/db/repositories/global/` for the named cross-tenant exceptions
 - [ ] CI reflection test enumerating all repository methods and asserting the scope parameter
-- [ ] Grep test: no bare `SET app.workspace_id`
+- [x] Grep test: no bare `SET app.workspace_id` (broadened to `set_config(..., false)` and to a single owning file — see INVARIANTS R36)
 - [ ] Auth: register, verify email, login (Argon2id), refresh (rotating), logout, password reset; session listing and revocation
 - [ ] Workspace CRUD, invitations (create, accept, revoke), member role change, four preset roles and the full permission matrix from `docs/06` (`campaign:launch` ≠ `campaign:write`; `billing:write` owner-only)
 - [ ] Authorization middleware: non-member → 404; member without permission → 403
