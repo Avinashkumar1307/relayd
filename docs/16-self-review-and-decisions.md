@@ -203,6 +203,58 @@ Approved by the owner before the change. The correction belongs in
 authority in `CLAUDE.md` section 1 and a rule that is wrong there is wrong
 everywhere.
 
+## 2026-09-17 — audit_logs partitioning, where docs/02 is silent
+
+**Decided in the absence of guidance, in migration `0002_identity.sql`.**
+
+`docs/02` declares `audit_logs ... PARTITION BY RANGE (occurred_at)` and then
+defines no partitions. A range-partitioned table with no partitions rejects
+every insert, so audit logging would fail on its first write. Something had to
+be chosen.
+
+Chosen: **monthly** partitions, seeded for 2026-09 through 2026-11, plus a
+`DEFAULT` partition.
+
+Monthly, because `docs/02` specifies weekly-to-daily only for `email_events`,
+which is a per-recipient event stream; audit rows are per mutating action and
+are orders of magnitude fewer.
+
+The `DEFAULT` partition is the arguable half. With it, an audit write can never
+fail a user's request because maintenance lapsed. Against it, rows that land in
+`DEFAULT` block attaching the monthly partition covering the same range until
+they are drained. Availability of the write path was judged more important than
+tidiness of maintenance, since an audit row is written inside the same
+transaction as the action it records.
+
+Ongoing partition creation belongs to the `scheduler`, which does not exist
+until Phase 5. The seeded partitions run out on **2026-12-01**. Until then the
+`DEFAULT` partition absorbs everything, so nothing breaks, but the drain cost
+grows.
+
+Reversible without cost while the tables are empty. Revisit at Phase 5 when the
+scheduler can create partitions ahead, as it will for `email_events` (R25).
+
+## 2026-09-17 — drizzle-kit output moved out of migrations/
+
+**Changed:** `packages/db/drizzle.config.ts`, and drizzle-kit 0.28 to 0.31.
+
+`docs/01` describes the workflow as "drizzle-kit generate produces the SQL, a
+human edits it, it is committed as an immutable numbered file". The config
+pointed drizzle-kit's `out` at `packages/db/migrations/`, which is the
+authoritative directory the runner reads.
+
+That does not work. drizzle-kit writes files named like
+`0000_great_imperial_guard.sql` and a `meta/` journal. The migration runner
+rejected exactly that file for having no `-- ROLLBACK:` comment, and its
+sequence numbering collides with the hand-written series. Generated output now
+goes to `packages/db/drizzle-generated/`, which is git-ignored, and a human
+copies from it into a numbered migration — which is what docs/01 describes.
+
+drizzle-kit was also upgraded 0.28 to 0.31. 0.28 resolves modules as CommonJS
+and cannot map the `.js` specifiers that `NodeNext` requires TypeScript sources
+to write, so `pnpm db:generate` broke as soon as one schema file imported
+another. Same tool, same locked ORM decision; a version bump only.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

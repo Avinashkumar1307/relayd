@@ -9,6 +9,6 @@ import { defineConfig } from 'drizzle-kit';
 export default defineConfig({
   dialect: 'postgresql',
   schema: './src/schema/index.ts',
-  out: './migrations',
+  out: './drizzle-generated',
   casing: 'snake_case',
 });

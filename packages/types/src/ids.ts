@@ -14,3 +14,8 @@ export type WorkspaceId = Brand<string, 'WorkspaceId'>;
 export type UserId = Brand<string, 'UserId'>;
 export type CampaignId = Brand<string, 'CampaignId'>;
 export type RecipientId = Brand<string, 'RecipientId'>;
+
+// Phase 1 identity tables.
+export type SessionId = Brand<string, 'SessionId'>;
+export type WorkspaceMemberId = Brand<string, 'WorkspaceMemberId'>;
+export type WorkspaceInvitationId = Brand<string, 'WorkspaceInvitationId'>;
