@@ -3,6 +3,12 @@ import pg from 'pg';
 
 export type Database = NodePgDatabase<Record<string, never>>;
 
+/**
+ * Re-exported so that api, edge and worker can hold a pool without taking a
+ * direct dependency on the driver. Only packages/db knows we use node-postgres.
+ */
+export type DatabasePool = pg.Pool;
+
 export interface CreatePoolOptions {
   connectionString: string;
   /** Upper bound on connections held by this process. */
@@ -35,4 +41,15 @@ export function createPool(options: CreatePoolOptions): pg.Pool {
 
 export function createDatabase(pool: pg.Pool): Database {
   return drizzle(pool);
+}
+
+/**
+ * Liveness of the database from this process's pool, for the /ready probe.
+ *
+ * Deliberately not part of /health: docs/10 is explicit that if /health
+ * checked Postgres and Postgres hiccuped, the load balancer would drain every
+ * task at once and turn a ten-second blip into a full outage.
+ */
+export async function pingDatabase(pool: pg.Pool): Promise<void> {
+  await pool.query('SELECT 1');
 }
