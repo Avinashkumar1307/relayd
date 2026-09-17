@@ -12,7 +12,7 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 **Invariants:** R33
 
 - [x] pnpm workspace + Turborepo; `apps/{web,api,edge,worker,scheduler}` and every `packages/*` scaffolded as empty, typechecking packages
-- [ ] Root `tsconfig.base.json` with the strict settings from `docs/13`; branded id types in `packages/types`
+- [x] Root `tsconfig.base.json` with the strict settings from `docs/13`; branded id types in `packages/types`
 - [ ] `packages/config`: Zod-parsed env, fails fast on missing vars; the only `process.env` reader
 - [ ] `packages/logger`: Pino, redaction paths, `AsyncLocalStorage` trace context, request-id propagation
 - [ ] `packages/eslint-plugin-relayd` with the five custom rules from `CLAUDE.md` §7, wired as errors

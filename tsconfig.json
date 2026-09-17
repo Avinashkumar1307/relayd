@@ -1,0 +1,24 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/analytics" },
+    { "path": "./packages/audience" },
+    { "path": "./packages/billing" },
+    { "path": "./packages/campaigns" },
+    { "path": "./packages/config" },
+    { "path": "./packages/db" },
+    { "path": "./packages/email-providers" },
+    { "path": "./packages/logger" },
+    { "path": "./packages/notifications" },
+    { "path": "./packages/queue" },
+    { "path": "./packages/testing" },
+    { "path": "./packages/types" },
+    { "path": "./packages/utils" },
+    { "path": "./packages/validation" },
+    { "path": "./apps/api" },
+    { "path": "./apps/edge" },
+    { "path": "./apps/scheduler" },
+    { "path": "./apps/web" },
+    { "path": "./apps/worker" }
+  ]
+}
