@@ -1,3 +1,12 @@
-// @relayd/audience — contacts, segments, import parsing
-// Scaffolded in Phase 0. Implementation lands in the phase that owns this package.
-export {};
+// @relayd/audience — contacts, segments, import parsing.
+export {
+  parseSegmentAst,
+  measure,
+  segmentNodeSchema,
+  SegmentAstError,
+  MAX_DEPTH,
+  MAX_NODES,
+} from './segments/ast.js';
+export type { SegmentNode } from './segments/ast.js';
+export { compileSegment, compilePreviewCount } from './segments/compile.js';
+export type { CompiledSegment } from './segments/compile.js';
