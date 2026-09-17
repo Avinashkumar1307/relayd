@@ -16,3 +16,10 @@ export {
   SCOPE_OWNER,
 } from './workspace-scope-scan.js';
 export type { ScopeViolation, ViolationKind } from './workspace-scope-scan.js';
+export {
+  scanRepositories,
+  scanRepositorySource,
+  REPOSITORY_DIRS,
+  REQUIRED_SCOPE_TYPE,
+} from './repository-scope-scan.js';
+export type { RepositoryMethod, RepositoryScan } from './repository-scope-scan.js';
