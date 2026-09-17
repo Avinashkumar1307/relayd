@@ -19,7 +19,7 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 - [x] `packages/db`: Drizzle configured for Postgres, migration runner, `uuidv7()` helper, `WorkspaceScope` branded type and `scoped(db, scope)` helper that issues `SET LOCAL app.workspace_id`
 - [x] Throwaway migration `0001_init.sql` proving the runner works in staging
 - [x] `apps/api`: Express 5 skeleton, error envelope middleware, request-id middleware, `/health` (dependency-free) and `/ready` (checks Postgres and Redis)
-- [ ] `apps/edge`: Express skeleton with the same health endpoints and **no** import from `apps/api`
+- [x] `apps/edge`: Express skeleton with the same health endpoints and **no** import from `apps/api`
 - [ ] `apps/worker`: BullMQ connection factory, graceful-shutdown harness (drain in-flight jobs on SIGTERM), five empty entrypoints
 - [ ] `apps/scheduler`: process skeleton with direct (non-pooled) Postgres connection
 - [ ] `apps/web`: Vite + React + Tailwind + React Router + TanStack Query provider, empty shell

@@ -7,5 +7,17 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@relayd/config": "workspace:^",
+    "@relayd/db": "workspace:^",
+    "@relayd/logger": "workspace:^",
+    "@relayd/queue": "workspace:^",
+    "@relayd/types": "workspace:^",
+    "express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.7.5"
   }
 }
