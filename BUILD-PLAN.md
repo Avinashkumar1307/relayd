@@ -39,6 +39,7 @@ Estimates assume 3–4 engineers; they are a shape, not a promise. The gates are
 **Read first:** `docs/02-database.md` §3 (identity tables), `docs/06-security-and-tracking.md` §15, `docs/03-api.md`
 **Invariants:** R20, R36
 
+- [ ] commitlint + husky enforcing Conventional Commits (`docs/13` § Git says "enforced by commitlint"; nothing enforces it yet). Add lint-staged in the same commit so the five custom rules reject at `git commit`, not only in CI
 - [ ] Tables: `users`, `sessions`, `workspaces`, `workspace_members`, `workspace_invitations`, `audit_logs` (DDL in `docs/02`)
 - [ ] Two Postgres roles: `relayd_app` (RLS enforced) and `relayd_global` (BYPASSRLS); RLS policies on every tenant table using `current_setting('app.workspace_id', true)`
 - [ ] Repository layer: every method takes `WorkspaceScope` first; `packages/db/repositories/global/` for the named cross-tenant exceptions
