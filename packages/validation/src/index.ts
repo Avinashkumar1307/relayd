@@ -10,3 +10,25 @@ export {
   resetPasswordSchema,
 } from './auth.js';
 export type { RegisterRequest, LoginRequest, ResetPasswordRequest } from './auth.js';
+export {
+  contactAttributesSchema,
+  consentSchema,
+  createContactSchema,
+  updateContactSchema,
+  listContactsQuerySchema,
+  bulkTagSchema,
+  listMembershipSchema,
+  createListSchema,
+  createTagSchema,
+  createSegmentSchema,
+  createSuppressionSchema,
+  bulkSuppressionSchema,
+  createImportSchema,
+  importMappingSchema,
+} from './audience.js';
+export type {
+  CreateContactRequest,
+  UpdateContactRequest,
+  CreateImportRequest,
+  ImportMappingRequest,
+} from './audience.js';

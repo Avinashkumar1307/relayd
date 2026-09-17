@@ -14,6 +14,7 @@
     { "path": "../../packages/db" },
     { "path": "../../packages/queue" },
     { "path": "../../packages/utils" },
-    { "path": "../../packages/validation" }
+    { "path": "../../packages/validation" },
+    { "path": "../../packages/audience" }
   ]
 }

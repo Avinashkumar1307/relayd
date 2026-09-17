@@ -10,6 +10,7 @@
     "dev": "tsx watch src/index.ts"
   },
   "dependencies": {
+    "@relayd/audience": "workspace:^",
     "@relayd/config": "workspace:^",
     "@relayd/db": "workspace:^",
     "@relayd/logger": "workspace:^",

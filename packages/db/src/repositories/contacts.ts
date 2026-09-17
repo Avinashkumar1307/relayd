@@ -167,7 +167,14 @@ export class ContactRepository {
   /** Newest first, keyset-paginated. */
   async list(
     scope: WorkspaceScope,
-    options: { limit?: number; cursor?: string; status?: ContactStatus } = {},
+    // Explicit `| undefined`: callers pass parsed query objects whose
+    // optional fields carry undefined, which exactOptionalPropertyTypes
+    // otherwise refuses.
+    options: {
+      limit?: number | undefined;
+      cursor?: string | undefined;
+      status?: ContactStatus | undefined;
+    } = {},
   ): Promise<ContactPage> {
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
     const cursor = options.cursor === undefined ? null : decodeCursor(options.cursor);
@@ -355,7 +362,7 @@ export class ContactRepository {
    */
   async *stream(
     scope: WorkspaceScope,
-    options: { batchSize?: number; status?: ContactStatus } = {},
+    options: { batchSize?: number | undefined; status?: ContactStatus | undefined } = {},
   ): AsyncGenerator<ContactRow> {
     const batchSize = Math.min(Math.max(options.batchSize ?? 500, 1), 2_000);
     let cursor: string | undefined;

@@ -69,3 +69,16 @@ export const AUDIT_ACTIONS = {
   invitationRevoked: 'invitation.revoked',
   invitationAccepted: 'invitation.accepted',
 } as const;
+
+/** Phase 2 audience actions. */
+export const AUDIT_ACTIONS_AUDIENCE = {
+  contactCreated: 'contact.created',
+  contactUpdated: 'contact.updated',
+  contactDeleted: 'contact.deleted',
+  contactsTagged: 'contact.tagged',
+  contactsUntagged: 'contact.untagged',
+  listCreated: 'list.created',
+  listDeleted: 'list.deleted',
+  suppressionAdded: 'suppression.added',
+  suppressionRemoved: 'suppression.removed',
+} as const;

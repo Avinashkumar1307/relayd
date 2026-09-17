@@ -68,6 +68,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@relayd/audience':
+        specifier: workspace:^
+        version: link:../../packages/audience
       '@relayd/config':
         specifier: workspace:^
         version: link:../../packages/config
