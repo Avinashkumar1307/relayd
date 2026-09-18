@@ -196,7 +196,7 @@ Tests
 - [x] Partition maintenance job for `email_events` (R25)
 - [x] API: campaign, link, provider, device analytics; workspace overview; CSV export; every rate response includes `botFiltered`
 - [x] Frontend: `/dashboard`, `/campaigns/:id/analytics` (Recharts), link heat table; **click rate is the headline**, open rate labelled approximate
-- [ ] Tests: rollup vs raw reconciliation within 0.1% over a seeded 10M-event set; partition boundaries; late-arriving events; timezone buckets
+- [ ] Tests: rollup vs raw reconciliation within 0.1% over a seeded 10M-event set (**blocked: needs Postgres**); partition boundaries ✅; late-arriving events ✅; timezone buckets ✅ — see `packages/analytics/test/buckets.test.ts` and `partitions.test.ts`
 
 **Gate:** Incremental and hourly rollups agree within 0.1%; dashboard labels opens as approximate; bot traffic excluded and reported.
 

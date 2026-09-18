@@ -34,3 +34,5 @@ export {
   PARTITIONED_TABLES,
 } from './rollup/partitions.js';
 export type { PartitionPort, PartitionResult, PartitionedTable } from './rollup/partitions.js';
+
+export { dayBucket, willBeCounted, backfillWindowFor, daysInWindow } from './rollup/buckets.js';
