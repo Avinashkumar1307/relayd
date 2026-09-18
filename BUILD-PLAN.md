@@ -215,7 +215,7 @@ The gate before external signups open.
 - [ ] Webhook path in `apps/edge`: verify → inbox insert → 200 fast → mark dirty (R17); `billing-refetch` coalesced consumer; `billing-webhook` failed jobs never discarded
 - [x] Entitlements projection + rebuild command; entitlement checks server-side, `FOR SHARE` at launch (R28 — replace the Phase 6 stub)
 - [x] Metering wired to the Phase 6 ledger; `usage_aggregates` with watermark (R15)
-- [ ] Plan change: upgrade immediate with proration (modify the existing subscription, never a second row); downgrade scheduled to period end with pre-check `422 plan_downgrade_blocked` listing over-limit features; cancel at period end; cancel immediately
+- [x] Plan change: upgrade immediate with proration (modify the existing subscription, never a second row); downgrade scheduled to period end with pre-check `422 plan_downgrade_blocked` listing over-limit features; cancel at period end; cancel immediately
 - [ ] Dunning ladder in `billing-processing`: past_due (0–14 d) → restricted (15–30 d, launch blocked, scheduled campaigns `held`) → suspended (31–90 d) → export offered → hard delete after three notices
 - [ ] `billing-reconcile` nightly job + divergence metric (R19)
 - [ ] API: checkout session, portal session, subscription read, plan-change pre-check, upgrade, downgrade, cancel, invoices, usage, webhook endpoint

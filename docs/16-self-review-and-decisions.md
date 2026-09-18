@@ -1486,4 +1486,34 @@ reads an empty range. Which is R15: three runs, one set of totals.
 
 ---
 
+### 2026-09-19 - a scheduled downgrade is named for what it is
+
+`docs/05-billing.md` calls the scheduled-downgrade columns `pending_plan_id`
+and `pending_effective_at`. Migration 0013 calls them `scheduled_plan_code`
+and `scheduled_change_at`, and the code follows the migration.
+
+Two reasons, and the first is not cosmetic: the column holds a plan *code*,
+because `plans` is keyed by code and there is no plan id to point at, so
+`pending_plan_id` would name a column after a key that does not exist.
+The second is that `scheduled_` matches `scheduled_jobs` and reads as the
+thing the scheduler acts on, which is exactly what it is.
+
+The behaviour docs/05 describes is unchanged: a downgrade is stored rather
+than applied, and the scheduler reconciles daily if the effective date has
+passed and the provider has not applied it.
+
+---
+
+### 2026-09-19 - annual to monthly is a downgrade in commitment
+
+docs/05's plan-change matrix covers monthly to annual on the same plan ("an
+upgrade in commitment": immediate, prorated) and says nothing about the
+reverse.
+
+We make it wait for period end and issue no credit, which is the same rule as
+any other downgrade and for the same reason: the customer has already paid for
+the year, and applying the change now means quietly stopping honouring it.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

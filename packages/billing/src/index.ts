@@ -86,3 +86,22 @@ export type { Decision, DenialCode, Grant, WorkspaceBillingState } from './entit
 
 export { rebuildEntitlements, rebuildMany } from './entitlements/rebuild.js';
 export type { RebuildPort, RebuildResult, RebuildAllResult } from './entitlements/rebuild.js';
+
+export {
+  classifyChange,
+  planChangeEffect,
+  precheckDowngrade,
+  changePlan,
+  cancelSubscription,
+} from './plans/change.js';
+export type {
+  ChangeDirection,
+  PlanChangeEffect,
+  PlanChangePort,
+  ChangeResult,
+  ChangeFailure,
+  CancelResult,
+  DowngradeConflict,
+  PrecheckResult,
+  Interval,
+} from './plans/change.js';
