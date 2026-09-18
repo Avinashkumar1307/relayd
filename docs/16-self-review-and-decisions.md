@@ -878,4 +878,41 @@ anything.
 
 ---
 
+### 2026-09-18 - campaigns is not given a dependency on email-providers
+
+`retry-failed` has to know which error codes are retryable, and ERROR_POLICY
+already says. The obvious move is to import it - and `packages/campaigns` has
+no dependency on `packages/email-providers`, deliberately: the engine is
+expressed against ports and the worker is what wires them together. Adding the
+edge for one lookup would trade that for a convenience.
+
+So `manuallyRetryable` takes the policy as a parameter, and the test uses a
+local copy of the `retryable` column. A copy is a drift risk, so the real
+table is pinned at its own source instead: `errors.test.ts` now asserts the
+exact set of retryable kinds. Flipping `content_rejected` to retryable fails
+there, loudly, rather than silently disagreeing with a fixture in another
+package. Both halves are negative-controlled.
+
+The test-only alternative - a devDependency from campaigns to email-providers
+- was rejected for the same reason: a dependency that exists only for tests
+still appears in the graph, and the next person to read it will believe the
+runtime edge is allowed.
+
+---
+
+### 2026-09-18 - Retry-After is honoured but still capped
+
+docs/04 gives the automatic retry an exponential backoff from 2s capped at
+5 minutes. It does not say what to do when the provider sends its own
+`Retry-After`. The provider's value wins - it knows when its rate window
+resets and we are guessing - but it is capped at the same 5 minutes.
+
+An uncapped `Retry-After` is not honourable here even when the provider means
+it. A row deferred for six hours is reclaimed by `recipient-sweeper` long
+before it elapses, so honouring the request literally would produce a delayed
+job for a recipient that has already been re-dispatched. Capping keeps the
+retry inside the window the rest of the machinery agrees on.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

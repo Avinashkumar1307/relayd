@@ -55,3 +55,15 @@ export type {
   SweepResult,
   TransientState,
 } from './engine/sweeper.js';
+
+export {
+  retryDelayMs,
+  planRetry,
+  manuallyRetryable,
+  retryFailedRecipients,
+  MAX_SEND_ATTEMPTS,
+  RETRY_BASE_MS,
+  RETRY_MAX_MS,
+  RETRY_RESET_COLUMNS,
+} from './engine/retry.js';
+export type { RetryDecision, RetryFailedPort, RetryFailedResult } from './engine/retry.js';

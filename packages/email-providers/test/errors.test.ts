@@ -187,6 +187,27 @@ describe('the policy table is the single source of truth', () => {
     expect(ERROR_POLICY.timeout.suppress).toBe(false);
   });
 
+  it('pins the exact set of retryable kinds', () => {
+    // `retry-failed` in packages/campaigns decides what it may reset from this
+    // column, and that package deliberately has no dependency on this one — it
+    // is given the policy at the call site. So this assertion is the join:
+    // flipping a kind here without meaning to shows up as a failure here,
+    // rather than as a campaign that silently starts retrying rejected
+    // content eighteen months from now.
+    const retryable = Object.entries(ERROR_POLICY)
+      .filter(([, policy]) => policy.retryable)
+      .map(([kind]) => kind)
+      .sort();
+
+    expect(retryable).toEqual([
+      'provider_unavailable',
+      'quota_exceeded',
+      'rate_limited',
+      'timeout',
+      'unknown',
+    ]);
+  });
+
   it('never marks a permanent failure retryable', () => {
     for (const kind of ['invalid_recipient', 'content_rejected', 'message_too_large'] as const) {
       expect(ERROR_POLICY[kind].retryable, kind).toBe(false);

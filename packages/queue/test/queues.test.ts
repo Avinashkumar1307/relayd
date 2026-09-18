@@ -233,3 +233,37 @@ describe('no BullMQ repeatable jobs anywhere (R23)', () => {
     expect(REPEAT.test('// repeatable jobs are banned')).toBe(true);
   });
 });
+
+describe('retry is a delayed job, not a queue', () => {
+  it('has no retry queue', () => {
+    // BUILD-PLAN Phase 6: "Retry as delayed jobs on `email-send` (not a
+    // separate consumer)". A second queue would be a second code path to the
+    // provider, and R1's guarded claim, R30's suppression re-check and the
+    // limiter inside sendWithLimits would all have to be remembered again in
+    // it. They would not be.
+    const retryQueues = QUEUE_NAMES.filter((name) => /retry|redeliver|requeue/iu.test(name));
+    expect(retryQueues).toEqual([]);
+  });
+
+  it('gives email-send the attempts and backoff that carry the retries', () => {
+    // The retries live here or nowhere.
+    const settings = QUEUE_SETTINGS['email-send'];
+
+    expect(settings.attempts).toBe(5);
+    expect(settings.backoff).toEqual({
+      type: 'exponential',
+      delay: 2000,
+      maxDelay: 5 * 60_000,
+    });
+  });
+
+  it('keeps every queue’s attempts bounded', () => {
+    // An unbounded retry is a poison message that never reaches the dead
+    // letter table.
+    for (const name of QUEUE_NAMES) {
+      const settings = QUEUE_SETTINGS[name];
+      expect(settings.attempts, name).toBeGreaterThan(0);
+      expect(settings.attempts, name).toBeLessThanOrEqual(10);
+    }
+  });
+});
