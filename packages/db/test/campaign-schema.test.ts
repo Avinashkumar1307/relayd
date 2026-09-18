@@ -116,6 +116,22 @@ describe('the delivery lattice (F16)', () => {
     expect(DELIVERY_RANK.queued).toBe(0);
   });
 
+  it('is pinned exactly, because packages/campaigns carries its own copy', () => {
+    // `packages/campaigns` has no dependency on this package — the engine is
+    // expressed against ports — so its `events.ts` repeats this table. The
+    // two cannot be made to share one definition without an edge that does
+    // not otherwise exist, so instead both are pinned to the same literal and
+    // a change to either fails here or there.
+    expect(DELIVERY_RANK).toEqual({
+      queued: 0,
+      sent: 1,
+      delivered: 2,
+      soft_bounced: 3,
+      hard_bounced: 4,
+      complained: 5,
+    });
+  });
+
   it('has no rank for an engagement event', () => {
     // Opens and clicks are additive and never participate in the lattice.
     expect(Object.keys(DELIVERY_RANK)).not.toContain('open');

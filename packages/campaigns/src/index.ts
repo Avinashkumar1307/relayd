@@ -99,3 +99,21 @@ export type {
   RateGrant,
   SenderSelection,
 } from './engine/routing.js';
+
+export {
+  ingestEvent,
+  dedupeKeyFor,
+  wouldAdvance,
+  isEngagement,
+  isDeliveryState,
+  DELIVERY_RANK,
+  ENGAGEMENT_EVENTS,
+  SUPPRESSING_STATES,
+} from './engine/events.js';
+export type {
+  DeliveryState,
+  EngagementEvent,
+  EventIngestPort,
+  IngestResult,
+  NormalisedEvent,
+} from './engine/events.js';

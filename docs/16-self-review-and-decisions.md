@@ -1042,4 +1042,44 @@ the punctuation one would reach for.
 
 ---
 
+### 2026-09-18 - suppression follows the event, not the lattice
+
+R16 makes delivery state monotonic so a reordered `delivered` cannot overwrite
+a bounce. It does not say what happens to suppression when the lattice refuses
+a transition, and the two are not the same question.
+
+A hard bounce that arrives after a complaint loses the lattice race - rank 4
+against rank 5 - but the address is still dead. Gating suppression on the
+transition having succeeded would mean the contact stays mailable because two
+pieces of bad news arrived in the wrong order.
+
+So the lattice governs what the recipient row displays, and the event itself
+governs whether we may mail that address again. Both are tested, and the
+mutation that gates one on the other is caught.
+
+---
+
+### 2026-09-18 - the dedupe key is length-prefixed, not delimiter-joined
+
+R32 gives the synthetic key as `sha256(connection_id || event_type ||
+message_id || occurred_at)`, leaving the concatenation unspecified. Joining
+with a separator needs a byte that appears in none of the fields, and a
+message id or a clicked URL can contain anything. Joining without one lets two
+different events produce the same key when one field's end runs into the
+next's beginning - and for a delivery event that means a bounce silently
+dropped as a duplicate.
+
+Each field is therefore prefixed with its own length, which makes the encoding
+unambiguous without reserving a byte. With today's field order and UUID
+connection ids a collision is hard to construct, so this is insurance against
+a field order or an id format that changes - and the test shows the exact pair
+that would collide without it.
+
+The first attempt used an ASCII unit separator written as an escape. The
+editor turned it into a real control byte in the source file, the same failure
+that has now happened three times in this build, so the encoding avoids
+needing any separator at all.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

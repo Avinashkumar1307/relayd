@@ -169,7 +169,7 @@ Tracking and ingestion (`apps/edge`)
 - [x] HMAC-signed tracking tokens (`16B message_token || 4B linkIndex || 1B kind` + 10-byte MAC, key-id prefix); open pixel and click redirect resolving URL from `tracked_links` by index
 - [x] One-click unsubscribe **POST only**; GET confirmation page; `List-Unsubscribe` + `List-Unsubscribe-Post` headers on every message (R6)
 - [x] Bot heuristics → `is_bot` (R6); IP hashing with daily rotating salt
-- [ ] `event-ingest` consumer: resolve within connection scope (R4), dedupe key (R32), rank lattice (R16), always write `email_events`, suppression on hard bounce and complaint, `delivery_uncertain` reconciliation on matching message id
+- [x] `event-ingest` consumer: resolve within connection scope (R4), dedupe key (R32), rank lattice (R16), always write `email_events`, suppression on hard bounce and complaint, `delivery_uncertain` reconciliation on matching message id
 
 API and frontend
 - [ ] Campaign CRUD, audience attach with preview count, schedule, launch (`Idempotency-Key`), pause, resume, cancel, clone, retry-failed, `progress` from counters; pool CRUD
