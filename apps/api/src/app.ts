@@ -17,6 +17,7 @@ import { campaignRoutes, type CampaignRouterOptions } from './routes/campaigns.j
 import { poolRoutes, type PoolRouterOptions } from './routes/pools.js';
 import { templateRoutes, type TemplateRouterOptions } from './routes/templates.js';
 import { operatorRoutes, type OperatorRouterOptions } from './routes/operator.js';
+import { billingRoutes, type BillingRouterOptions } from './routes/billing.js';
 
 /**
  * Express 5, with the guard rails docs/01 asks for: thin route handlers, one
@@ -43,6 +44,7 @@ export interface AppDependencies extends HealthDependencies {
   campaigns?: CampaignRouterOptions;
   pools?: PoolRouterOptions;
   analytics?: AnalyticsRouterOptions;
+  billing?: BillingRouterOptions;
   operator?: OperatorRouterOptions;
 }
 
@@ -91,6 +93,10 @@ export function createApp(deps: AppDependencies): Express {
 
   if (deps.templates !== undefined) {
     app.use('/api/v1', templateRoutes(deps.templates));
+  }
+
+  if (deps.billing !== undefined) {
+    app.use('/api/v1', billingRoutes(deps.billing));
   }
 
   // Cross-tenant by nature, and gated by an operator check that denies by

@@ -12,6 +12,7 @@
   "dependencies": {
     "@relayd/analytics": "workspace:^",
     "@relayd/audience": "workspace:^",
+    "@relayd/billing": "workspace:^",
     "@relayd/campaigns": "workspace:^",
     "@relayd/config": "workspace:^",
     "@relayd/db": "workspace:^",
