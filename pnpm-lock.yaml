@@ -71,6 +71,9 @@ importers:
       '@relayd/audience':
         specifier: workspace:^
         version: link:../../packages/audience
+      '@relayd/campaigns':
+        specifier: workspace:^
+        version: link:../../packages/campaigns
       '@relayd/config':
         specifier: workspace:^
         version: link:../../packages/config

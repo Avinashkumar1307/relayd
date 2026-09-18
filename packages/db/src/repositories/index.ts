@@ -71,3 +71,5 @@ export { WebhookEventRepository } from './webhook-events.js';
 export type { WebhookEventRow } from './webhook-events.js';
 export { GlobalEndpointTokenRepository } from './global/endpoint-tokens.js';
 export type { EndpointResolution } from './global/endpoint-tokens.js';
+export { TemplateRepository } from './templates.js';
+export type { TemplateRow, TemplateVersionRow } from './templates.js';

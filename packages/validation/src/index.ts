@@ -47,3 +47,10 @@ export type {
   CreateSenderRequest,
   TestSendRequest,
 } from './providers.js';
+export {
+  createTemplateSchema,
+  saveTemplateVersionSchema,
+  renameTemplateSchema,
+  previewTemplateSchema,
+} from './templates.js';
+export type { CreateTemplateRequest, SaveTemplateVersionRequest } from './templates.js';
