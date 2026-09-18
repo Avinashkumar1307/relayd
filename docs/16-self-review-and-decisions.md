@@ -746,4 +746,36 @@ snapshot fails, and so does comparing before it.
 
 ---
 
+### 2026-09-18 - the dispatcher's in-flight count comes from counters, not the queue
+
+docs/04's dispatch loop reads `sendQueue.countFor(campaignId)`. BullMQ has no
+per-campaign count; getting one means scanning the queue, and the queue is
+transport rather than the system of record. The dispatcher reads
+`queued + sending` from `campaign_counters` instead - the single-row read F13
+introduced for exactly this shape of question.
+
+It also answers correctly in the case that matters. After a crash between the
+claim and the enqueue, rows are `queued` in Postgres and in no queue at all; a
+Redis-derived count would read them as finished and the dispatcher would
+overshoot its window by however many were lost.
+
+One thing the loop gains that docs/04 does not describe: a stall guard. A
+campaign whose in-flight count never falls has stuck rows, and spinning for
+the dispatch job's six-hour timeout holds a worker slot for nothing. After
+`maxStallPolls` consecutive full-window polls it records `dispatch.stalled`
+and exits, leaving the sweeper to clean up and the reconciler to re-dispatch.
+
+---
+
+### 2026-09-18 - the halt flag can only ever stop a campaign
+
+docs/04 says a worker that cannot reach Redis falls back to the database
+check. `dispatchCampaign` enforces that itself rather than trusting each port
+to: `isHalted` throwing is caught and read as "not halted". The asymmetry is
+deliberate and is the whole point - letting a Redis outage pause a customer's
+campaign would make Redis the system of record for whether their campaign
+runs, which is the thing the queue design exists to prevent.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

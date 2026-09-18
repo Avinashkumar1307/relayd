@@ -24,3 +24,18 @@ export type {
   ProviderCall,
   ProviderCallResult,
 } from './engine/send.js';
+
+export {
+  dispatchCampaign,
+  throttleDelay,
+  DISPATCH_WINDOW,
+  DISPATCH_PAGE,
+} from './engine/dispatch.js';
+export type {
+  DispatchPort,
+  DispatchOptions,
+  DispatchResult,
+  DispatchStop,
+  DispatchableCampaign,
+  ClaimedRecipient,
+} from './engine/dispatch.js';
