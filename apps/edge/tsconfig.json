@@ -4,15 +4,34 @@
     "rootDir": "src",
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*"
+  ],
   "references": [
-    { "path": "../../packages/config" },
-    { "path": "../../packages/logger" },
-    { "path": "../../packages/types" },
-    { "path": "../../packages/db" },
-    { "path": "../../packages/queue" },
-    { "path": "../../packages/email-providers" }
+    {
+      "path": "../../packages/config"
+    },
+    {
+      "path": "../../packages/logger"
+    },
+    {
+      "path": "../../packages/types"
+    },
+    {
+      "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/queue"
+    },
+    {
+      "path": "../../packages/email-providers"
+    },
+    {
+      "path": "../../packages/utils"
+    }
   ]
 }

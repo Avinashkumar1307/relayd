@@ -3,6 +3,7 @@ import { errorEnvelope, notFoundHandler } from './middleware/error-envelope.js';
 import { requestId } from './middleware/request-id.js';
 import { healthRoutes, type HealthDependencies } from './routes/health.js';
 import { ingestRoutes, type IngestDependencies } from './routes/ingest.js';
+import { trackingRoutes, type TrackingDependencies } from './routes/tracking.js';
 
 /**
  * The public, unauthenticated surface: tracking pixel, click redirect,
@@ -24,6 +25,12 @@ export interface EdgeDependencies extends HealthDependencies {
    * rather than accepting events it cannot verify.
    */
   ingest?: IngestDependencies;
+
+  /**
+   * Omitted the same way and for the same reason: a process without tracking
+   * keys must 404 the pixel rather than serve one it cannot attribute.
+   */
+  tracking?: TrackingDependencies;
 }
 
 export function createApp(deps: EdgeDependencies): Express {
@@ -38,6 +45,11 @@ export function createApp(deps: EdgeDependencies): Express {
   // Before any JSON parser. Every signature scheme signs the bytes that were
   // sent, and re-serialising parsed JSON changes them (docs/06).
   if (deps.ingest !== undefined) app.use(ingestRoutes(deps.ingest));
+
+  // Also before any body parser. One-click unsubscribe POSTs arrive with a
+  // body the RFC does not define and we do not read, and parsing it would
+  // only create a way to reject a valid unsubscribe.
+  if (deps.tracking !== undefined) app.use(trackingRoutes(deps.tracking));
 
   app.use(notFoundHandler);
   app.use(errorEnvelope(deps.logger));

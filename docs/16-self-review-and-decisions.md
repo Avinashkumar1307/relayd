@@ -990,4 +990,56 @@ the pool.
 
 ---
 
+### 2026-09-18 - the token kind is inside the MAC, and so is the key id
+
+docs/06 gives the token payload as `16B message_token || 4B linkIndex || 1B
+kind` with a 10-byte MAC and a key-id prefix. It does not say whether the key
+id is covered by the MAC. It is, here, and both of those bytes being signed
+matters for a specific reason.
+
+If the kind were unsigned, every recipient would be holding a working
+unsubscribe link for themselves inside their own tracking pixel URL - and a
+prefetching mail client would fire it. If the key id were only a prefix,
+flipping it would point the verifier at a different key without invalidating
+anything it covers.
+
+The kind check after verification is therefore unreachable by forgery, but it
+is not dead: during a rolling deploy, new code can mint a kind an old instance
+does not know, with a perfectly valid MAC. It must refuse cleanly rather than
+read the byte as whatever sorts first. That is what the test covers.
+
+---
+
+### 2026-09-18 - the edge classifies bots from the request only
+
+docs/06 lists seven bot and prefetch signals. Three of them need state the
+edge does not have on the request path: how long after `sent_at` the open
+arrived, whether the source IP is in a scanner range, and whether three links
+were clicked within a second.
+
+Those are applied by the event-ingest consumer, which has the recipient row in
+front of it. The edge applies only what a single request can see - user agent,
+method, Range header - because the request path must not touch Postgres. That
+is what lets one small service absorb a scanner walking every link in a
+mailshot, and it is the same reason the MAC is verified before anything else.
+
+`isPrefetchByTiming` lives in the same module as the request-path rules
+despite running later, so the two halves of one decision stay together.
+
+---
+
+### 2026-09-18 - the IP salt is hashed to a fixed length before the address
+
+`hashIp` originally separated the salt from the address with a NUL byte. The
+editor wrote that escape as a real NUL into the source file, which makes the
+file binary to git - the third time that has happened in this build.
+
+The separator is gone. The salt is reduced to a fixed 32 bytes first, which
+settles the ambiguity it was there for: without it, ("ab", "cde") and
+("abc", "de") hash identically. A fixed-length prefix does that without any
+separator byte at all, which matters because IPv6 addresses contain most of
+the punctuation one would reach for.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

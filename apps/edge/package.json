@@ -16,6 +16,7 @@
     "@relayd/logger": "workspace:^",
     "@relayd/queue": "workspace:^",
     "@relayd/types": "workspace:^",
+    "@relayd/utils": "workspace:^",
     "express": "^5.0.1"
   },
   "devDependencies": {

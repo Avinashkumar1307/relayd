@@ -144,6 +144,9 @@ importers:
       '@relayd/types':
         specifier: workspace:^
         version: link:../../packages/types
+      '@relayd/utils':
+        specifier: workspace:^
+        version: link:../../packages/utils
       express:
         specifier: ^5.0.1
         version: 5.2.1
