@@ -663,6 +663,27 @@ subsequent tick sees, and it would starve every other schedule indefinitely.
 visible without reading logs, and a missed run is one missed run rather than a
 stalled scheduler.
 
+### 2026-09-18 — what an "operator" is, is undecided; the console denies by default
+
+**This one needs the owner.** BUILD-PLAN Phase 5 item 4 requires an
+"operator-scoped" replay endpoint and item 7 an internal operator console. No
+document says what an operator is. There is no `is_operator` column, no staff
+role in the docs/06 permission matrix, and no mention of one in docs/06 §15.
+
+Rather than invent a role and put it in the permission matrix — which is
+transcribed from docs/06 row by row and should stay that way — `isOperator` is
+an injected port on the router, and its default denies everyone. Wired as it
+stands, every operator route answers 404 to every caller.
+
+404 rather than 403, deliberately: a 403 confirms the console exists to anyone
+who probes for it, which is the same reasoning as answering 404 for another
+workspace's resources (CLAUDE.md §11).
+
+The three plausible answers, for the owner to pick: a column on `users`; an
+allowlist of user ids in configuration; or a separate authentication path
+entirely (a VPN-only route, or an admin app). The third is the strongest and
+the most work. Until one is chosen, the console is inert rather than open.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

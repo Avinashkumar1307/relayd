@@ -13,6 +13,7 @@ import { requestContext } from './middleware/authorize.js';
 import { audienceRoutes, type AudienceRouterOptions } from './routes/audience.js';
 import { providerRoutes, type ProviderRouterOptions } from './routes/providers.js';
 import { templateRoutes, type TemplateRouterOptions } from './routes/templates.js';
+import { operatorRoutes, type OperatorRouterOptions } from './routes/operator.js';
 
 /**
  * Express 5, with the guard rails docs/01 asks for: thin route handlers, one
@@ -36,6 +37,7 @@ export interface AppDependencies extends HealthDependencies {
   audience?: AudienceRouterOptions;
   providers?: ProviderRouterOptions;
   templates?: TemplateRouterOptions;
+  operator?: OperatorRouterOptions;
 }
 
 export function createApp(deps: AppDependencies): Express {
@@ -71,6 +73,12 @@ export function createApp(deps: AppDependencies): Express {
 
   if (deps.templates !== undefined) {
     app.use('/api/v1', templateRoutes(deps.templates));
+  }
+
+  // Cross-tenant by nature, and gated by an operator check that denies by
+  // default rather than by a workspace permission.
+  if (deps.operator !== undefined) {
+    app.use('/api/v1', operatorRoutes(deps.operator));
   }
 
   app.use(notFoundHandler);

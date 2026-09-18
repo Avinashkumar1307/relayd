@@ -73,3 +73,7 @@ export { GlobalEndpointTokenRepository } from './global/endpoint-tokens.js';
 export type { EndpointResolution } from './global/endpoint-tokens.js';
 export { TemplateRepository } from './templates.js';
 export type { TemplateRow, TemplateVersionRow } from './templates.js';
+export { GlobalDeadLetterRepository } from './global/dead-letters.js';
+export type { DeadLetterRow } from './global/dead-letters.js';
+export { GlobalScheduledJobRepository } from './global/scheduled-jobs.js';
+export type { ScheduledJobRow } from './global/scheduled-jobs.js';
