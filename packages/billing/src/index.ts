@@ -105,3 +105,18 @@ export type {
   PrecheckResult,
   Interval,
 } from './plans/change.js';
+
+export {
+  dunningStage,
+  capabilitiesFor,
+  dueNotices,
+  mayDelete,
+  advanceDunning,
+  GRACE_DAYS,
+  SUSPEND_DAY,
+  EXPORT_DAY,
+  DELETE_DAY,
+  REQUIRED_DELETION_NOTICES,
+  NOTICE_DAYS,
+} from './dunning/ladder.js';
+export type { DunningStage, Capabilities, DunningPort, DunningOutcome } from './dunning/ladder.js';

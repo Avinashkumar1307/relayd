@@ -1516,4 +1516,22 @@ the year, and applying the change now means quietly stopping honouring it.
 
 ---
 
+### 2026-09-19 - there is no free plan to fall back to
+
+`docs/05-billing.md` says a cancellation or a suspension "rebuilds
+entitlements from the free plan", and the capability table describes what a
+free-tier workspace may still do. Under D7 there is no free tier, so there is
+nothing to fall back to.
+
+Entitlements rebuild to *no rows*. The workspace keeps its data, keeps reading
+it, keeps its provider connections and its analytics history, and cannot send.
+`projectEntitlements` already draws that distinction deliberately: no rows is
+"not entitled", which is recoverable by subscribing, and a row saying zero
+would look like a plan.
+
+If the owner later adds a free tier (D7 lists the terms), the projection gains
+a default plan and nothing else in the ladder changes.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
