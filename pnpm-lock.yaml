@@ -68,6 +68,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@relayd/analytics':
+        specifier: workspace:^
+        version: link:../../packages/analytics
       '@relayd/audience':
         specifier: workspace:^
         version: link:../../packages/audience

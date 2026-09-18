@@ -1269,4 +1269,52 @@ rule like this erode. The correction lives in 0012's header instead.
 
 ---
 
+### 2026-09-19 - the CSV export neutralises formulas
+
+Nothing in the documents mentions it, and it is the one place in this product
+where a contact's own text reaches a spreadsheet as potentially executable
+content. A field beginning `=`, `+`, `-` or `@` is a formula to Excel, Numbers
+and Sheets alike, so a contact who names themselves `=cmd|' /c calc'!A1` has
+handed script execution to whoever opens the export.
+
+Prefixed with an apostrophe, which every spreadsheet reads as "this is text"
+and which survives a round trip through all three. The export also sets
+`X-Content-Type-Options: nosniff`, because without it a browser may decide a
+CSV whose first cell looks like markup is HTML and render it from our origin.
+
+The ordinary CSV rules are here too - quote a field containing a comma, a
+quote or a newline; double the quotes inside it; CRLF line endings - because
+those are what every hand-rolled CSV gets wrong and a library would be a
+dependency for forty lines.
+
+---
+
+### 2026-09-19 - analytics ranges are capped at 400 days
+
+docs/08 does not bound the range an analytics query may ask for. Unbounded is
+fine against `campaign_daily_stats` today and is a table scan in three years,
+and the endpoint that becomes slow is the dashboard everyone leaves open.
+
+Four hundred days rather than 365: a customer comparing this year with last
+needs a range slightly longer than a year, and refusing that by fifteen days
+would be the kind of limit that generates support tickets rather than
+protecting anything.
+
+---
+
+### 2026-09-19 - `botFiltered` is derived, not stored
+
+Every rate carries how many events the bot filter removed. That number is the
+difference between two columns already on `campaign_stats`, and storing it as
+a third would give it a way to disagree with them - the two counts are written
+by the same rollup pass, and a stored difference would be written by the same
+pass and then drift on the next partial write.
+
+It is floored at zero per term rather than on the sum. The two columns are
+written by two passes and a brief moment where the non-bot count is higher is
+not impossible; flooring the sum would let a large genuine open filter mask a
+negative click one and still look plausible.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
