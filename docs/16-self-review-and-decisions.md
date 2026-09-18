@@ -1137,4 +1137,53 @@ weakens it, and the guard stops catching the thing it was written for.
 
 ---
 
+### 2026-09-18 - the wizard's pre-flight is a convenience, not an authority
+
+The review step runs the same checks `launchCampaign` runs. It is deliberately
+not the guard: the audience can change between the review step rendering and
+the author clicking send, so the server re-checks every one of them inside the
+launch transaction. What the client copy buys is telling the author on the
+step that can fix it, which the server's single error message cannot do.
+
+Two consequences worth stating. Its `senderVerified` is allowed to be
+`null` - unknown, rather than bad - because claiming a sender is unverified on
+no evidence sends the author to fix something that is not broken. And its
+warnings never block: some suppression in an audience is normal and healthy,
+and refusing to send because any exists would make the product unusable within
+a month of launch.
+
+Every step stays reachable at all times. A wizard that locks step five until
+steps one to four are perfect is a wizard people fight - authors jump to the
+content step first and fill in the name later, which is a reasonable way to
+work. The nav marks which steps still have a blocking problem instead.
+
+---
+
+### 2026-09-18 - the Idempotency-Key is minted once per review step
+
+F29's browser half. The key is created when the review step mounts, not when
+the send button is clicked - a key minted inside the click handler is a new
+key on every attempt, which is exactly the same as having none. A double click
+or a retry after a flaky connection then sends the same key and receives the
+first request's result rather than a 409 it cannot tell from a real conflict.
+
+`crypto.randomUUID` rather than a counter: a guessable key lets one
+workspace's retry collide with another workspace's first attempt.
+
+---
+
+### 2026-09-18 - the report does not crash on a field it did not get
+
+`Stat` renders an em dash for a missing number rather than calling
+`toLocaleString` on `undefined`. This screen is what a customer watches while
+a campaign sends, and one absent field in one polled response should cost them
+one number rather than the page.
+
+Found because a test stub matched `/campaigns/c1` before
+`/campaigns/c1/progress` and served the wrong object - a stub bug that looked
+exactly like a component bug, and which turned out to be worth fixing on both
+sides.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

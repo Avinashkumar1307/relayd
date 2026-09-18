@@ -173,7 +173,7 @@ Tracking and ingestion (`apps/edge`)
 
 API and frontend
 - [x] Campaign CRUD, audience attach with preview count, schedule, launch (`Idempotency-Key`), pause, resume, cancel, clone, retry-failed, `progress` from counters; pool CRUD
-- [ ] Seven-step wizard, pre-flight checklist on review step, `/campaigns` list with live progress, `/campaigns/:id` detail with recipient-level state, search and `deliveryUncertain` count
+- [x] Seven-step wizard, pre-flight checklist on review step, `/campaigns` list with live progress, `/campaigns/:id` detail with recipient-level state, search and `deliveryUncertain` count
 
 Tests
 - [ ] Every row in `INVARIANTS.md` sections A–C tagged Phase 6, with test paths filled in

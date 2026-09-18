@@ -69,6 +69,17 @@ export interface RequestOptions {
   /** Skip the workspace header on routes that have no workspace. */
   unscoped?: boolean;
   signal?: AbortSignal;
+  /**
+   * Extra request headers — `Idempotency-Key`, in practice.
+   *
+   * Applied *before* the built-in ones, so a caller cannot replace
+   * `authorization` or `x-workspace-id`. Those two decide which tenant's data
+   * a request reads, and a header bag that could overwrite them would be a
+   * way out of the workspace scope from inside the browser.
+   */
+  headers?: Record<string, string>;
+  /** Query parameters. `undefined` values are omitted rather than sent empty. */
+  query?: Record<string, string | number | boolean | undefined>;
 }
 
 let baseUrl = '/api/v1';
@@ -135,7 +146,7 @@ async function toApiError(response: Response): Promise<ApiError> {
 }
 
 async function send(path: string, options: RequestOptions): Promise<Response> {
-  const headers: Record<string, string> = { accept: 'application/json' };
+  const headers: Record<string, string> = { accept: 'application/json', ...options.headers };
 
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (accessToken !== null) headers['authorization'] = `Bearer ${accessToken}`;
@@ -143,13 +154,32 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
     headers['x-workspace-id'] = currentWorkspaceId;
   }
 
-  return fetch(`${baseUrl}${path}`, {
+  return fetch(`${baseUrl}${path}${queryString(options.query)}`, {
     method: options.method ?? 'GET',
     headers,
     credentials: 'include',
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
+}
+
+/**
+ * Serialises query parameters, omitting the ones that were not supplied.
+ *
+ * `undefined` is left out rather than sent as an empty string: an empty
+ * `state` filter and an absent one mean different things to the API, and a
+ * search box the user has cleared should send neither.
+ */
+function queryString(query: RequestOptions['query']): string {
+  if (query === undefined) return '';
+
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== '') params.set(key, String(value));
+  }
+
+  const rendered = params.toString();
+  return rendered === '' ? '' : `?${rendered}`;
 }
 
 /**
@@ -195,8 +225,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 export const api = {
-  get: <T>(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}) =>
-    apiRequest<T>(path, { ...options, method: 'GET' }),
+  get: <T>(
+    path: string,
+    query: RequestOptions['query'] = undefined,
+    options: Omit<RequestOptions, 'method' | 'body' | 'query'> = {},
+  ) => apiRequest<T>(path, { ...options, method: 'GET', ...(query === undefined ? {} : { query }) }),
   post: <T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method'> = {}) =>
     apiRequest<T>(path, { ...options, method: 'POST', body }),
   patch: <T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method'> = {}) =>

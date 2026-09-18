@@ -17,12 +17,17 @@ import {
   TemplateEditorPage,
   TemplatesPage,
 } from './routes/templates/templates.js';
+import {
+  CampaignWizardPage,
+  CampaignsPage,
+  CreateCampaignPage,
+} from './routes/campaigns/campaigns.js';
 import { ProvidersPage } from './routes/providers/providers.js';
 import { SendersPage } from './routes/providers/senders.js';
 
 /**
- * Phases 1 to 4: authentication, workspace settings, audience, provider
- * connections and templates. Campaigns, analytics and billing arrive with the
+ * Phases 1 to 6: authentication, workspace settings, audience, provider
+ * connections, templates and campaigns. Analytics and billing arrive with the
  * phases that own them.
  */
 export function App() {
@@ -64,6 +69,10 @@ export function App() {
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/templates/create" element={<CreateTemplatePage />} />
         <Route path="/templates/:id" element={<TemplateEditorPage />} />
+
+        <Route path="/campaigns" element={<CampaignsPage />} />
+        <Route path="/campaigns/new" element={<CreateCampaignPage />} />
+        <Route path="/campaigns/:id" element={<CampaignWizardPage />} />
 
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/senders" element={<SendersPage />} />
@@ -128,6 +137,7 @@ function AppShell() {
               |
             </span>
 
+            <NavLink to="/campaigns">Campaigns</NavLink>
             <NavLink to="/templates">Templates</NavLink>
             <NavLink to="/providers">Providers</NavLink>
             <NavLink to="/senders">Senders</NavLink>
