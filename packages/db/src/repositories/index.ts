@@ -87,3 +87,5 @@ export { AnalyticsRepository } from './analytics.js';
 export type { CampaignStatsRow, DailyStatsRow, LinkStatsRow } from './analytics.js';
 export { MeteringRepository } from './metering.js';
 export type { UsageAggregateRow, UsageLedgerRow, AggregateKeyInput } from './metering.js';
+export { EntitlementsRepository } from './entitlements.js';
+export type { EntitlementRecord, WorkspaceBillingStateRow } from './entitlements.js';

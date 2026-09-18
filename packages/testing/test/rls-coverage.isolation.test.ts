@@ -36,6 +36,40 @@ const NON_TENANT_TABLES = new Map<string, string>([
     'scheduled_jobs',
     'operator configuration for the whole deployment; read by the scheduler on a direct connection before any workspace exists (R35)',
   ],
+  ['plans', 'the plan catalogue; identical for every workspace, so a policy would have nothing to compare'],
+  ['features', 'the feature catalogue; same reason as plans'],
+  ['plan_features', 'the plan catalogue; same reason as plans'],
+  ['prices', 'the plan catalogue; same reason as plans'],
+  ['coupons', 'mirrors Stripe coupons, which are account-wide rather than per workspace'],
+  [
+    'billing_reconciliation_runs',
+    'a record of what the nightly reconciler did across every workspace; it has no single workspace to be scoped to (R19)',
+  ],
+]);
+
+/**
+ * Tables carrying a NULLABLE `workspace_id` that are deliberately not
+ * tenant-scoped.
+ *
+ * These are the billing ingest tables. A provider event arrives before we
+ * know which workspace it belongs to — that is the whole reason
+ * `workspace_id` is nullable on them — and an RLS policy would discard
+ * exactly the events that most need keeping. They are operator-scoped: only
+ * the allowlisted cross-tenant job types in `packages/queue/global-jobs.ts`
+ * touch them, and no request path does.
+ *
+ * Separate from `NON_TENANT_TABLES` because these tables *have* the column,
+ * so a reader seeing one would otherwise reasonably expect a policy.
+ */
+const OPERATOR_SCOPED_TABLES = new Map<string, string>([
+  [
+    'payment_webhook_events',
+    'the Stripe inbox; an event may arrive before its workspace is known, and refusing it would lose it (R17)',
+  ],
+  [
+    'billing_refetch_queue',
+    'the coalescing queue behind the inbox; one row per Stripe object, which may have no workspace yet (R17)',
+  ],
 ]);
 
 async function allMigrationSql(): Promise<string> {
@@ -74,6 +108,7 @@ describe('RLS coverage', () => {
 
     for (const { name, tenantOwned } of schemaTables()) {
       if (!tenantOwned) continue;
+      if (OPERATOR_SCOPED_TABLES.has(name)) continue;
       if (!sql.includes(`ALTER TABLE ${name} ENABLE ROW LEVEL SECURITY`)) {
         missing.push(`${name}: no ENABLE ROW LEVEL SECURITY`);
       }
@@ -109,6 +144,20 @@ describe('RLS coverage', () => {
         NON_TENANT_TABLES.has(name),
         `${name} has no workspace_id and no documented reason for being cross-tenant`,
       ).toBe(true);
+    }
+  });
+
+  it('exempts a table with a workspace_id only by explicit, documented decision', async () => {
+    // The stricter half. A table that carries the column and has no policy is
+    // the shape a reader assumes is protected, so the exemption has to be
+    // written down rather than inferred from the absence of a policy.
+    const sql = await allMigrationSql();
+
+    for (const name of OPERATOR_SCOPED_TABLES.keys()) {
+      expect(
+        sql.includes(`CREATE POLICY ${name}_tenant ON ${name}`),
+        `${name} is listed as operator-scoped but a migration gives it a tenant policy`,
+      ).toBe(false);
     }
   });
 

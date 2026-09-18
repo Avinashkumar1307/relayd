@@ -84,6 +84,7 @@ const LAUNCH_FAILURE_STATUS: Readonly<Record<string, number>> = {
   no_sender: 422,
   empty_audience: 422,
   entitlement_exceeded: 402,
+  no_entitlement: 402,
   unverified_sender: 422,
   unresolvable_merge_tags: 422,
 };

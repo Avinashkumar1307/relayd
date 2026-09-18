@@ -159,9 +159,10 @@ function service(over: {
             };
           },
           async readEntitlementForShare() {
+            if (failure === 'no_entitlement') return null;
             return failure === 'entitlement_exceeded'
               ? { monthlySendLimit: 10, used: 0 }
-              : null;
+              : { monthlySendLimit: null, used: 0 };
           },
           async senderIsUsable() {
             return failure !== 'unverified_sender';
@@ -400,6 +401,16 @@ describe('launch', () => {
   it('maps an exhausted plan to 402', async () => {
     const { service: s } = service({
       launchResult: { ok: false, failure: 'entitlement_exceeded', message: 'over' },
+    });
+
+    await expect(s.launch(SCOPE, ID)).rejects.toMatchObject({ status: 402 });
+  });
+
+  it('maps a workspace with no subscription to 402', async () => {
+    // D7: no free tier. 402 rather than 403, because the customer fixes this
+    // with money and the frontend renders an upgrade prompt for a 402.
+    const { service: s } = service({
+      launchResult: { ok: false, failure: 'no_entitlement', message: 'no plan' },
     });
 
     await expect(s.launch(SCOPE, ID)).rejects.toMatchObject({ status: 402 });

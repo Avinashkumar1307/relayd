@@ -34,7 +34,9 @@ function port(overrides: Partial<LaunchPort> = {}) {
     },
     async readEntitlementForShare() {
       calls.push('entitlement');
-      return null;
+      // An unlimited plan. Null is now a refusal, not an absence of limits,
+      // so the default here has to be a real entitlement.
+      return { monthlySendLimit: null, used: 0 };
     },
     async senderIsUsable() {
       calls.push('sender');
@@ -171,6 +173,50 @@ describe('the entitlement lock (R28)', () => {
     });
 
     expect((await launchCampaign('c1', p)).ok).toBe(true);
+  });
+
+  it('refuses a workspace with no entitlement at all', async () => {
+    // D7: no free tier. Through Phase 6 a null entitlement meant "no limit
+    // enforced", which was correct only for as long as billing did not
+    // exist — and is a way to send unlimited email for nothing once it does.
+    const { port: p } = port({
+      async readEntitlementForShare() {
+        return null;
+      },
+    });
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.ok).toBe(false);
+    expect(result.failure).toBe('no_entitlement');
+  });
+
+  it('does not snapshot a workspace with no entitlement', async () => {
+    // A snapshot is the expensive half of a launch and there is nothing to
+    // learn from taking one that cannot be sent.
+    const { port: p, calls } = port({
+      async readEntitlementForShare() {
+        return null;
+      },
+    });
+
+    await launchCampaign('c1', p);
+
+    expect(calls).not.toContain('snapshot');
+  });
+
+  it('releases the claim when there is no entitlement', async () => {
+    // Otherwise the campaign is stuck in `validating` until the sweeper
+    // notices, and the customer cannot edit their way out of it.
+    const { port: p, calls } = port({
+      async readEntitlementForShare() {
+        return null;
+      },
+    });
+
+    await launchCampaign('c1', p);
+
+    expect(calls).toContain('release');
   });
 
   it('enforces no limit when there is no entitlement row', async () => {

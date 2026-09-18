@@ -80,3 +80,9 @@ export type {
   ReconcileVerdict,
   ReconcileReport,
 } from './metering/meter.js';
+
+export { canUseFeature, checkUsage, statusForDenial } from './entitlements/gate.js';
+export type { Decision, DenialCode, Grant, WorkspaceBillingState } from './entitlements/gate.js';
+
+export { rebuildEntitlements, rebuildMany } from './entitlements/rebuild.js';
+export type { RebuildPort, RebuildResult, RebuildAllResult } from './entitlements/rebuild.js';

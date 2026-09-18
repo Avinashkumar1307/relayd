@@ -34,6 +34,7 @@ export type LaunchFailure =
   | 'no_sender'
   | 'empty_audience'
   | 'entitlement_exceeded'
+  | 'no_entitlement'
   | 'unverified_sender'
   | 'unresolvable_merge_tags';
 
@@ -54,8 +55,12 @@ export interface LaunchPort {
    *
    * Holding the share lock blocks a concurrent downgrade from committing
    * until this transaction ends, so the limit cannot change underneath the
-   * snapshot. Returning null means no limit is enforced — which is the Phase
-   * 6 stub, until billing arrives in Phase 8.
+   * snapshot.
+   *
+   * Null means the workspace has no entitlement to send at all — no active
+   * subscription, and under D7 there is no free tier — and refuses the
+   * launch. Through Phase 6 this meant the opposite, "no limit enforced",
+   * which was correct only for as long as billing did not exist.
    */
   readEntitlementForShare(workspaceId: string): Promise<{ monthlySendLimit: number | null; used: number } | null>;
 
@@ -163,6 +168,15 @@ export async function launchCampaign(
   //    until this transaction ends, so a downgrade cannot commit in the gap.
   const entitlement = await port.readEntitlementForShare(campaign.workspaceId);
 
+  if (entitlement === null) {
+    // No rows means no active subscription. Refused before the snapshot,
+    // because there is nothing to learn from taking one.
+    return fail(
+      'no_entitlement',
+      'This workspace has no active subscription. Choose a plan to start sending.',
+    );
+  }
+
   // 4. Snapshot. Deduplicated by the unique index, so running twice inserts
   //    nothing the second time.
   const snapshot = await port.snapshotAudience({
@@ -181,7 +195,7 @@ export async function launchCampaign(
 
   // 5. The limit, against the snapshot that was just taken — not against an
   //    estimate made before it.
-  if (entitlement !== null && entitlement.monthlySendLimit !== null) {
+  if (entitlement.monthlySendLimit !== null) {
     const remaining = entitlement.monthlySendLimit - entitlement.used;
 
     if (snapshot.inserted > remaining) {
