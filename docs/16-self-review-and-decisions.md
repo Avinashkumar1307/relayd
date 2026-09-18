@@ -915,4 +915,39 @@ retry inside the window the rest of the machinery agrees on.
 
 ---
 
+### 2026-09-18 - the halt flag is raised before the state moves, and lowered after
+
+docs/04 describes the `campaign:{id}:halt` Redis flag as an optimisation so a
+pause is felt within a batch rather than within a page, and says Postgres is
+the truth. It does not say in which order to write the two.
+
+Stopping raises the flag first and moves the state second. Starting clears the
+flag first and restarts the dispatcher second. Both orders close the same
+window from opposite sides: the reverse would leave workers believing they may
+send after Postgres has said they may not, or restart a dispatcher whose first
+loop reads a halt flag that is no longer true and exits immediately.
+
+A refused transition puts the flag back. Leaving it set after a rejected pause
+stalls a campaign that is running perfectly well, until the flag's TTL
+expires - an hour of nothing happening, with every state in Postgres saying it
+should be sending.
+
+---
+
+### 2026-09-18 - a drained pause settles immediately rather than waiting for a tick
+
+R12 gives every transient state a reconciler and a ten-minute deadline. That
+is the safety net, not the normal path: pausing a campaign whose provider
+calls have all returned should not sit in `pausing` for up to a minute waiting
+for `campaign-reconcile`, because a pause that takes a minute to show is a
+pause customers click twice.
+
+`applyLifecycleAction` therefore checks the in-flight count once, and settles
+`pausing -> paused` or `cancelling -> cancelled` on the spot when it is zero.
+The settle is a guarded transition from exactly the state it just left, so
+losing the race to the reconciler is a no-op rather than a campaign dragged
+back out of `cancelled`.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

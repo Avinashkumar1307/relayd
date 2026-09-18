@@ -163,7 +163,7 @@ Engine
 - [x] Retry as delayed jobs on `email-send` (not a separate consumer); `retry-failed` never touches `metered` (R14)
 - [x] Batch sends ≤ 100 with ambiguous-failure → `delivery_uncertain` (R31)
 - [ ] Pools: round-robin and failover; shared Redis bucket per `provider_connection_id`; rate-limit rejections cool down, never reroute
-- [ ] Pause / resume / cancel with transient-state deadlines; a running campaign always completes under dunning restrictions (`held` state for scheduled ones)
+- [x] Pause / resume / cancel with transient-state deadlines; a running campaign always completes under dunning restrictions (`held` state for scheduled ones)
 
 Tracking and ingestion (`apps/edge`)
 - [ ] HMAC-signed tracking tokens (`16B message_token || 4B linkIndex || 1B kind` + 10-byte MAC, key-id prefix); open pixel and click redirect resolving URL from `tracked_links` by index

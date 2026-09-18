@@ -67,3 +67,17 @@ export {
   RETRY_RESET_COLUMNS,
 } from './engine/retry.js';
 export type { RetryDecision, RetryFailedPort, RetryFailedResult } from './engine/retry.js';
+
+export {
+  applyLifecycleAction,
+  settleIfDrained,
+  TRANSITIONS,
+  TERMINAL_STATES,
+  TRANSIENT_STATES,
+} from './engine/lifecycle.js';
+export type {
+  CampaignState,
+  LifecycleAction,
+  LifecyclePort,
+  LifecycleResult,
+} from './engine/lifecycle.js';
