@@ -156,9 +156,9 @@ Schema
 - [x] `usage_records` with unique `idempotency_key` (billing plans arrive in Phase 8; the ledger row is written from day one — see Phase 8 risk note)
 
 Engine
-- [ ] Launch: guarded transition (R29), entitlement row `FOR SHARE` (R28 — stub entitlement = unlimited until Phase 8), audience snapshot into `campaign_recipients`, `template_version_id` pinned, counters initialised
+- [x] Launch: guarded transition (R29), entitlement row `FOR SHARE` (R28 — stub entitlement = unlimited until Phase 8), audience snapshot into `campaign_recipients`, `template_version_id` pinned, counters initialised
 - [ ] Dispatcher: claim `pending` with `FOR UPDATE SKIP LOCKED` in batches of 500, mark `queued` + `queued_at`, commit, enqueue with `jobId = send:{recipientId}`; window bounded at 5,000
-- [ ] Send worker: guarded transition to `sending` first (R1) → suppression + campaign-state recheck (R30) → `send-with-limits` (R9, R10, R11; daily quota R8) → provider call with timeout below lock (R2) and deterministic `Message-ID` → single commit transaction: `sent`, `metered=true`, `usage_records`, `sender_daily_usage`, `campaign_counters`
+- [x] Send worker: guarded transition to `sending` first (R1) → suppression + campaign-state recheck (R30) → `send-with-limits` (R9, R10, R11; daily quota R8) → provider call with timeout below lock (R2) and deterministic `Message-ID` → single commit transaction: `sent`, `metered=true`, `usage_records`, `sender_daily_usage`, `campaign_counters`
 - [ ] `recipient-sweeper` (R3, R5) and `campaign-reconcile` (R12, hourly counter recount R13)
 - [ ] Retry as delayed jobs on `email-send` (not a separate consumer); `retry-failed` never touches `metered` (R14)
 - [ ] Batch sends ≤ 100 with ambiguous-failure → `delivery_uncertain` (R31)

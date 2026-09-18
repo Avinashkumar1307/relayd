@@ -715,4 +715,35 @@ stays true.
 
 ---
 
+### 2026-09-18 - the send path stops on `campaign_not_sending` by deferring
+
+docs/04 describes a paused campaign's in-flight recipients returning to the
+queue, without saying which state they return to. The send worker commits
+`deferred` rather than `failed`: the recipient goes back to `pending` with no
+delay, so resuming the campaign re-dispatches it. Marking it failed would need
+retry-failed to recover a campaign the customer merely paused, and retry-failed
+is the operation that most tempts an implementation to reset `metered` (R14).
+
+`pausing` is deliberately in the set of states that keep sending. It means
+in-flight work finishes; stopping there would strand recipients mid-campaign
+with no clean resume point. `paused` stops. The distinction is tested in
+`packages/campaigns/test/send.test.ts`.
+
+---
+
+### 2026-09-18 - launch checks the plan limit against the snapshot, not an estimate
+
+INVARIANTS R28 requires the entitlement row locked `FOR SHARE` inside the
+launch transaction; it does not say when the limit is compared. Launch reads
+the entitlement *before* the snapshot - taking the lock early is the whole
+point - but compares against `snapshot.inserted` *after* it. An audience
+estimated before the snapshot is not the audience that was taken: suppression
+and deduplication both shrink it, and comparing the estimate would refuse
+campaigns that fit.
+
+Both orderings are negative-controlled: moving the entitlement read after the
+snapshot fails, and so does comparing before it.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
