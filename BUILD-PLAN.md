@@ -209,8 +209,8 @@ The gate before external signups open.
 **Read first:** `docs/05-billing.md` (all), `docs/02-database.md` §6, `docs/17-review-findings.md` F14, F15, F17–F19, F28
 **Invariants:** R14, R15, R17, R18, R19, R28
 
-- [ ] Tables: `billing_customers`, `plans`, `features`, `plan_features`, `prices`, `subscriptions` (`uq_sub_active_ws`), `subscription_items`, `invoices`, `payments`, `refunds`, `payment_methods`, `coupons`, `discounts`, `entitlements`, `usage_aggregates` (with watermark, R15), `billing_events`, `payment_webhook_events`, `billing_refetch_queue`, `billing_reconciliation_runs`
-- [ ] `packages/billing/plans`: plan and feature definitions — the only place plan codes appear (lint rule)
+- [x] Tables: `billing_customers`, `plans`, `features`, `plan_features`, `prices`, `subscriptions` (`uq_sub_active_ws`), `subscription_items`, `invoices`, `payments`, `refunds`, `payment_methods`, `coupons`, `discounts`, `entitlements`, `usage_aggregates` (with watermark, R15), `billing_events`, `payment_webhook_events`, `billing_refetch_queue`, `billing_reconciliation_runs`
+- [x] `packages/billing/plans`: plan and feature definitions — the only place plan codes appear (lint rule)
 - [ ] Checkout: local `billing_customers` row first, then Stripe customer, then session with `client_reference_id` + metadata (R18)
 - [ ] Webhook path in `apps/edge`: verify → inbox insert → 200 fast → mark dirty (R17); `billing-refetch` coalesced consumer; `billing-webhook` failed jobs never discarded
 - [ ] Entitlements projection + rebuild command; entitlement checks server-side, `FOR SHARE` at launch (R28 — replace the Phase 6 stub)

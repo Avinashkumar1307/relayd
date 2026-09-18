@@ -1348,4 +1348,47 @@ on almost every campaign, which is how a warning becomes wallpaper.
 
 ---
 
+### 2026-09-19 - `past_due` still grants entitlements
+
+docs/05's dunning ladder restricts a workspace at day 15, not at the first
+failed charge. So `past_due` is in the set of statuses the entitlements
+projection treats as live, and `unpaid` is not.
+
+That is a product decision as much as a technical one. A customer whose card
+expired this morning has not stopped being a customer, and cutting them off
+the moment a charge fails is how a payment blip becomes a churn event. By the
+time Stripe reports `unpaid` the retries are exhausted, and restriction is
+the intent rather than an accident.
+
+---
+
+### 2026-09-19 - upgrade and downgrade are decided by rank, never by price
+
+Plans carry an explicit `rank`. Comparing prices would be wrong the first
+time a promotion runs - and an "upgrade" that is really a downgrade skips the
+over-limit pre-check, which is what strands a workspace above limits it was
+never warned about.
+
+`enterprise` is `isPublic: false` for a related reason: a plan-change
+endpoint that offered every plan in the catalogue would let anyone assign
+themselves unlimited sending.
+
+---
+
+### 2026-09-19 - absent, unlimited and zero are three different things
+
+`limitFor` returns `undefined` for a feature the plan never mentions, `null`
+for unlimited, and a number otherwise. The projection writes no row at all for
+`undefined`.
+
+All three collapse into "no" at the gate, which is why the distinction is easy
+to lose and worth keeping: a missing row is a plan that forgot to mention a
+feature, and writing a zero row instead gives the same answer to the customer
+while hiding the authoring mistake from us. Every plan in the catalogue
+currently defines every feature, so the difference never arises in production
+data - the tests use a deliberately sparse plan to reach it, because a
+projection that collapsed them would otherwise pass everything.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
