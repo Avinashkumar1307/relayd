@@ -34,3 +34,5 @@ export type {
   SenderStatus,
 } from './providers.js';
 export { templates, templateVersions } from './templates.js';
+export { scheduledJobs, jobDeadLetters } from './scheduler.js';
+export type { DeadLetterStatus } from './scheduler.js';

@@ -32,6 +32,10 @@ const NON_TENANT_TABLES = new Map<string, string>([
   ['users', 'spans workspaces; exists before one is chosen'],
   ['sessions', 'belongs to a user, not a workspace; used before scope exists'],
   ['user_tokens', 'verification and reset tokens belong to a person; reset runs before scope exists'],
+  [
+    'scheduled_jobs',
+    'operator configuration for the whole deployment; read by the scheduler on a direct connection before any workspace exists (R35)',
+  ],
 ]);
 
 async function allMigrationSql(): Promise<string> {

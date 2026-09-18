@@ -637,6 +637,32 @@ If the owner wants the separate host anyway — for defence in depth, or because
 a future preview needs scripting — the change is the `srcDoc` line and a
 subdomain.
 
+### 2026-09-18 — job_dead_letters has RLS; scheduled_jobs does not
+
+`scheduled_jobs` is operator configuration — one row per recurring job for the
+whole deployment, read by a scheduler that connects directly before any
+workspace is known (R35). It has no `workspace_id` and no RLS, and is named in
+the coverage test's allowlist alongside `users`, `sessions` and `user_tokens`.
+
+`job_dead_letters` carries a nullable `workspace_id` and does have RLS, which
+is the more useful default: a tenant-scoped query sees only that workspace's
+failed jobs. A row whose `workspace_id` is null matches no tenant scope at all,
+because `NULL = anything` is NULL — correct, since a job that failed before its
+payload could be read belongs to nobody. The operator console reads the whole
+table through the BYPASSRLS role, which is what makes it an operator console.
+
+### 2026-09-18 — a failed schedule still advances its next run
+
+The obvious implementation leaves `next_run_at` in the past when an enqueue
+fails, so the schedule is retried on the next tick. That is wrong at the level
+above: a permanently broken schedule would then be the only row every
+subsequent tick sees, and it would starve every other schedule indefinitely.
+
+`next_run_at` advances either way. The failure is recorded on the row —
+`last_error` and `consecutive_failures` — so a schedule that keeps failing is
+visible without reading logs, and a missed run is one missed run rather than a
+stalled scheduler.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

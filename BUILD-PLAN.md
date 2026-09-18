@@ -129,11 +129,11 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 **Read first:** `docs/04-campaign-engine-and-queues.md` §12 and amendments H, `docs/17-review-findings.md` F23
 **Invariants:** R23, R35
 
-- [ ] Tables: `job_dead_letters`, `scheduled_jobs`
-- [ ] All queues declared with explicit settings (`docs/04` amendments H): `email-send`, `campaign-launch`, `campaign-dispatch`, `recipient-sweeper`, `campaign-reconcile`, `event-ingest`, `analytics-rollup`, `billing-webhook`, `billing-refetch`, `billing-reconcile`, `billing-processing`, `contact-import`, `provider-verify`, `outbound-webhook`
-- [ ] `email-send`: `lockDuration 120_000`, `maxStalledCount 0`, bounded `removeOnComplete`/`removeOnFail`
+- [x] Tables: `job_dead_letters`, `scheduled_jobs`
+- [x] All queues declared with explicit settings (`docs/04` amendments H): `email-send`, `campaign-launch`, `campaign-dispatch`, `recipient-sweeper`, `campaign-reconcile`, `event-ingest`, `analytics-rollup`, `billing-webhook`, `billing-refetch`, `billing-reconcile`, `billing-processing`, `contact-import`, `provider-verify`, `outbound-webhook`
+- [x] `email-send`: `lockDuration 120_000`, `maxStalledCount 0`, bounded `removeOnComplete`/`removeOnFail`
 - [ ] DLQ handler writing `job_dead_letters`; replay endpoint (operator-scoped)
-- [ ] `scheduler`: reads `scheduled_jobs`, computes due work each tick, leader-elected via `pg_try_advisory_xact_lock` inside a transaction spanning the tick, direct Postgres connection (R35). **No BullMQ repeatables** (R23).
+- [x] `scheduler`: reads `scheduled_jobs`, computes due work each tick, leader-elected via `pg_try_advisory_xact_lock` inside a transaction spanning the tick, direct Postgres connection (R35). **No BullMQ repeatables** (R23).
 - [ ] Graceful shutdown proven: SIGTERM mid-job → job completes or is released, never lost
 - [ ] Internal operator console (unstyled): queue depths, DLQ inspection and replay
 - [ ] Tests: kill leader mid-tick → exactly one successor; SIGTERM mid-job → no loss; DLQ replay restores exactly once; Redis flush → scheduler still enqueues due jobs
