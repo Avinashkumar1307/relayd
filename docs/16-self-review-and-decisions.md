@@ -1391,4 +1391,49 @@ projection that collapsed them would otherwise pass everything.
 
 ---
 
+### 2026-09-19 - a failed Stripe call marks the mapping row, never deletes it
+
+R18 puts the local `billing_customers` row before the Stripe call. It does not
+say what to do when the call then fails.
+
+The row is marked `failed` and kept. Deleting it would throw away the one
+piece of evidence that matters: we may already have created a Stripe customer
+whose id we never received, and the deleted row is the only trace that we
+tried. A retry reuses the row - `pending` and `failed` are finished the same
+way - so the second attempt completes the mapping rather than creating a
+second Stripe customer for the same workspace.
+
+A failure of the *session* leaves the customer alone, because the customer is
+reusable and tearing it down would make every retry create another one.
+
+---
+
+### 2026-09-19 - the webhook handler does exactly two writes
+
+R17 says `billing-webhook` never re-fetches inline. Taken seriously that
+means the handler branches on nothing: it inserts the inbox row, marks the
+object dirty, and returns. No Stripe call, no entitlement rebuild, no
+switch on the event type.
+
+Everything downstream is the refetch consumer's, and the reason is a number:
+500 events for 10 objects is 10 API calls if the handler coalesces and 500 if
+it does not - made from inside 500 HTTP handlers that each owe a 200 within
+200ms.
+
+A duplicate delivery still answers 200. Anything else makes Stripe retry, and
+retrying a duplicate forever is how a webhook endpoint ends up disabled by the
+provider.
+
+---
+
+### 2026-09-19 - an equal state version is discarded, not re-applied
+
+The mirror write is guarded on `provider_state_version` being *strictly*
+greater. Re-applying identical state would rewrite `updated_at` on every
+duplicate delivery, which turns that column from evidence into noise - and
+`updated_at` is what an operator reads first when asking when a subscription
+last really changed.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

@@ -15,5 +15,8 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5"
   }
 }
