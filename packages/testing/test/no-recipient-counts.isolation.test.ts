@@ -26,9 +26,17 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 
 const REQUEST_PATHS = ['apps/api/src', 'apps/edge/src'];
 
-/** `count(` applied to the recipients table, however it is spelled. */
+/**
+ * `count(` applied to the recipients table, however it is spelled.
+ *
+ * The word boundary matters. Without it this matches any identifier ending in
+ * "count", and `previewAudienceCount(...)` — a count over *contacts*, which
+ * R13 says nothing about — reads as a violation. A guard that cries wolf on
+ * correct code gets weakened by whoever hits it next, which is worse than not
+ * having it.
+ */
 const COUNT_PATTERNS: readonly RegExp[] = [
-  /count\s*\(/iu,
+  /\bcount\s*\(/iu,
   /\bsum\s*\(/iu,
   /\bgroup\s+by\b/iu,
 ];

@@ -1082,4 +1082,59 @@ needing any separator at all.
 
 ---
 
+### 2026-09-18 - the Idempotency-Key uses the column that already exists
+
+F29 asks the launch endpoint to accept an `Idempotency-Key`. The obvious
+implementation is a key table, and `campaigns.idempotency_key` with its unique
+index `uq_campaign_idem` already exists for precisely this. A second table
+would need its own expiry, its own cleanup job, and its own answer to what
+happens when the two disagree about whether a campaign launched.
+
+One guarded UPDATE decides which request is the launcher. The loser reads the
+row and gets the winner's result. A *different* key on the same campaign is
+not a replay - it is a second launch of an already-launched campaign - and it
+falls through to the engine's ordinary refusal rather than being handed
+somebody else's answer.
+
+The engine's guarded transition (R29) remains the durable guard. The key only
+decides what the loser is told, which is the difference between a retried HTTP
+request seeing a success and seeing a 409 it cannot distinguish from a real
+conflict.
+
+---
+
+### 2026-09-18 - pool health answers with the router's own predicates
+
+A campaign that will not launch reports `no_healthy_sender` and the customer
+has no way to see why. `GET /pools/:id/health` is that view, and it calls
+`eligibleMembers` and `sharedConnections` from the routing engine rather than
+reimplementing the filters - a health view that disagrees with the router is
+worse than none.
+
+One wrinkle: eligibility for a *particular* campaign also depends on that
+campaign's From domain, which this view has no opinion about. It neutralises
+that one filter by giving every member a sentinel domain and asking for it.
+The first version instead passed an empty domain against an empty list, and
+since `[].includes('')` is false it reported every member of a perfectly
+healthy pool as ineligible.
+
+The shared-account warning is also returned when a member is *added*, not only
+on the health view. That is the moment a customer believes they have increased
+their capacity, and it is the only moment they will read a warning saying they
+have not.
+
+---
+
+### 2026-09-18 - the R13 grep needed a word boundary
+
+The test forbidding aggregates over `campaign_recipients` in a request path
+matched `previewAudienceCount(...)` - a count over *contacts*, which R13 says
+nothing about and which the audience step genuinely needs.
+
+Fixed with a word boundary. Worth recording because the failure mode of a
+guard that cries wolf is not a false alarm: it is that whoever hits it next
+weakens it, and the guard stops catching the thing it was written for.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

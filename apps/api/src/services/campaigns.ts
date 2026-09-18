@@ -406,6 +406,27 @@ export class CampaignService {
     });
   }
 
+  /**
+   * The count the wizard's audience step shows.
+   *
+   * Over `contacts`, not over `campaign_recipients` — R13 forbids the latter
+   * in a request path and says nothing about the former, which is the whole
+   * point of a preview: telling the author how many people this will reach
+   * before they commit to reaching them.
+   */
+  async previewAudience(scope: WorkspaceScope, input: { listIds: readonly string[] }) {
+    return this.options.unitOfWork(async (repos) => {
+      const counts = await repos.campaigns.previewAudienceCount(scope, input);
+
+      return {
+        ...counts,
+        // Stated rather than left to the caller, so the wizard's number and
+        // the launch report's number are computed in one place.
+        total: counts.eligible + counts.suppressed,
+      };
+    });
+  }
+
   private actorUserId(): string | undefined {
     const actor = this.options.currentActor();
     return actor.type === 'user' ? actor.id : undefined;

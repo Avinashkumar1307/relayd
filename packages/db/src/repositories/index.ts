@@ -81,3 +81,5 @@ export { CampaignRepository } from './campaigns.js';
 export type { CampaignRow, CampaignCountersRow, RecipientRow } from './campaigns.js';
 export { CampaignEngineRepository } from './campaign-engine.js';
 export type { LaunchSnapshotResult } from './campaign-engine.js';
+export { SendingPoolRepository } from './pools.js';
+export type { SendingPoolRow, PoolMemberRow } from './pools.js';

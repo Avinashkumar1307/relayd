@@ -3,6 +3,7 @@ import type { GlobalMembershipRepository } from '@relayd/db';
 import { AppError } from '@relayd/types';
 import type { CampaignId } from '@relayd/types';
 import {
+  audienceSchema,
   cloneCampaignSchema,
   createCampaignSchema,
   launchCampaignSchema,
@@ -84,6 +85,24 @@ export function campaignRoutes(options: CampaignRouterOptions): Router {
     const query = listRecipientsSchema.parse(req.query);
     res.json({ data: await campaigns.listRecipients(requireScope(), id(req), query) });
   });
+
+  /**
+   * The audience step's count, before a campaign exists.
+   *
+   * A POST rather than a GET because the selection is a body — a list of list
+   * ids and segment ids — and putting it in a query string caps the wizard at
+   * whatever the proxy's URL limit happens to be.
+   */
+  router.post(
+    '/campaigns/audience-preview',
+    ...chain,
+    write,
+    validateBody(audienceSchema),
+    async (req: Request, res: Response) => {
+      const { listIds } = req.body as { listIds: string[] };
+      res.json({ data: await campaigns.previewAudience(requireScope(), { listIds }) });
+    },
+  );
 
   router.post(
     '/campaigns',

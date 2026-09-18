@@ -429,6 +429,64 @@ export class CampaignRepository {
   }
 
   /**
+   * The audience preview count.
+   *
+   * Over `contacts`, not over `campaign_recipients` — R13 forbids the latter
+   * in a request path and says nothing about the former, which is the whole
+   * point of a preview: telling the author how many people this will reach
+   * before they commit to reaching them.
+   *
+   * Counted with the same predicates the snapshot uses, so the number the
+   * author sees is the number they get. A preview that omits the suppression
+   * check reads high by exactly the count the launch will then refuse.
+   */
+  async previewAudienceCount(
+    scope: WorkspaceScope,
+    input: { listIds: readonly string[] },
+  ): Promise<{ eligible: number; suppressed: number }> {
+    if (input.listIds.length === 0) return { eligible: 0, suppressed: 0 };
+
+    for (const id of input.listIds) {
+      if (!/^[0-9a-fA-F-]{1,64}$/u.test(id)) {
+        throw new Error(`Refusing to interpolate an unexpected list id: ${JSON.stringify(id)}`);
+      }
+    }
+
+    const literal = `ARRAY[${input.listIds.map((id) => `'${id}'`).join(', ')}]`;
+
+    const { rows } = await this.db.execute<{ eligible: string; suppressed: string }>(sql`
+      SELECT
+        count(*) FILTER (
+          WHERE NOT EXISTS (
+            SELECT 1 FROM suppressions s
+             WHERE s.workspace_id = c.workspace_id AND s.email = c.email
+          )
+        )::text AS eligible,
+        count(*) FILTER (
+          WHERE EXISTS (
+            SELECT 1 FROM suppressions s
+             WHERE s.workspace_id = c.workspace_id AND s.email = c.email
+          )
+        )::text AS suppressed
+        FROM contacts c
+       WHERE c.workspace_id = ${scope.workspaceId}
+         AND c.status = 'subscribed'
+         AND c.deleted_at IS NULL
+         AND EXISTS (
+           SELECT 1 FROM contact_list_members m
+            WHERE m.contact_id = c.id
+              AND m.workspace_id = c.workspace_id
+              AND m.list_id = ANY(${sql.raw(literal)}::uuid[])
+         )
+    `);
+
+    return {
+      eligible: Number(rows[0]?.eligible ?? 0),
+      suppressed: Number(rows[0]?.suppressed ?? 0),
+    };
+  }
+
+  /**
    * A test send.
    *
    * Deliberately writes no `campaign_recipients` row. A test send is not a

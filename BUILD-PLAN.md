@@ -172,7 +172,7 @@ Tracking and ingestion (`apps/edge`)
 - [x] `event-ingest` consumer: resolve within connection scope (R4), dedupe key (R32), rank lattice (R16), always write `email_events`, suppression on hard bounce and complaint, `delivery_uncertain` reconciliation on matching message id
 
 API and frontend
-- [ ] Campaign CRUD, audience attach with preview count, schedule, launch (`Idempotency-Key`), pause, resume, cancel, clone, retry-failed, `progress` from counters; pool CRUD
+- [x] Campaign CRUD, audience attach with preview count, schedule, launch (`Idempotency-Key`), pause, resume, cancel, clone, retry-failed, `progress` from counters; pool CRUD
 - [ ] Seven-step wizard, pre-flight checklist on review step, `/campaigns` list with live progress, `/campaigns/:id` detail with recipient-level state, search and `deliveryUncertain` count
 
 Tests

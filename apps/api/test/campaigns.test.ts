@@ -103,6 +103,9 @@ function service(over: {
     async enqueueTestSend() {
       return { queued: 1 };
     },
+    async previewAudienceCount() {
+      return { eligible: 900, suppressed: 100 };
+    },
     ...over.campaigns,
   } as unknown as CampaignRepositories['campaigns'];
 
@@ -484,5 +487,28 @@ describe('clone', () => {
     await s.clone(SCOPE, ID, 'Autumn');
 
     expect(seen).toBe('Autumn');
+  });
+});
+
+describe('the audience preview', () => {
+  it('reports eligible, suppressed and the total', async () => {
+    const { service: s } = service();
+
+    expect(await s.previewAudience(SCOPE, { listIds: ['l1'] })).toEqual({
+      eligible: 900,
+      suppressed: 100,
+      total: 1000,
+    });
+  });
+
+  it('counts suppression the same way the snapshot will', async () => {
+    // A preview that omits the suppression check reads high by exactly the
+    // number launch will then refuse to send to, and the author is left
+    // wondering where the missing recipients went.
+    const { service: s } = service();
+
+    const result = await s.previewAudience(SCOPE, { listIds: ['l1'] });
+
+    expect(result.eligible).toBeLessThan(result.total);
   });
 });
