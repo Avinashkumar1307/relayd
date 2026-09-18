@@ -617,6 +617,26 @@ sent today and the same template sent tomorrow could differ, because the
 allowlist changed in between. What was compiled is what was reviewed and what
 is sent.
 
+### 2026-09-18 — the preview iframe is sandboxed rather than served from another host
+
+docs/06 says previews "render in a sandboxed iframe on a separate origin,
+never on the app origin, or a malicious template steals sessions."
+
+The implementation uses `srcDoc` with `sandbox=""` — an empty sandbox
+attribute, which omits both `allow-same-origin` and `allow-scripts`. That
+gives the frame a unique opaque origin: it can reach neither our cookies nor
+our DOM, which is the property the separate origin existed to provide, without
+a second host to deploy and keep in step.
+
+Omitting `allow-scripts` as well is not redundant. The sanitiser strips every
+script it finds, and a template has no legitimate need for one; granting
+`allow-scripts` together with `allow-same-origin` would let the frame remove
+its own sandbox attribute, which is the documented way that combination fails.
+
+If the owner wants the separate host anyway — for defence in depth, or because
+a future preview needs scripting — the change is the `srcDoc` line and a
+subdomain.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

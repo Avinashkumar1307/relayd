@@ -117,7 +117,7 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 - [x] Rendering engine: merge tags with defaults, missing-field behaviour, plain-text auto-generation, deterministic output
 - [x] HTML sanitiser with the XSS corpus as a test fixture
 - [x] API: template CRUD, publish version, render-preview with sample contact, test-send
-- [ ] Frontend: `/templates`, `/templates/create` (HTML editor + merge-tag picker, desktop/mobile preview, plain-text editor). **No drag-and-drop builder.**
+- [x] Frontend: `/templates`, `/templates/create` (HTML editor + merge-tag picker, desktop/mobile preview, plain-text editor). **No drag-and-drop builder.**
 - [x] Campaigns will record `template_version_id` at launch (Phase 6) — expose the id now
 
 **Gate:** Sanitiser strips every payload in the corpus; a missing merge field renders its default; a published version cannot be mutated.
