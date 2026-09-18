@@ -103,6 +103,64 @@ describe('batching', () => {
     const outcomes = await sendWithLimits(adapter, CREDS, [message('a')], context);
     expect(outcomes).toHaveLength(1);
   });
+
+  it('caps at 100 however large the adapter says it can go (R31)', async () => {
+    // The adapter is describing its own request limit. R31 is describing how
+    // many recipients one unanswered request may leave uncertain, which is a
+    // different number and not the adapter's to choose.
+    const sendBatch = vi.fn(async (_c: ProviderCredentials, msgs: readonly OutboundMessage[]) =>
+      msgs.map((msg) => ({
+        ok: true as const,
+        recipientId: msg.recipientId,
+        providerMessageId: null,
+        acceptedAt: new Date(),
+      })),
+    );
+
+    const adapter = fakeAdapter({ capabilities: { ...CAPABILITIES, maxBatchSize: 1000 }, sendBatch });
+    const messages = Array.from({ length: 250 }, (_, i) => message(`r${i}`));
+
+    await sendWithLimits(adapter, CREDS, messages, context);
+
+    expect(sendBatch.mock.calls.map((call) => call[1].length)).toEqual([100, 100, 50]);
+  });
+
+  it('marks a whole batch ambiguous when the connection resets (R31, F31)', async () => {
+    // The F31 trace: the provider accepted some of them and the response never
+    // came back. Every recipient in the batch carries the ambiguity, because
+    // the provider answered about the batch or not at all.
+    const adapter = fakeAdapter({
+      capabilities: { ...CAPABILITIES, maxBatchSize: 100 },
+      async sendBatch() {
+        throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+      },
+    });
+
+    const messages = Array.from({ length: 40 }, (_, i) => message(`r${i}`));
+    const outcomes = await sendWithLimits(adapter, CREDS, messages, context);
+
+    expect(outcomes).toHaveLength(40);
+    for (const outcome of outcomes) {
+      expect(outcome.ok).toBe(false);
+      expect(outcome.ok === false && outcome.error.ambiguous).toBe(true);
+    }
+  });
+
+  it('leaves a refused connection retryable rather than uncertain', async () => {
+    // Nothing was written, so retrying the batch cannot duplicate anything.
+    const adapter = fakeAdapter({
+      async sendBatch() {
+        throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+      },
+    });
+
+    const outcomes = await sendWithLimits(adapter, CREDS, [message('a')], context);
+    const first = outcomes[0];
+
+    expect(first?.ok).toBe(false);
+    expect(first?.ok === false && first.error.ambiguous).toBeUndefined();
+    expect(first?.ok === false && first.error.retryable).toBe(true);
+  });
 });
 
 describe('correlation', () => {

@@ -1,3 +1,4 @@
+import { isAmbiguous } from './batching.js';
 import { ERROR_POLICY, type ErrorKind, type ProviderError } from './port.js';
 
 /**
@@ -133,7 +134,12 @@ export function fromUnknown(cause: unknown): ProviderError {
         ? cause
         : 'The provider returned an error';
 
-  return providerError(classifyThrown(cause), message);
+  const error = providerError(classifyThrown(cause), message);
+
+  // R31: whether the provider answered is a separate question from what went
+  // wrong, and only this boundary can still see the evidence. A connection
+  // reset and a 429 are both retryable kinds; only one of them may be retried.
+  return isAmbiguous(cause) ? { ...error, ambiguous: true } : error;
 }
 
 /**

@@ -250,9 +250,14 @@ export function classifyForSend(error: {
   retryable: boolean;
   retryAfterMs?: number;
   message: string;
+  /** Set at the adapter boundary when the provider never answered (R31). */
+  ambiguous?: boolean;
 }): Extract<ProviderCallResult, { ok: false }> {
-  // A timeout is the ambiguous one: the provider may have accepted it.
-  if (error.kind === 'timeout') {
+  // A timeout is the ambiguous one: the provider may have accepted it. So is
+  // anything the boundary could not prove was pre-acceptance — a connection
+  // reset carries the kind `provider_unavailable`, which is retryable, and
+  // retrying it is exactly the duplicate send F31 describes.
+  if (error.kind === 'timeout' || error.ambiguous === true) {
     return {
       ok: false,
       kind: 'ambiguous',

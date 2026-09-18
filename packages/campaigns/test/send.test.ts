@@ -315,6 +315,41 @@ describe('classifying a provider error', () => {
     expect(content.suppressContact).toBe(false);
   });
 
+  it('holds a retryable error the provider never answered (R31)', () => {
+    // A connection reset carries `provider_unavailable`, which is retryable.
+    // Retrying it is the duplicate send F31 describes, so the ambiguity flag
+    // has to win over the retryable one.
+    const result = classifyForSend({
+      kind: 'provider_unavailable',
+      retryable: true,
+      ambiguous: true,
+      message: 'socket hang up',
+    });
+
+    expect(result.kind).toBe('ambiguous');
+  });
+
+  it('still retries a provider outage that answered', () => {
+    // A 503 is definitive: it did not accept the message.
+    expect(
+      classifyForSend({
+        kind: 'provider_unavailable',
+        retryable: true,
+        message: 'service unavailable',
+      }).kind,
+    ).toBe('retryable');
+  });
+
+  it('does not let the flag rescue a permanent error into a retry', () => {
+    const result = classifyForSend({
+      kind: 'invalid_recipient',
+      retryable: false,
+      message: 'no such mailbox',
+    });
+
+    expect(result.kind).toBe('permanent');
+  });
+
   it('carries Retry-After through rather than guessing', () => {
     const result = classifyForSend({
       kind: 'rate_limited',

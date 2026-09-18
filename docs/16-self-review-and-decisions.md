@@ -820,4 +820,62 @@ and returning it to the queue would send the message twice.
 
 ---
 
+### 2026-09-18 - ambiguity is a field on ProviderError, not a kind
+
+R31 needs the send path to distinguish "the provider refused this" from "the
+provider never answered". Those were not distinguishable: a connection reset
+was classified `provider_unavailable`, which is retryable, and retrying it is
+precisely the duplicate send F31 describes.
+
+`ProviderError` gains an optional `ambiguous` flag, set only at the scrubbing
+boundary where the original throw is still visible. It is a separate field
+rather than a new `ErrorKind` because it answers a separate question. `kind`
+is what went wrong and drives ERROR_POLICY; `ambiguous` is whether we know,
+and it overrides retryability in the send path. A 429 and a connection reset
+are both retryable kinds and only one of them may actually be retried.
+
+The rule the flag encodes is simply: did the provider answer? Any HTTP status
+is an answer and therefore definitive. A refused connection or a failed DNS
+lookup proves there was no request to answer. Everything else is uncertain,
+including throws we do not recognise - the asymmetry is deliberate, because a
+wrongly uncertain recipient is a line in a report the customer can act on and
+a wrongly retried one is a duplicate nobody can take back.
+
+The known cost: a bug in our own adapter code that throws before the HTTP call
+is indistinguishable from a lost response, and would mark recipients
+`delivery_uncertain` rather than retrying them. That is the correct direction
+to be wrong in, and `delivery_uncertain` is a counted, surfaced state rather
+than a silent one.
+
+---
+
+### 2026-09-18 - the batch cap is ours, not the adapter's
+
+`sendWithLimits` batched at `adapter.capabilities.maxBatchSize`. R31 caps at
+100 and the two are different numbers answering different questions: the
+adapter is describing its own request limit, and R31 is describing how many
+recipients a single unanswered request may leave uncertain. The cap now binds
+over whatever the adapter declares.
+
+Three things came out of negative-controlling this:
+
+A removed guard in `batchSizeFor` returning 0 made `sendWithLimits` loop
+forever rather than fail - `index += 0`. The proving test hung instead of
+failing, which is a worse proving test. The loop's step is now guarded a
+second time, in a different file from the first, because an infinite loop in
+the send path pegs a worker, holds its queue lock until expiry, and stalls a
+campaign with no error anywhere.
+
+A second list of "ambiguous" socket codes turned out to be entirely dead: the
+fail-safe default already caught every entry, so deleting `ECONNRESET` from it
+changed no behaviour. A list whose removal changes nothing is not a guard, it
+is a comment that looks like one. There is now a single list - the codes that
+prove pre-acceptance - and every entry in it is load-bearing.
+
+`ECONNABORTED` was dropped from that list in the process. On a client socket it
+can mean the connection was aborted after the write, which is not proof of
+anything.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

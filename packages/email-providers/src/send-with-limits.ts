@@ -1,3 +1,4 @@
+import { batchSizeFor } from './batching.js';
 import { fromUnknown } from './errors.js';
 import type {
   EmailProviderAdapter,
@@ -64,10 +65,20 @@ export async function sendWithLimits(
   if (messages.length === 0) return [];
 
   const outcomes = new Map<string, SendOutcome>();
-  const batchSize = Math.max(1, adapter.capabilities.maxBatchSize);
+  // R31: capped here, not at the adapter's declared maximum. The cap bounds
+  // how many recipients one ambiguous response can leave uncertain.
+  const batchSize = batchSizeFor(adapter.capabilities.maxBatchSize);
 
-  for (let index = 0; index < messages.length; index += batchSize) {
-    const batch = messages.slice(index, index + batchSize);
+  // The step is guarded a second time, in a different file from the first.
+  // `batchSizeFor` already guarantees at least one, and this line exists
+  // because of what happens if that ever stops being true: `index += 0` is an
+  // infinite loop inside the send path, which pegs a worker, holds its queue
+  // lock until it expires, and stalls the campaign without an error anywhere.
+  // A redundant `Math.max` is a very cheap insurance premium against that.
+  const step = Math.max(1, batchSize);
+
+  for (let index = 0; index < messages.length; index += step) {
+    const batch = messages.slice(index, index + step);
 
     const permission = await acquire(context, batch.length);
     if (permission !== null) {

@@ -75,6 +75,19 @@ export interface ProviderError {
   readonly providerCode?: string;
   readonly message: string;
   readonly affects: 'message' | 'sender' | 'connection';
+  /**
+   * The provider never answered, so it may have accepted this (R31, F31).
+   *
+   * Separate from `kind` because it answers a different question. `kind` is
+   * what went wrong; this is whether we know. A 429 is a definitive
+   * `rate_limited`; a connection reset mid-request is a send that may be in
+   * someone's inbox right now. Both are "retryable" in the ordinary sense and
+   * only one of them may actually be retried.
+   *
+   * Absent means definitive. Nothing may set it true without evidence that no
+   * response arrived.
+   */
+  readonly ambiguous?: boolean;
 }
 
 export type ErrorKind =

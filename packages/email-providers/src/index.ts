@@ -57,3 +57,11 @@ export { createSesAdapter } from './adapters/ses/index.js';
 export { isAmazonCertificateUrl, verifySnsSignature } from './adapters/ses/sns.js';
 export { createSmtpAdapter } from './adapters/smtp/index.js';
 export { createSendgridAdapter } from './adapters/sendgrid/index.js';
+
+export {
+  MAX_BATCH_SIZE,
+  batchSizeFor,
+  isPreAcceptance,
+  isAmbiguous,
+  batchFailureOutcomes,
+} from './batching.js';
