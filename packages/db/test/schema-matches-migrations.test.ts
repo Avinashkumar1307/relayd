@@ -142,6 +142,28 @@ function drizzleTables(): { name: string; columns: Set<string> }[] {
   return out;
 }
 
+
+/**
+ * Tables that deliberately have no Drizzle declaration.
+ *
+ * Kept short and explicit: a name added here is a decision, and an empty
+ * allowlist would be better still.
+ */
+const NOT_MODELLED = new Set([
+  // The migration runner's own bookkeeping, read by `readMigrations` and
+  // never by a query Drizzle builds.
+  'schema_migrations',
+  // Migration 0001 creates it, asserts the extension set and drops it.
+  'relayd_init_check',
+]);
+
+/** Whether `name` looks like a partition of a table Drizzle does declare. */
+function isPartitionOf(name: string, declared: ReadonlySet<string>): boolean {
+  const suffix = /_(\d{4}_\d{2}|default)$/u;
+  if (!suffix.test(name)) return false;
+  return declared.has(name.replace(suffix, ''));
+}
+
 describe('the schema and the migrations agree', () => {
   it('finds tables in both', async () => {
     const fromSql = await tablesFromMigrations();
@@ -196,6 +218,29 @@ describe('the schema and the migrations agree', () => {
     // The harmless direction — a column Drizzle cannot see still exists — but
     // it is almost always an oversight, and an unreadable column is a column
     // nobody maintains.
+    expect(undeclared).toEqual([]);
+  });
+
+  it('declares every table the migrations create', async () => {
+    // The direction nothing checked until migration 0013 created nineteen
+    // billing tables and the Drizzle schema knew about none of them. Every
+    // test above walks Drizzle and looks the table up in the SQL, so a table
+    // absent from Drizzle is absent from the walk and absent from the
+    // failure.
+    const declared = new Set(drizzleTables().map((table) => table.name));
+    const undeclared: string[] = [];
+
+    for (const name of (await tablesFromMigrations()).keys()) {
+      if (declared.has(name)) continue;
+      if (NOT_MODELLED.has(name)) continue;
+      // A partition is the parent table under another name. Drizzle addresses
+      // the parent; declaring each partition would add a table per week
+      // forever, and the scheduler creates them without a migration anyway.
+      if (isPartitionOf(name, declared)) continue;
+
+      undeclared.push(name);
+    }
+
     expect(undeclared).toEqual([]);
   });
 });

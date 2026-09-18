@@ -62,3 +62,33 @@ export {
   linkStats,
   contactEngagement,
 } from './analytics.js';
+export {
+  plans,
+  features,
+  planFeatures,
+  prices,
+  billingCustomers,
+  subscriptions,
+  subscriptionItems,
+  invoices,
+  payments,
+  refunds,
+  paymentMethods,
+  coupons,
+  discounts,
+  entitlements,
+  usageAggregates,
+  paymentWebhookEvents,
+  billingRefetchQueue,
+  billingEvents,
+  billingReconciliationRuns,
+} from './billing.js';
+export type {
+  FeatureKind,
+  PriceInterval,
+  BillingCustomerStatus,
+  SubscriptionStatus,
+  InvoiceStatus,
+  PaymentStatus,
+  CouponDuration,
+} from './billing.js';
