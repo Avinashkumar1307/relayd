@@ -1317,4 +1317,35 @@ negative click one and still look plausible.
 
 ---
 
+### 2026-09-19 - the open-rate caveat is text, not a tooltip
+
+docs/06 requires the UI to surface that open rate is directional. A tooltip
+satisfies that on paper and not in practice: a customer scanning a dashboard
+does not hover, and a disclosure nobody opens is not a disclosure.
+
+So the word "approximate" sits beside the label at all times, and the footnote
+under the number is rendered text. The bot-filtered count takes that slot
+whenever there is one, because it is the specific number that answers the
+question this product will be asked most - "why is my open rate lower than on
+my old tool".
+
+The click rate carries `data-headline` rather than being identified by its CSS
+class. A redesign should have to remove that deliberately rather than by
+restyling, and a test asserts exactly one tile has it.
+
+---
+
+### 2026-09-19 - the privacy-proxy share is shown above 20%
+
+The device table reports the unknown slice as its own row always, and adds a
+sentence above the table when it exceeds a fifth of opens. Apple's Mail
+Privacy Protection reports a generic client through a proxy, so a large
+unknown share is normal - and a customer seeing 40% "unknown" with no
+explanation reasonably concludes the tracking is broken.
+
+Twenty per cent because below that it is noise and the sentence would appear
+on almost every campaign, which is how a warning becomes wallpaper.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

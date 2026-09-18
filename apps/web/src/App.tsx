@@ -18,6 +18,10 @@ import {
   TemplatesPage,
 } from './routes/templates/templates.js';
 import {
+  CampaignAnalyticsPage,
+  DashboardPage,
+} from './routes/analytics/analytics.js';
+import {
   CampaignWizardPage,
   CampaignsPage,
   CreateCampaignPage,
@@ -70,9 +74,12 @@ export function App() {
         <Route path="/templates/create" element={<CreateTemplatePage />} />
         <Route path="/templates/:id" element={<TemplateEditorPage />} />
 
+        <Route path="/dashboard" element={<DashboardPage />} />
+
         <Route path="/campaigns" element={<CampaignsPage />} />
         <Route path="/campaigns/new" element={<CreateCampaignPage />} />
         <Route path="/campaigns/:id" element={<CampaignWizardPage />} />
+        <Route path="/campaigns/:id/analytics" element={<CampaignAnalyticsPage />} />
 
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/senders" element={<SendersPage />} />
@@ -81,7 +88,7 @@ export function App() {
         <Route path="/settings/team" element={<TeamSettingsPage />} />
       </Route>
 
-      <Route path="/" element={<Navigate to="/audience/contacts" replace />} />
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="/audience" element={<Navigate to="/audience/contacts" replace />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
@@ -137,6 +144,7 @@ function AppShell() {
               |
             </span>
 
+            <NavLink to="/dashboard">Dashboard</NavLink>
             <NavLink to="/campaigns">Campaigns</NavLink>
             <NavLink to="/templates">Templates</NavLink>
             <NavLink to="/providers">Providers</NavLink>
