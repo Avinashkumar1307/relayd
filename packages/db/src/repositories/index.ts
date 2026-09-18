@@ -77,3 +77,7 @@ export { GlobalDeadLetterRepository } from './global/dead-letters.js';
 export type { DeadLetterRow } from './global/dead-letters.js';
 export { GlobalScheduledJobRepository } from './global/scheduled-jobs.js';
 export type { ScheduledJobRow } from './global/scheduled-jobs.js';
+export { CampaignRepository } from './campaigns.js';
+export type { CampaignRow, CampaignCountersRow, RecipientRow } from './campaigns.js';
+export { CampaignEngineRepository } from './campaign-engine.js';
+export type { LaunchSnapshotResult } from './campaign-engine.js';

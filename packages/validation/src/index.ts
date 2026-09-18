@@ -54,3 +54,26 @@ export {
   previewTemplateSchema,
 } from './templates.js';
 export type { CreateTemplateRequest, SaveTemplateVersionRequest } from './templates.js';
+export {
+  createCampaignSchema,
+  updateCampaignSchema,
+  scheduleCampaignSchema,
+  launchCampaignSchema,
+  testSendSchema as testSendCampaignSchema,
+  cloneCampaignSchema,
+  listCampaignsSchema,
+  listRecipientsSchema,
+  audienceSchema,
+  createPoolSchema,
+  updatePoolSchema,
+  addPoolMemberSchema,
+} from './campaigns.js';
+export type {
+  CreateCampaignInput,
+  UpdateCampaignInput,
+  ScheduleCampaignInput,
+  ListCampaignsInput,
+  ListRecipientsInput,
+  CreatePoolInput,
+  AddPoolMemberInput,
+} from './campaigns.js';

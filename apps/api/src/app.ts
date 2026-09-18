@@ -12,6 +12,7 @@ import {
 import { requestContext } from './middleware/authorize.js';
 import { audienceRoutes, type AudienceRouterOptions } from './routes/audience.js';
 import { providerRoutes, type ProviderRouterOptions } from './routes/providers.js';
+import { campaignRoutes, type CampaignRouterOptions } from './routes/campaigns.js';
 import { templateRoutes, type TemplateRouterOptions } from './routes/templates.js';
 import { operatorRoutes, type OperatorRouterOptions } from './routes/operator.js';
 
@@ -37,6 +38,7 @@ export interface AppDependencies extends HealthDependencies {
   audience?: AudienceRouterOptions;
   providers?: ProviderRouterOptions;
   templates?: TemplateRouterOptions;
+  campaigns?: CampaignRouterOptions;
   operator?: OperatorRouterOptions;
 }
 
@@ -69,6 +71,10 @@ export function createApp(deps: AppDependencies): Express {
 
   if (deps.providers !== undefined) {
     app.use('/api/v1', providerRoutes(deps.providers));
+  }
+
+  if (deps.campaigns !== undefined) {
+    app.use('/api/v1', campaignRoutes(deps.campaigns));
   }
 
   if (deps.templates !== undefined) {
