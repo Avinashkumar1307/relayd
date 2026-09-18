@@ -193,7 +193,7 @@ Tests
 
 - [x] Tables: `campaign_stats`, `campaign_daily_stats`, `provider_stats`, `device_stats`, `link_stats`, `contact_engagement`
 - [x] `analytics-rollup`: 30 s incremental from Redis dirty set **plus** hourly full recompute over a bounded window (R24); `contact_engagement` derived from the hourly pass only (R26)
-- [ ] Partition maintenance job for `email_events` (R25)
+- [x] Partition maintenance job for `email_events` (R25)
 - [ ] API: campaign, link, provider, device analytics; workspace overview; CSV export; every rate response includes `botFiltered`
 - [ ] Frontend: `/dashboard`, `/campaigns/:id/analytics` (Recharts), link heat table; **click rate is the headline**, open rate labelled approximate
 - [ ] Tests: rollup vs raw reconciliation within 0.1% over a seeded 10M-event set; partition boundaries; late-arriving events; timezone buckets

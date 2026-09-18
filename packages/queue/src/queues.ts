@@ -31,6 +31,7 @@ export const QUEUE_NAMES = [
   'contact-import',
   'provider-verify',
   'outbound-webhook',
+  'partition-maintenance',
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
@@ -152,6 +153,22 @@ export const QUEUE_SETTINGS: Readonly<Record<QueueName, QueueSettings>> = {
     removeOnComplete: { count: 100, age: HOUR },
     removeOnFail: { count: 1000, age: 7 * DAY },
     description: 'Force-exits stale transient campaign states; recomputes counters hourly.',
+  },
+
+  'partition-maintenance': {
+    name: 'partition-maintenance',
+    concurrency: 1,
+    // Generous: the job itself is fast, but `ensure_month_partition` sets a
+    // five-second lock_timeout per statement and there may be several.
+    lockDuration: 5 * 60_000,
+    // Three, then stop. A partition that cannot be attached today has six
+    // more days of lead time (R25), and hammering a contended lock is the
+    // one thing that makes the contention worse.
+    attempts: 3,
+    backoff: { type: 'fixed', delay: 60_000 },
+    removeOnComplete: { count: 30, age: 7 * DAY },
+    removeOnFail: { count: 100, age: 30 * DAY },
+    description: 'Creates email_events and usage_records partitions seven days ahead (R25).',
   },
 
   'event-ingest': {

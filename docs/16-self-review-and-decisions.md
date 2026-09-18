@@ -1232,4 +1232,41 @@ through a helper that returns 0 for anything non-finite.
 
 ---
 
+### 2026-09-18 - partition maintenance creates and never drops
+
+R25 asks for partitions created seven days ahead. docs/08 separately describes
+archival: dump a partition to S3, detach, drop.
+
+Those are one job in the document and two here. Dropping a partition is
+destructive and irreversible, and a job that both creates and drops is one bug
+away from dropping what it meant to create - on the highest-volume table in
+the system, where the mistake is unrecoverable. The maintenance job has no
+drop path at all, and a test asserts the module exports nothing matching
+drop, detach, delete or prune. Archival stays operator-initiated.
+
+The job also reports rather than throws. A scheduled job that crashes is
+retried blindly, and this one has nothing to gain from an immediate retry: a
+lock timeout means something long-running is holding the parent, and the
+seven-day lead exists precisely so tomorrow is soon enough.
+
+`partitionsAreHealthy` is separate from the job that fixes things, because a
+maintenance job that has silently failed for six days looks exactly like one
+with nothing to do.
+
+---
+
+### 2026-09-18 - a merged migration's comment is still immutable
+
+While adding 0012 I edited a stale comment in 0010 - it said partition
+maintenance would land "in Phase 7", which it now had. Reverted.
+
+`runMigrations` checksums each file and fails loudly when a merged one
+changes (CLAUDE.md section 8). The checksum covers the whole file, comments
+included, so editing a comment in an applied migration breaks `db:migrate` on
+every database that has already run it. No database has run 0010 yet, so
+nothing would have broken today - which is exactly the reasoning that makes a
+rule like this erode. The correction lives in 0012's header instead.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

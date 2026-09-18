@@ -24,3 +24,13 @@ export type {
   IncrementalResult,
   HourlyResult,
 } from './rollup/rollup.js';
+
+export {
+  ensurePartitions,
+  partitionsAreHealthy,
+  monthsToCover,
+  partitionNameFor,
+  PARTITION_LEAD_DAYS,
+  PARTITIONED_TABLES,
+} from './rollup/partitions.js';
+export type { PartitionPort, PartitionResult, PartitionedTable } from './rollup/partitions.js';
