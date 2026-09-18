@@ -136,7 +136,7 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 - [x] `scheduler`: reads `scheduled_jobs`, computes due work each tick, leader-elected via `pg_try_advisory_xact_lock` inside a transaction spanning the tick, direct Postgres connection (R35). **No BullMQ repeatables** (R23).
 - [x] Graceful shutdown proven: SIGTERM mid-job → job completes or is released, never lost
 - [x] Internal operator console (unstyled): queue depths, DLQ inspection and replay
-- [ ] Tests: kill leader mid-tick → exactly one successor; SIGTERM mid-job → no loss; DLQ replay restores exactly once; Redis flush → scheduler still enqueues due jobs
+- [x] Tests: kill leader mid-tick → exactly one successor; SIGTERM mid-job → no loss; DLQ replay restores exactly once; Redis flush → scheduler still enqueues due jobs
 
 **Gate:** Rolling deployment with 10,000 queued synthetic jobs: zero lost, zero duplicate executions.
 
