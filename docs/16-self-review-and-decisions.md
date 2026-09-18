@@ -684,6 +684,35 @@ allowlist of user ids in configuration; or a separate authentication path
 entirely (a VPN-only route, or an admin app). The third is the strongest and
 the most work. Until one is chosen, the console is inert rather than open.
 
+### 2026-09-18 — campaign_recipients uses `state`, not `status`
+
+BUILD-PLAN Phase 6 says `state` throughout, docs/17's amendment SQL says
+`state`, and docs/02 says `status`. Two of three, and the one that outranks
+docs/02 (CLAUDE.md §1). Likewise `provider_connection_id` rather than docs/02's
+`provider_id`, which is also the clearer name — it references
+`provider_connections`.
+
+`campaigns.status` keeps its name but gains `held` and renames `running` to
+`sending`, per BUILD-PLAN's extended state set. `held` is what a *scheduled*
+campaign enters under dunning restrictions; a running campaign always
+completes.
+
+### 2026-09-18 — email_events and usage_records are partitioned from the start
+
+docs/02 and docs/05 both partition them by range on `occurred_at`. Creating
+the parents unpartitioned and converting later would mean rewriting a table
+with hundreds of millions of rows, which is the one migration nobody wants to
+run (F25).
+
+Two partitions are created rather than one, so a deployment spanning a month
+boundary does not meet a missing partition on its first night. The scheduler
+creates subsequent ones seven days ahead with `lock_timeout` set.
+
+RLS is declared on the partitioned *parents*. Postgres applies a parent's
+policies to every partition, so a partition the scheduler creates later is
+covered without anybody remembering to enable it — which is the only way that
+stays true.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

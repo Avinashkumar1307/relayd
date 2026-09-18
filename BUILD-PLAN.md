@@ -150,10 +150,10 @@ The product. Plan seven weeks. **Internal sequencing:** launch + snapshot → si
 **Invariants:** R1, R2, R3, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R16, R20, R27, R28, R29, R30, R31, R32
 
 Schema
-- [ ] `campaigns` with the extended state set (`draft, scheduled, validating, queueing, sending, pausing, paused, cancelling, cancelled, completed, completed_with_errors, held, failed`)
-- [ ] `campaign_recipients` with `state` (incl. `delivery_uncertain`), `metered`, `attempt_count`, `attempt_token`, `queued_at`, `provider_attempt_started_at`, `delivery_state`, `delivery_rank`, `terminal_at`, `provider_message_id`, `provider_connection_id`; `fillfactor 80`; partial active index; stale-attempt index; `trg_guard_metered` (R14, R27)
-- [ ] `campaign_counters` (R13), `sender_daily_usage` (R8), `campaign_events`, `tracked_links`, `email_events` (range-partitioned, `is_bot`), `sending_pools`, `sending_pool_members`
-- [ ] `usage_records` with unique `idempotency_key` (billing plans arrive in Phase 8; the ledger row is written from day one — see Phase 8 risk note)
+- [x] `campaigns` with the extended state set (`draft, scheduled, validating, queueing, sending, pausing, paused, cancelling, cancelled, completed, completed_with_errors, held, failed`)
+- [x] `campaign_recipients` with `state` (incl. `delivery_uncertain`), `metered`, `attempt_count`, `attempt_token`, `queued_at`, `provider_attempt_started_at`, `delivery_state`, `delivery_rank`, `terminal_at`, `provider_message_id`, `provider_connection_id`; `fillfactor 80`; partial active index; stale-attempt index; `trg_guard_metered` (R14, R27)
+- [x] `campaign_counters` (R13), `sender_daily_usage` (R8), `campaign_events`, `tracked_links`, `email_events` (range-partitioned, `is_bot`), `sending_pools`, `sending_pool_members`
+- [x] `usage_records` with unique `idempotency_key` (billing plans arrive in Phase 8; the ledger row is written from day one — see Phase 8 risk note)
 
 Engine
 - [ ] Launch: guarded transition (R29), entitlement row `FOR SHARE` (R28 — stub entitlement = unlimited until Phase 8), audience snapshot into `campaign_recipients`, `template_version_id` pinned, counters initialised

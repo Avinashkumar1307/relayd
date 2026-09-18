@@ -36,3 +36,21 @@ export type {
 export { templates, templateVersions } from './templates.js';
 export { scheduledJobs, jobDeadLetters } from './scheduler.js';
 export type { DeadLetterStatus } from './scheduler.js';
+export {
+  sendingPools,
+  sendingPoolMembers,
+  campaigns,
+  campaignRecipients,
+  campaignCounters,
+  senderDailyUsage,
+  campaignEvents,
+  trackedLinks,
+  emailEvents,
+  usageRecords,
+  DELIVERY_RANK,
+} from './campaigns.js';
+export type {
+  CampaignStatus,
+  RecipientState,
+  DeliveryState,
+} from './campaigns.js';

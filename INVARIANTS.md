@@ -46,7 +46,7 @@ Legend for phases: see `BUILD-PLAN.md`.
 
 | # | Sev | Phase | Rule | Proving test | Test path |
 |---|---|---|---|---|---|
-| R14 | H | 6/8 | `metered` is write-once, enforced by trigger `trg_guard_metered`. `retry-failed` resets `state`, `attempt_count`, `last_error` and never `metered`. | Attempt `UPDATE ... SET metered=false` → exception. Retry-failed 1,000 rows; assert `usage_records` count unchanged. | |
+| R14 | H | 6/8 | `metered` is write-once, enforced by trigger `trg_guard_metered`. `retry-failed` resets `state`, `attempt_count`, `last_error` and never `metered`. | Attempt `UPDATE ... SET metered=false` → exception. Retry-failed 1,000 rows; assert `usage_records` count unchanged. |`packages/db/test/campaign-schema.test.ts` (declaration), `packages/testing/test/metered-guard.integration.test.ts` (behaviour) |
 | R15 | H | 8 | `usage_aggregates.last_usage_record_id` watermark; aggregation reads `id > watermark` and advances it in the same transaction. Re-running is idempotent. | Run aggregation three times over the same ledger; assert identical totals. | |
 | R17 | H | 8 | `billing-webhook` never re-fetches inline. It marks `(provider, object_type, provider_obj_id)` dirty in `billing_refetch_queue`; `billing-refetch` fetches each object at most once per 30 s, bounded to stay inside Stripe's read budget. | Inject 500 events for 10 objects; assert ≤ 10 Stripe API calls per 30 s window. | |
 | R18 | H | 8 | `billing_customers` is written (status `pending`) **before** `stripe.customers.create`. Checkout Session carries `client_reference_id = workspaceId` and `metadata.billing_customer_id`. Webhooks resolve via metadata and never create a mapping. | Fail the local write path after Stripe customer creation; complete checkout; assert the webhook still resolves and applies via metadata. | |
@@ -66,7 +66,7 @@ Legend for phases: see `BUILD-PLAN.md`.
 | # | Sev | Phase | Rule | Proving test | Test path |
 |---|---|---|---|---|---|
 | R23 | M | 5 | Recurring work is driven from `scheduled_jobs` (Postgres) by the `scheduler`. BullMQ repeatable jobs are not used anywhere. | Grep test: no `repeat:` option in any `queue.add`. Flush Redis; assert next tick still enqueues due jobs. | `packages/queue/test/queues.test.ts` (grep half, negative-controlled against a real repeatable). The Redis-flush half needs a live Redis and lands with the integration suite. |
-| R27 | M | 6 | `campaign_recipients`: `fillfactor=80`; `autovacuum_vacuum_scale_factor=0.02`; the only state index is partial on `('pending','queued','sending')`; no index on `state` alone. | Migration test inspects `pg_class.reloptions` and `pg_indexes`. | |
+| R27 | M | 6 | `campaign_recipients`: `fillfactor=80`; `autovacuum_vacuum_scale_factor=0.02`; the only state index is partial on `('pending','queued','sending')`; no index on `state` alone. | Migration test inspects `pg_class.reloptions` and `pg_indexes`. |`packages/db/test/campaign-schema.test.ts`, `packages/testing/test/metered-guard.integration.test.ts` |
 | R33 | M | 0 | Four process types: `api`, `edge`, `worker`, `scheduler`. No separate `track`/`ingest` apps. | Repo structure test: `apps/` contains exactly `web, api, edge, worker, scheduler`. | |
 | R34 | L | 10 | One Redis instance with keyspace prefixes (`bull:`, `rl:`, `cache:`) until measured. No Multi-AZ RDS in staging. VPC endpoints for S3, ECR, Secrets Manager, CloudWatch Logs. | Terraform plan assertions per environment. | |
 

@@ -36,3 +36,7 @@ export type SenderAccountId = Brand<string, 'SenderAccountId'>;
 // Phase 4 template tables.
 export type TemplateId = Brand<string, 'TemplateId'>;
 export type TemplateVersionId = Brand<string, 'TemplateVersionId'>;
+
+// Phase 6 campaign tables.
+export type SendingPoolId = Brand<string, 'SendingPoolId'>;
+export type TrackedLinkId = Brand<string, 'TrackedLinkId'>;
