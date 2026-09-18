@@ -54,3 +54,11 @@ export type {
   RecipientState,
   DeliveryState,
 } from './campaigns.js';
+export {
+  campaignStats,
+  campaignDailyStats,
+  providerStats,
+  deviceStats,
+  linkStats,
+  contactEngagement,
+} from './analytics.js';

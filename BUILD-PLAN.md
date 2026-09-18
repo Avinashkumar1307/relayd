@@ -191,8 +191,8 @@ Tests
 **Read first:** `docs/08-analytics.md`, `docs/17-review-findings.md` F24–F26
 **Invariants:** R24, R25, R26
 
-- [ ] Tables: `campaign_stats`, `campaign_daily_stats`, `provider_stats`, `device_stats`, `link_stats`, `contact_engagement`
-- [ ] `analytics-rollup`: 30 s incremental from Redis dirty set **plus** hourly full recompute over a bounded window (R24); `contact_engagement` derived from the hourly pass only (R26)
+- [x] Tables: `campaign_stats`, `campaign_daily_stats`, `provider_stats`, `device_stats`, `link_stats`, `contact_engagement`
+- [x] `analytics-rollup`: 30 s incremental from Redis dirty set **plus** hourly full recompute over a bounded window (R24); `contact_engagement` derived from the hourly pass only (R26)
 - [ ] Partition maintenance job for `email_events` (R25)
 - [ ] API: campaign, link, provider, device analytics; workspace overview; CSV export; every rate response includes `botFiltered`
 - [ ] Frontend: `/dashboard`, `/campaigns/:id/analytics` (Recharts), link heat table; **click rate is the headline**, open rate labelled approximate

@@ -1186,4 +1186,50 @@ sides.
 
 ---
 
+### 2026-09-18 - the hourly window is 26 hours, not 24
+
+R24 says the hourly rollup recomputes over a bounded window. It does not say
+how wide, and the obvious answer - one day - is wrong by exactly the amount
+that matters.
+
+A window equal to the interval between runs has no overlap, so an event that
+arrives while a pass is running falls between two windows and is never
+counted. Two hours of overlap also absorbs a run that started late, clock skew
+between the application and the database, and a provider that batches its
+callbacks. All three happen, and none of them should silently lose a bounce.
+
+Overlap costs nothing because the pass overwrites rather than accumulates,
+which is the same property that lets it repair the incremental pass's drift.
+
+---
+
+### 2026-09-18 - the incremental pass is also a recompute
+
+The 30-second pass recomputes each dirty campaign from scratch rather than
+applying a delta. A delta would need a watermark of its own, and a watermark
+is precisely the thing R24 keeps out of this pipeline - the hourly pass exists
+because a watermark plus a lost Redis set is a permanent gap.
+
+The difference between the two passes is therefore not incremental-versus-full
+but *which campaigns* and *which tables*: the 30-second pass does only the
+dirty campaigns and only `campaign_stats`, because nothing in the UI needs the
+daily, device or link tables to move during a send, and recomputing them every
+30 seconds would be most of the cost for none of the benefit.
+
+---
+
+### 2026-09-18 - a rate with no denominator is null, not zero
+
+A campaign that has delivered nothing has no click rate. Reporting 0% says it
+performed badly; reporting null says it has not been measured, which is the
+truth and which every chart renders differently.
+
+Found a related defect while testing it: `Math.max(0, Math.trunc(NaN))` is
+`NaN`, so a non-finite count divided into a `NaN` rate, which renders as
+"NaN%" and serialises into JSON as `null` - reaching the customer looking like
+a missing value rather than like the bad input it was. Counts are now coerced
+through a helper that returns 0 for anything non-finite.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
