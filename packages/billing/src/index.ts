@@ -136,3 +136,11 @@ export type {
   DivergenceKind,
   LocalSubscription,
 } from './reconcile/reconcile.js';
+
+export { refetchObject, refetchBatch } from './webhooks/refetch.js';
+export type {
+  RefetchPort,
+  RefetchResult,
+  RefetchBatchResult,
+  RefetchOutcome,
+} from './webhooks/refetch.js';

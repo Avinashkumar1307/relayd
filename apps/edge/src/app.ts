@@ -2,6 +2,7 @@ import express, { type Express } from 'express';
 import { errorEnvelope, notFoundHandler } from './middleware/error-envelope.js';
 import { requestId } from './middleware/request-id.js';
 import { healthRoutes, type HealthDependencies } from './routes/health.js';
+import { billingWebhookRoutes, type BillingWebhookDependencies } from './routes/billing-webhook.js';
 import { ingestRoutes, type IngestDependencies } from './routes/ingest.js';
 import { trackingRoutes, type TrackingDependencies } from './routes/tracking.js';
 
@@ -31,6 +32,14 @@ export interface EdgeDependencies extends HealthDependencies {
    * keys must 404 the pixel rather than serve one it cannot attribute.
    */
   tracking?: TrackingDependencies;
+
+  /**
+   * Stripe webhook ingest. Omitted the same way: a process with no signing
+   * secret must 404 rather than accept events it cannot verify, because an
+   * endpoint that answers 200 to anything is an endpoint Stripe keeps sending
+   * to while nothing is recorded.
+   */
+  billingWebhook?: BillingWebhookDependencies;
 }
 
 export function createApp(deps: EdgeDependencies): Express {
@@ -50,6 +59,10 @@ export function createApp(deps: EdgeDependencies): Express {
   // body the RFC does not define and we do not read, and parsing it would
   // only create a way to reject a valid unsubscribe.
   if (deps.tracking !== undefined) app.use(trackingRoutes(deps.tracking));
+
+  // Also raw-body, also before any JSON parser, and for exactly the reason
+  // above: Stripe signs the bytes it sent.
+  if (deps.billingWebhook !== undefined) app.use(billingWebhookRoutes(deps.billingWebhook));
 
   app.use(notFoundHandler);
   app.use(errorEnvelope(deps.logger));

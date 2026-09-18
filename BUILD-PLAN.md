@@ -212,7 +212,7 @@ The gate before external signups open.
 - [x] Tables: `billing_customers`, `plans`, `features`, `plan_features`, `prices`, `subscriptions` (`uq_sub_active_ws`), `subscription_items`, `invoices`, `payments`, `refunds`, `payment_methods`, `coupons`, `discounts`, `entitlements`, `usage_aggregates` (with watermark, R15), `billing_events`, `payment_webhook_events`, `billing_refetch_queue`, `billing_reconciliation_runs`
 - [x] `packages/billing/plans`: plan and feature definitions — the only place plan codes appear (lint rule)
 - [x] Checkout: local `billing_customers` row first, then Stripe customer, then session with `client_reference_id` + metadata (R18)
-- [ ] Webhook path in `apps/edge`: verify → inbox insert → 200 fast → mark dirty (R17); `billing-refetch` coalesced consumer; `billing-webhook` failed jobs never discarded
+- [x] Webhook path in `apps/edge`: verify → inbox insert → 200 fast → mark dirty (R17); `billing-refetch` coalesced consumer; `billing-webhook` failed jobs never discarded
 - [x] Entitlements projection + rebuild command; entitlement checks server-side, `FOR SHARE` at launch (R28 — replace the Phase 6 stub)
 - [x] Metering wired to the Phase 6 ledger; `usage_aggregates` with watermark (R15)
 - [x] Plan change: upgrade immediate with proration (modify the existing subscription, never a second row); downgrade scheduled to period end with pre-check `422 plan_downgrade_blocked` listing over-limit features; cancel at period end; cancel immediately
