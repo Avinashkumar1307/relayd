@@ -1436,4 +1436,54 @@ last really changed.
 
 ---
 
+### 2026-09-19 - the usage aggregation reads a minute behind the clock
+
+`docs/05-billing.md` describes the metering transaction and INVARIANTS R15
+describes the watermark, and neither says how far forward the aggregation pass
+may read. Read to the present and the watermark is unsound.
+
+UUIDv7 is time-ordered, which is what makes `id > watermark` a cursor at all,
+but the order it encodes is the order ids were *generated*, not the order rows
+became *visible*. A transaction that generated its id at t=100 and commits at
+t=105 is invisible to a reader at t=104 that has already consumed a row
+generated at t=102. Advance the watermark past t=102 and the straggler is never
+read again: a row sitting in `usage_records`, already billed, permanently
+absent from `usage_aggregates.used`.
+
+So `aggregateUsage` refuses to read rows whose `occurred_at` is newer than
+`AGGREGATION_LAG_MS` (60 seconds). A transaction still open after a minute has
+larger problems than its usage row, and `reconcileVerdict` - docs/05's first
+reconciliation check, `used` against `COUNT(*)` - is the backstop for what the
+lag does not cover.
+
+The lag is only load-bearing for the catch-up path. The normal path increments
+the counter inside the send transaction, where the ledger row and the
+increment commit together and no window exists.
+
+---
+
+### 2026-09-19 - two writers into one counter, and how they avoid each other
+
+`usage_aggregates.used` is advanced two ways, and the design has to keep them
+from counting the same ledger row twice.
+
+Inline, in the send transaction: the ledger insert is `ON CONFLICT DO NOTHING
+RETURNING id`, the counter moves only when that returns a row, and the
+watermark advances by `GREATEST(stored, new)` - forward only.
+
+Catch-up, in `aggregateUsage`: reads at `id > watermark`, folds, and writes the
+total and the new watermark in one `UPDATE` guarded by
+`last_usage_record_id IS NOT DISTINCT FROM $expected`. The guard is what makes
+a concurrent inline increment lose this batch rather than have it added on top
+of a row already counted; `IS NOT DISTINCT FROM` rather than `=`, because the
+expected value is null for a period nothing has been aggregated into yet and
+`= NULL` is null rather than true.
+
+Because the inline path only moves the watermark forward, a row it counted sits
+below the watermark and the catch-up cannot see it. Because the catch-up
+advances the watermark in the transaction that adds the total, a second run
+reads an empty range. Which is R15: three runs, one set of totals.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

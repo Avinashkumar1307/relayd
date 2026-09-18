@@ -52,3 +52,31 @@ export {
   SUCCESS_GIVE_UP_AFTER_MS,
 } from './checkout/checkout.js';
 export type { CheckoutPort, CheckoutResult, CheckoutFailure, StartCheckoutInput } from './checkout/checkout.js';
+
+export {
+  usageIdempotencyKey,
+  advanceWatermark,
+  foldLedger,
+  aggregationCutoff,
+  aggregateUsage,
+  aggregateUsageFully,
+  compareUsageIds,
+  overageFor,
+  overageHardCap,
+  isOverHardCap,
+  reconcileVerdict,
+  reconcileAggregate,
+  AGGREGATION_LAG_MS,
+  AGGREGATION_PAGE,
+  OVERAGE_HARD_CAP_MULTIPLIER,
+} from './metering/meter.js';
+export type {
+  AggregatePort,
+  AggregateKey,
+  AggregateRow,
+  AggregationResult,
+  LedgerRow,
+  Fold,
+  ReconcileVerdict,
+  ReconcileReport,
+} from './metering/meter.js';
