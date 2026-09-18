@@ -309,7 +309,9 @@ stateDiagram-v2
   disabled --> active: credentials replaced and verified
 ```
 
-A campaign whose pool has zero healthy senders does not fail. It moves to `paused` with `pause_reason = 'no_healthy_sender'`, notifies the owner, and a scheduled probe resumes it automatically when a sender recovers. Failing a half-sent campaign is almost always the wrong call.
+A campaign whose pool has zero healthy senders does not fail. It moves to `held` with `hold_reason = 'no_healthy_sender'`, notifies the owner, and a scheduled probe resumes it automatically when a sender recovers. Failing a half-sent campaign is almost always the wrong call.
+
+(Corrected 2026-09-18: this section previously said `paused`. `held` is the state docs/04 introduced for exactly this — "billing restriction or no healthy sender, distinct from user-initiated `paused`, and auto-resumable". Auto-resuming a `paused` campaign would auto-resume one a human stopped.)
 
 ## Adaptive routing: not in MVP
 

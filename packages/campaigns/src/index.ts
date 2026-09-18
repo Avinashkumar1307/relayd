@@ -81,3 +81,21 @@ export type {
   LifecyclePort,
   LifecycleResult,
 } from './engine/lifecycle.js';
+
+export {
+  selectSender,
+  eligibleMembers,
+  orderMembers,
+  bucketKeysFor,
+  sharedConnections,
+  mayFailOver,
+  MIN_HEALTH,
+  MAX_DEFER_MS,
+} from './engine/routing.js';
+export type {
+  PoolMember,
+  PoolStrategy,
+  RoutingPort,
+  RateGrant,
+  SenderSelection,
+} from './engine/routing.js';

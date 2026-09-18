@@ -162,7 +162,7 @@ Engine
 - [x] `recipient-sweeper` (R3, R5) and `campaign-reconcile` (R12, hourly counter recount R13)
 - [x] Retry as delayed jobs on `email-send` (not a separate consumer); `retry-failed` never touches `metered` (R14)
 - [x] Batch sends ≤ 100 with ambiguous-failure → `delivery_uncertain` (R31)
-- [ ] Pools: round-robin and failover; shared Redis bucket per `provider_connection_id`; rate-limit rejections cool down, never reroute
+- [x] Pools: round-robin and failover; shared Redis bucket per `provider_connection_id`; rate-limit rejections cool down, never reroute
 - [x] Pause / resume / cancel with transient-state deadlines; a running campaign always completes under dunning restrictions (`held` state for scheduled ones)
 
 Tracking and ingestion (`apps/edge`)

@@ -950,4 +950,44 @@ back out of `cancelled`.
 
 ---
 
+### 2026-09-18 - docs/07 said `paused` for no healthy sender; it is `held`
+
+docs/07 §10 ends by saying a campaign whose pool has no healthy sender moves
+to `paused` with `pause_reason = 'no_healthy_sender'` and is resumed
+automatically by a probe. docs/04 introduced `held` for exactly this case -
+"billing restriction or no healthy sender, distinct from user-initiated
+`paused`, and auto-resumable" - and BUILD-PLAN's Phase 6 item says the same.
+
+`held` is right and docs/07 is the older wording. Auto-resuming a `paused`
+campaign would auto-resume one a human deliberately stopped, which is the
+single reason the two states are separate. docs/07 is corrected in this commit
+with a dated note.
+
+---
+
+### 2026-09-18 - failover is allowed for provider faults and refused for quota
+
+docs/07 says rate-limit rejections "cool down, never reroute", and separately
+that failover exists for unhealthy senders. It does not give the rule as a
+single list, so `mayFailOver` states it:
+
+  provider_unavailable, auth_failed, invalid_sender  -> may fail over
+  everything else                                    -> may not
+
+The line is whether the problem is about the account's *capacity* or about the
+account. A provider being down is not the customer's fault and another account
+is the right answer. A quota being exhausted is precisely about how much that
+account has sent, and moving the message to a sibling is the quota evasion
+that keying buckets by `provider_connection_id` exists to prevent -
+reintroduced one layer up, where it would be far harder to notice.
+
+Two cases worth naming because they look like they should fail over and must
+not. An ambiguous `timeout` may already have been accepted, so re-sending it
+anywhere is the duplicate R31 exists to prevent. A per-message failure -
+`invalid_recipient`, `content_rejected` - will fail identically on every
+sender, and trying all of them multiplies the reputation damage by the size of
+the pool.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
