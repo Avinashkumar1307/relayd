@@ -123,7 +123,12 @@ export const sendingPools = pgTable(
   (table) => [
     uniqueIndex('uq_pool_name').on(table.workspaceId, table.name),
     uniqueIndex('uq_pool_ws').on(table.id, table.workspaceId),
-    uniqueIndex('uq_pool_default').on(table.workspaceId),
+    // PARTIAL. Migration 0009 has `WHERE is_default`, and without the
+    // predicate here this is a different index entirely: one that permits a
+    // workspace exactly one sending pool. Drizzle only generates SQL from
+    // this, so the migration is what the database has — but anything reading
+    // the schema to understand the shape would be reading a lie.
+    uniqueIndex('uq_pool_default').on(table.workspaceId).where(sql`${table.isDefault}`),
   ],
 );
 
@@ -204,9 +209,13 @@ export const campaigns = pgTable(
   },
   (table) => [
     uniqueIndex('uq_campaign_ws').on(table.id, table.workspaceId),
-    uniqueIndex('uq_campaign_idem').on(table.workspaceId, table.idempotencyKey),
+    // Partial: a campaign with no key must not collide with every other
+    // campaign that also has none.
+    uniqueIndex('uq_campaign_idem')
+      .on(table.workspaceId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
     index('ix_campaigns_ws_status').on(table.workspaceId, table.status, table.createdAt.desc()),
-    index('ix_campaigns_due').on(table.scheduledAt),
+    index('ix_campaigns_due').on(table.scheduledAt).where(sql`${table.status} = 'scheduled'`),
     foreignKey({
       columns: [table.sendingPoolId, table.workspaceId],
       foreignColumns: [sendingPools.id, sendingPools.workspaceId],
@@ -272,10 +281,21 @@ export const campaignRecipients = pgTable(
     uniqueIndex('uq_cr_token').on(table.messageToken),
     // The only state index, and partial: terminal rows leave it so their
     // updates become HOT (F27).
-    index('ix_cr_active').on(table.campaignId, table.state),
-    index('ix_cr_stale_attempt').on(table.providerAttemptStartedAt),
-    index('ix_cr_provider_msg').on(table.providerMessageId),
-    index('ix_cr_retry').on(table.nextAttemptAt),
+    // Every one of these is partial, and R27 is why: an unqualified index on
+    // `state` would stop any update to a recipient being HOT, which is the
+    // whole reason this table has fillfactor 80.
+    index('ix_cr_active')
+      .on(table.campaignId, table.state)
+      .where(sql`${table.state} IN ('pending','queued','sending')`),
+    index('ix_cr_stale_attempt')
+      .on(table.providerAttemptStartedAt)
+      .where(sql`${table.state} = 'sending'`),
+    index('ix_cr_provider_msg')
+      .on(table.providerMessageId)
+      .where(sql`${table.providerMessageId} IS NOT NULL`),
+    index('ix_cr_retry')
+      .on(table.nextAttemptAt)
+      .where(sql`${table.state} = 'failed' AND ${table.nextAttemptAt} IS NOT NULL`),
     foreignKey({
       columns: [table.campaignId, table.workspaceId],
       foreignColumns: [campaigns.id, campaigns.workspaceId],

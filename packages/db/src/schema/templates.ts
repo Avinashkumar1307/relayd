@@ -49,8 +49,14 @@ export const templates = pgTable(
   (table) => [
     uniqueIndex('uq_template_ws').on(table.id, table.workspaceId),
     // Partial on deleted_at, so a name freed by a soft delete can be reused.
-    uniqueIndex('uq_template_name').on(table.workspaceId, table.name),
-    index('ix_templates_ws_updated').on(table.workspaceId, table.updatedAt.desc()),
+    // Both partial on `deleted_at IS NULL`. Without the predicate the
+    // unique one would keep a deleted template's name reserved forever.
+    uniqueIndex('uq_template_name')
+      .on(table.workspaceId, table.name)
+      .where(sql`${table.deletedAt} IS NULL`),
+    index('ix_templates_ws_updated')
+      .on(table.workspaceId, table.updatedAt.desc())
+      .where(sql`${table.deletedAt} IS NULL`),
   ],
 );
 

@@ -36,7 +36,9 @@ export const scheduledJobs = pgTable(
       .notNull()
       .default(sql`now()`),
   },
-  (table) => [index('ix_scheduled_due').on(table.nextRunAt)],
+  // Partial on `enabled`: the tick's query never looks at a disabled
+  // schedule, and an operator who disables one expects it to cost nothing.
+  (table) => [index('ix_scheduled_due').on(table.nextRunAt).where(sql`${table.enabled}`)],
 );
 
 export type DeadLetterStatus = 'new' | 'investigating' | 'replayed' | 'discarded';
@@ -72,7 +74,12 @@ export const jobDeadLetters = pgTable(
   (table) => [
     uniqueIndex('uq_dl_job').on(table.queue, table.jobId, table.attempts),
     index('ix_dl_queue').on(table.queue, table.status, table.failedAt.desc()),
-    index('ix_dl_new').on(table.failedAt.desc()),
-    index('ix_dl_workspace').on(table.workspaceId, table.failedAt.desc()),
+    // Both partial, as migration 0008 creates them. The predicates are the
+    // point of these two: the operator console's default view is the
+    // unreviewed letters, and the workspace lookup skips the global ones.
+    index('ix_dl_new').on(table.failedAt.desc()).where(sql`${table.status} = 'new'`),
+    index('ix_dl_workspace')
+      .on(table.workspaceId, table.failedAt.desc())
+      .where(sql`${table.workspaceId} IS NOT NULL`),
   ],
 );

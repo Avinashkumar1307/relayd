@@ -177,7 +177,9 @@ export const senderAccounts = pgTable(
       foreignColumns: [senderIdentities.id, senderIdentities.workspaceId],
       name: 'fk_sender_identity',
     }).onDelete('restrict'),
-    index('ix_sender_selectable').on(table.workspaceId, table.status, table.healthScore.desc()),
+    index('ix_sender_selectable')
+      .on(table.workspaceId, table.status, table.healthScore.desc())
+      .where(sql`${table.status} = 'active'`),
   ],
 );
 
@@ -230,7 +232,11 @@ export const providerWebhookEvents = pgTable(
       foreignColumns: [providerConnections.id, providerConnections.workspaceId],
       name: 'fk_pwe_connection',
     }).onDelete('cascade'),
-    index('ix_pwe_unprocessed').on(table.workspaceId, table.receivedAt),
-    index('ix_pwe_unmatched').on(table.workspaceId, table.receivedAt),
+    index('ix_pwe_unprocessed')
+      .on(table.workspaceId, table.receivedAt)
+      .where(sql`${table.processedAt} IS NULL`),
+    index('ix_pwe_unmatched')
+      .on(table.workspaceId, table.receivedAt)
+      .where(sql`NOT ${table.matched}`),
   ],
 );
