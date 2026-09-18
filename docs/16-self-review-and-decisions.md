@@ -778,4 +778,46 @@ runs, which is the thing the queue design exists to prevent.
 
 ---
 
+### 2026-09-18 - `scheduled_jobs` was empty, so no reconciler could ever run
+
+Migration 0008 created `scheduled_jobs` and nothing has written to it since.
+The scheduler reads due rows from that table every sixty seconds and there
+were none, so `recipient-sweeper` and `campaign-reconcile` were written,
+given queue settings, and unreachable. Nothing failed: an empty table is
+exactly what a system with no due work looks like.
+
+Migration 0010 seeds the three schedules that exist today, `ON CONFLICT DO
+NOTHING` so `db:migrate` stays idempotent and so an operator who disables a
+schedule does not have it re-enabled by the next deploy.
+
+`partition-maintenance` is deliberately not seeded: it has no queue in
+`packages/queue/src/queues.ts`, and a schedule naming a queue that does not
+exist throws on every tick. 0009 created two partitions ahead, which covers
+the gap until Phase 7 adds the queue and its schedule in one change.
+
+`packages/queue/test/schedules.test.ts` now reads the seeds out of the
+migrations and checks them against `QUEUE_NAMES`, because the two halves of a
+schedule are declared in different languages in different files and nothing
+else connects them. Its first version was itself wrong - it asserted a
+migration was idempotent by matching a regex that the migration's own header
+comment satisfied. It strips comments before matching now.
+
+---
+
+### 2026-09-18 - the sweeper does recipients before campaigns
+
+R3, R5 and R12 do not say what order a reconciliation pass should run in.
+Recipients first: a `pausing` campaign stuck on one dead `sending` row exits
+`pausing` on its own once that row becomes terminal, so sweeping first means
+the campaign deadline fires only for campaigns that are genuinely stuck rather
+than merely slow. Forcing first would leave a campaign that looks correctly
+paused sitting on a recipient nobody ever looks at again.
+
+The two recipient cutoffs are deliberately different - five minutes for
+`queued`, ten for `sending`. A `queued` row with no job is certainly lost. A
+`sending` row may be a slow SMTP connection that is at the provider right now,
+and returning it to the queue would send the message twice.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

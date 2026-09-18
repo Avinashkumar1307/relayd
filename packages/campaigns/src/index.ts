@@ -39,3 +39,19 @@ export type {
   DispatchableCampaign,
   ClaimedRecipient,
 } from './engine/dispatch.js';
+
+export {
+  sweepOnce,
+  STALE_QUEUED_MS,
+  STALE_SENDING_MS,
+  TRANSIENT_DEADLINE_MS,
+  TRANSIENT_EXITS,
+  SWEEP_BATCH,
+  SWEEPABLE_CAMPAIGN_STATES,
+} from './engine/sweeper.js';
+export type {
+  SweeperPort,
+  SweepOptions,
+  SweepResult,
+  TransientState,
+} from './engine/sweeper.js';
