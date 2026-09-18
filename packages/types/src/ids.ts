@@ -32,3 +32,7 @@ export type ImportJobId = Brand<string, 'ImportJobId'>;
 export type ProviderConnectionId = Brand<string, 'ProviderConnectionId'>;
 export type SenderIdentityId = Brand<string, 'SenderIdentityId'>;
 export type SenderAccountId = Brand<string, 'SenderAccountId'>;
+
+// Phase 4 template tables.
+export type TemplateId = Brand<string, 'TemplateId'>;
+export type TemplateVersionId = Brand<string, 'TemplateVersionId'>;

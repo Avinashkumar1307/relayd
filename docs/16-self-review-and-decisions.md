@@ -579,6 +579,44 @@ Losing it means rotating the connection. That is the correct trade: a token
 that can be re-read is a token that leaks through every logging, screenshot
 and support path that ever touches a connection page.
 
+### 2026-09-18 — rendering lives in @relayd/campaigns, and uses sanitize-html
+
+CLAUDE.md §3 lists the packages, and there is no templates package. Rendering
+is in `packages/campaigns/src/templates/`, which is the package that renders at
+dispatch. Adding a package to the locked layout for three files would be a
+larger deviation than placing them in the package that consumes them.
+
+The sanitiser is `sanitize-html` rather than something hand-written. A
+hand-written HTML sanitiser is a standing invitation to mutation XSS: the
+attacks that work are the ones where the browser's parser disagrees with yours
+about where a tag ends, and only a real tokeniser gets that right. The
+allowlists, the style filtering and the `on*` guard are ours; the tokenising
+is not.
+
+### 2026-09-18 — published template versions are immutable in the database
+
+BUILD-PLAN Phase 4 requires it and docs/02 has no notion of publishing at all,
+so `template_versions` gains `published_at` and `published_by`. A row with
+`published_at` NULL is a draft and may be edited freely; setting it is one-way.
+
+Enforced by a BEFORE UPDATE trigger rather than by the service, in the same
+shape as the write-once guard on `campaign_recipients.metered` (R14). A
+campaign records the `template_version_id` it rendered, so editing a published
+version would rewrite what a customer has already sent — the report would
+describe content that never went out. That is not a rule to leave to a code
+path remembering to check.
+
+### 2026-09-18 — compiling and rendering are separate, and stay separate
+
+Compiling sanitises and derives the text part, once, when a version is saved.
+Rendering substitutes merge tags, once per recipient, against the compiled
+output.
+
+Merging them would sanitise 500,000 times per campaign, and worse: a template
+sent today and the same template sent tomorrow could differ, because the
+allowlist changed in between. What was compiled is what was reviewed and what
+is sent.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

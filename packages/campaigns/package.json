@@ -15,5 +15,12 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "sanitize-html": "^2.13.1"
+  },
+  "devDependencies": {
+    "@types/sanitize-html": "^2.13.0",
+    "@types/node": "^22.7.5"
   }
 }

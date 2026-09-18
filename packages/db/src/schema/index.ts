@@ -33,3 +33,4 @@ export type {
   ConnectionStatus,
   SenderStatus,
 } from './providers.js';
+export { templates, templateVersions } from './templates.js';

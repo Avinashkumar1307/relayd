@@ -113,9 +113,9 @@ docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile .
 
 **Read first:** `docs/00-product-and-scope.md`, `docs/02-database.md` §4 (templates)
 
-- [ ] Tables: `templates`, `template_versions` (published versions immutable)
-- [ ] Rendering engine: merge tags with defaults, missing-field behaviour, plain-text auto-generation, deterministic output
-- [ ] HTML sanitiser with the XSS corpus as a test fixture
+- [x] Tables: `templates`, `template_versions` (published versions immutable)
+- [x] Rendering engine: merge tags with defaults, missing-field behaviour, plain-text auto-generation, deterministic output
+- [x] HTML sanitiser with the XSS corpus as a test fixture
 - [ ] API: template CRUD, publish version, render-preview with sample contact, test-send
 - [ ] Frontend: `/templates`, `/templates/create` (HTML editor + merge-tag picker, desktop/mobile preview, plain-text editor). **No drag-and-drop builder.**
 - [ ] Campaigns will record `template_version_id` at launch (Phase 6) — expose the id now
