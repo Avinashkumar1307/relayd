@@ -217,7 +217,7 @@ The gate before external signups open.
 - [x] Metering wired to the Phase 6 ledger; `usage_aggregates` with watermark (R15)
 - [x] Plan change: upgrade immediate with proration (modify the existing subscription, never a second row); downgrade scheduled to period end with pre-check `422 plan_downgrade_blocked` listing over-limit features; cancel at period end; cancel immediately
 - [x] Dunning ladder in `billing-processing`: past_due (0–14 d) → restricted (15–30 d, launch blocked, scheduled campaigns `held`) → suspended (31–90 d) → export offered → hard delete after three notices
-- [ ] `billing-reconcile` nightly job + divergence metric (R19)
+- [x] `billing-reconcile` nightly job + divergence metric (R19)
 - [ ] API: checkout session, portal session, subscription read, plan-change pre-check, upgrade, downgrade, cancel, invoices, usage, webhook endpoint
 - [ ] Frontend: `/billing`, `/billing/plans`, `/billing/checkout`, `/billing/success` (polls; server-side lookup fallback after 10 s), `/billing/cancel`, `/billing/invoices`, `/billing/payment-method`, usage meters, past-due banner, downgrade blocker dialog
 - [ ] `pnpm test:billing`: the twelve critical cases in `docs/12-testing.md` + metering invariants + duplicated and reordered webhook replays

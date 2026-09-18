@@ -120,3 +120,19 @@ export {
   NOTICE_DAYS,
 } from './dunning/ladder.js';
 export type { DunningStage, Capabilities, DunningPort, DunningOutcome } from './dunning/ladder.js';
+
+export {
+  reconcileBilling,
+  reconcileSince,
+  compareSubscription,
+  isAutoCorrectable,
+  revokesEntitlements,
+  RECONCILE_WINDOW_HOURS,
+} from './reconcile/reconcile.js';
+export type {
+  ReconcilePort,
+  ReconcileResult,
+  Divergence,
+  DivergenceKind,
+  LocalSubscription,
+} from './reconcile/reconcile.js';
