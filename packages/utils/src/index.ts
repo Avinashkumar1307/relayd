@@ -22,3 +22,13 @@ export {
   TRACKING_TOKEN_LENGTH,
 } from './crypto/tracking.js';
 export type { TrackingKey, TrackingPayload, TokenKind } from './crypto/tracking.js';
+export {
+  signWebhook,
+  verifyWebhookSignature,
+  parseSignatureHeader,
+  constantTimeEquals,
+  SIGNATURE_HEADER,
+  EVENT_ID_HEADER,
+  SIGNATURE_TOLERANCE_SECONDS,
+} from './crypto/webhook-signature.js';
+export type { SignedPayload, VerifyResult, VerifyFailure } from './crypto/webhook-signature.js';

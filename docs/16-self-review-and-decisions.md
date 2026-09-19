@@ -1660,4 +1660,46 @@ times.
 
 ---
 
+### 2026-09-19 - where the outbound webhook code lives
+
+`CLAUDE.md` section 3 fixes the package layout and describes
+`packages/notifications/` as "Product email (verification, invites,
+dunning)". Outbound webhooks are notifications to a different audience over a
+different transport, and BUILD-PLAN Phase 9 names no package for them.
+
+Split rather than given a new package, because the two halves belong in
+different places:
+
+  The signing primitive is in `packages/utils/src/crypto/webhook-signature.ts`,
+  next to the other crypto. Both the delivery worker and any future inbound
+  verifier need it, and `utils` is described as "crypto, dates, Result types".
+
+  The delivery policy — backoff, health transitions, secret overlap, what to
+  retry — is in `packages/notifications/src/webhooks/delivery.ts`. It is
+  notification logic, and adding a package for four hundred lines would cost
+  more than it explains.
+
+The section 3 description of `notifications/` is now narrower than what it
+holds. Read it as "product notifications", email and webhook.
+
+---
+
+### 2026-09-19 - the outbound signature scheme is Stripe's shape
+
+`Relayd-Signature: t=<unix seconds>,v1=<hex hmac>`, signing
+`<timestamp>.<body>`, five-minute tolerance.
+
+Deliberately familiar rather than novel. An integrator who has written a
+Stripe or a SendGrid verifier can write ours in five minutes, and the
+properties that matter are the ones that scheme already gets right: the
+timestamp is inside the MAC so it cannot be edited, the tolerance bounds
+replay, and the parser tolerates unknown fields so a `v2=` can be added later
+without breaking every existing consumer.
+
+Rotation keeps the previous secret live for 24 hours. A rotation with no
+overlap breaks every consumer at the instant it lands, which makes rotation
+something nobody ever does.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

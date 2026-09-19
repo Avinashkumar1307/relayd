@@ -17,7 +17,8 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@relayd/logger": "workspace:^"
+    "@relayd/logger": "workspace:^",
+    "@relayd/utils": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^22.7.5"
