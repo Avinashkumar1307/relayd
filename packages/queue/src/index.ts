@@ -24,3 +24,5 @@ export type {
   ReplayTarget,
   ReplayableDeadLetter,
 } from './dead-letters.js';
+export { withTrace, resumeTrace, withoutTrace, TRACE_FIELD } from './trace.js';
+export type { Traced } from './trace.js';

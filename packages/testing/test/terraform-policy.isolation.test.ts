@@ -293,6 +293,44 @@ describe('no policy anywhere grants everything', () => {
   });
 });
 
+describe('the load balancer never routes the metrics endpoint', () => {
+  it('routes no path pattern that would reach /metrics', async () => {
+    // `apps/api` and `apps/edge` both serve `/metrics`, and the routing is
+    // the *only* thing keeping it off the internet: on edge every route is
+    // unauthenticated by design, so there is no auth middleware that would
+    // have caught this.
+    //
+    // An exposition endpoint is a map of the system — route names, queue
+    // names, error rates, enough timing to tell when a campaign is sending.
+    // Not credentials, but not public either, and a listener rule added for
+    // an unrelated reason is a plausible way to expose it silently.
+    for (const environment of ['production', 'staging']) {
+      const main = await readFile(
+        path.join(terraformRoot, `environments/${environment}/main.tf`),
+        'utf8',
+      );
+
+      const patterns = [...withoutComments(main).matchAll(/path_patterns\s*=\s*\[([^\]]*)\]/gu)]
+        .flatMap((match) => (match[1] ?? '').split(','))
+        .map((entry) => entry.trim().replaceAll('"', ''))
+        .filter((entry) => entry !== '');
+
+      expect(patterns.length, `${environment} has no path patterns`).toBeGreaterThan(0);
+
+      for (const pattern of patterns) {
+        // A rule is a match if a prefix ending in `*` covers `/metrics`, or
+        // if it names it outright.
+        const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
+        const reaches = pattern.endsWith('*')
+          ? '/metrics'.startsWith(prefix)
+          : pattern === '/metrics';
+
+        expect(reaches, `${environment} routes ${pattern}, which reaches /metrics`).toBe(false);
+      }
+    }
+  });
+});
+
 describe('R34: the environments differ where they should', () => {
   it('runs Multi-AZ in production and not in staging', async () => {
     // Read out of the `data` module call specifically. Both environments

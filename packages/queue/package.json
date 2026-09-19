@@ -17,6 +17,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@relayd/logger": "workspace:^",
     "bullmq": "^5.25.0",
     "ioredis": "^5.4.1"
   },

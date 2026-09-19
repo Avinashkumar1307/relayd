@@ -1743,6 +1743,90 @@ Terraform is not installed on the development machine this was written on, so
 `terraform validate` and `terraform fmt` have not been run against these
 files. CI runs both from Phase 10 onward.
 
+### 2026-09-19 - the alarms watch EMF, not the Prometheus endpoint
+
+CLAUDE.md section 2 asks for a "Prometheus endpoint". docs/10 says
+"Prometheus + Grafana only once someone owns it. Do not run a Prometheus
+stack you have no one to maintain." Both are satisfied, and the resolution is
+worth writing down because it is not obvious from either document.
+
+The twelve alarms in docs/10 "Alerts that page" are CloudWatch alarms, and a
+CloudWatch alarm can only watch a CloudWatch metric. Nothing scrapes
+`/metrics`, by the second rule. So an alarm pointed at a Prometheus series
+would sit in INSUFFICIENT_DATA forever — a grey square that reads as "quiet"
+rather than "broken", on exactly the twelve things that are unrecoverable if
+missed.
+
+So there are two mechanisms, deliberately:
+
+`packages/logger/src/emf.ts` emits CloudWatch Embedded Metric Format — a log
+line of a particular shape, extracted into a metric by the log group the task
+already writes to. No agent, no SDK, no push. This is what the alarms watch.
+
+`packages/logger/src/metrics.ts` holds Prometheus series and renders them at
+`/metrics` on `api` and `edge`. Nothing scrapes it. It is there for a `curl`
+during an incident and for whoever eventually owns that stack.
+
+The names in `CLOUDWATCH_METRICS` and the `metric_name` arguments in
+`infra/terraform/modules/observability` must agree exactly, and no compiler
+spans that boundary. `packages/testing/test/observability.test.ts` compares
+them in both directions: an alarm on a metric nothing emits, and a metric no
+alarm watches.
+
+### 2026-09-19 - `/metrics` is kept off the internet by routing alone
+
+The ALB forwards `/api/*` to api and `/o/* /c/* /u/* /ingest/*` to edge.
+`/metrics` matches neither, so it 404s at the load balancer and is reachable
+only inside the VPC.
+
+That is the entire access control. It deserves stating because on `edge`
+every route is unauthenticated by design, so there is no middleware that
+would have caught the endpoint being reachable — the routing *is* the
+boundary. `packages/testing/test/terraform-policy.isolation.test.ts` asserts
+no listener rule's path pattern can reach it.
+
+What it would give away: route names, queue names, error rates, and enough
+timing to tell when a campaign is sending. Not credentials, but a decent map.
+
+### 2026-09-19 - the queue boundary now carries `_trace`
+
+docs/10 specifies "Propagated via `AsyncLocalStorage` in-process and via the
+job payload's `_trace` field across the queue boundary." The second half did
+not exist; `packages/queue` had no trace handling at all.
+
+`packages/queue/src/trace.ts` adds it. This is the hop that matters: the send
+itself happens in the worker, on the far side of the queue, which is
+precisely the part a support ticket is asking about. Without it the chain
+broke at the only interesting place while looking complete on either side.
+
+`withoutTrace` exists because every consumer validates its payload with Zod,
+and an unrecognised key under `.strict()` would reject the job — a job
+failing validation because of the field added to make it traceable is a bad
+trade.
+
+This makes `packages/queue` depend on `packages/logger`, which is new. The
+alternative was duplicating the `TraceContext` type, which would drift.
+
+### 2026-09-19 - metrics and Sentry init live in `packages/logger`
+
+CLAUDE.md section 3 describes `packages/logger` as "Pino, redaction,
+AsyncLocalStorage trace context" and lists no observability package.
+
+`metrics.ts`, `emf.ts` and `sentry-init.ts` went there rather than into a new
+package. The name is now slightly narrow for what the package holds — it is
+the observability primitives, not only the logger — but renaming it would
+touch every import in the repository for no behavioural gain, and metrics and
+Sentry tags both label from the trace context that already lives there.
+
+`prom-client` and `@sentry/node` are its new dependencies. Neither is in the
+locked-technology table, so neither is a substitution; both are named in
+CLAUDE.md section 2 as the observability stack.
+
+Express middleware is *not* in the package — it is duplicated in
+`apps/api/src/middleware/metrics.ts` and `apps/edge/src/middleware/metrics.ts`,
+matching what `request-id.ts` already does. The alternative would make the
+worker and the scheduler, which serve no HTTP, depend on Express.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

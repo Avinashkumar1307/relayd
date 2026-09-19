@@ -3,6 +3,8 @@ import cookieParser from 'cookie-parser';
 import { errorEnvelope, notFoundHandler } from './middleware/error-envelope.js';
 import { requestId } from './middleware/request-id.js';
 import { healthRoutes, type HealthDependencies } from './routes/health.js';
+import { metricsRoutes } from './routes/metrics.js';
+import { metrics } from './middleware/metrics.js';
 import { authRoutes, type AuthRouterOptions } from './routes/auth.js';
 import {
   invitationRoutes,
@@ -62,12 +64,17 @@ export function createApp(deps: AppDependencies): Express {
   app.disable('x-powered-by');
 
   app.use(requestId);
+  // Before the routers, so a request that throws is still counted. After
+  // requestId, so a slow request can be found in the logs by the id the
+  // same response carried.
+  app.use(metrics('api'));
   // Opens the request-scoped context the auth middleware fills in.
   app.use(requestContext);
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
   app.use(healthRoutes(deps));
+  app.use(metricsRoutes());
 
   if (deps.auth !== undefined) {
     app.use('/api/v1/auth', authRoutes(deps.auth));

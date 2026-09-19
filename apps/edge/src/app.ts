@@ -2,6 +2,8 @@ import express, { type Express } from 'express';
 import { errorEnvelope, notFoundHandler } from './middleware/error-envelope.js';
 import { requestId } from './middleware/request-id.js';
 import { healthRoutes, type HealthDependencies } from './routes/health.js';
+import { metricsRoutes } from './routes/metrics.js';
+import { metrics } from './middleware/metrics.js';
 import { billingWebhookRoutes, type BillingWebhookDependencies } from './routes/billing-webhook.js';
 import { ingestRoutes, type IngestDependencies } from './routes/ingest.js';
 import { trackingRoutes, type TrackingDependencies } from './routes/tracking.js';
@@ -48,8 +50,14 @@ export function createApp(deps: EdgeDependencies): Express {
   app.disable('x-powered-by');
 
   app.use(requestId);
+  // Before every router, including the ones mounted ahead of the body
+  // parsers, so an ingest request that fails its signature check is still
+  // counted. That count is the signal that a provider's secret was rotated
+  // without telling us.
+  app.use(metrics('edge'));
 
   app.use(healthRoutes(deps));
+  app.use(metricsRoutes());
 
   // Before any JSON parser. Every signature scheme signs the bytes that were
   // sent, and re-serialising parsed JSON changes them (docs/06).
