@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import type { GlobalMembershipRepository } from '@relayd/db';
 import { AppError } from '@relayd/types';
 import type { CampaignId } from '@relayd/types';
@@ -14,6 +14,7 @@ import {
   updateCampaignSchema,
 } from '@relayd/validation';
 import { requireScope } from '../context.js';
+import { idempotent, type IdempotencyPort } from '../middleware/idempotency.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
 import { validateBody } from '../middleware/validate.js';
 import type { CampaignService } from '../services/campaigns.js';
@@ -45,6 +46,17 @@ export interface CampaignRouterOptions {
   campaigns: CampaignService;
   tokens: TokenService;
   memberships: GlobalMembershipRepository;
+  /**
+   * Honours `Idempotency-Key` on create and launch (docs/17 amendment G).
+   *
+   * Accepted rather than required. The dashboard shares these routes, and the
+   * thing that actually prevents a duplicate launch is the guarded state
+   * transition in Postgres (R29) — the key is what makes a *retry* safe,
+   * which is what an integrator on an unreliable connection needs.
+   *
+   * Absent in tests that do not exercise it, and then the header is ignored.
+   */
+  idempotency?: IdempotencyPort;
 }
 
 export function campaignRoutes(options: CampaignRouterOptions): Router {
@@ -93,6 +105,20 @@ export function campaignRoutes(options: CampaignRouterOptions): Router {
    * ids and segment ids — and putting it in a query string caps the wizard at
    * whatever the proxy's URL limit happens to be.
    */
+  /**
+   * Honours the header when a store is wired, and is a no-op otherwise.
+   *
+   * Mounted *after* `validateBody`, so the request hash is taken over the
+   * validated body rather than the raw one. Two requests that differ only in
+   * fields this endpoint does not read are the same request, and hashing the
+   * raw body would answer `idempotency_key_reuse` to a client that added a
+   * field we ignore.
+   */
+  const replayable = (endpoint: string) =>
+    options.idempotency === undefined
+      ? (_req: Request, _res: Response, next: NextFunction) => next()
+      : idempotent(endpoint, { store: options.idempotency, required: false });
+
   router.post(
     '/campaigns/audience-preview',
     ...chain,
@@ -109,6 +135,7 @@ export function campaignRoutes(options: CampaignRouterOptions): Router {
     ...chain,
     write,
     validateBody(createCampaignSchema),
+    replayable('POST /campaigns'),
     async (req: Request, res: Response) => {
       const result = await campaigns.create(
         requireScope(),
@@ -158,6 +185,7 @@ export function campaignRoutes(options: CampaignRouterOptions): Router {
     ...chain,
     launch,
     validateBody(launchCampaignSchema),
+    replayable('POST /campaigns/:id/launch'),
     async (req: Request, res: Response) => {
       const key = idempotencyKey(req);
 

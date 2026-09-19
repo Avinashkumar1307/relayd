@@ -1,10 +1,11 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { GlobalMembershipRepository } from '@relayd/db';
 import { AppError } from '@relayd/types';
 import { requireScope } from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
 import { refuseApiKey } from '../middleware/api-key-auth.js';
+import { idempotent, type IdempotencyPort } from '../middleware/idempotency.js';
 import { statusForEntitlementDenial, type BillingService } from '../services/billing.js';
 import type { TokenService } from '../services/tokens.js';
 
@@ -26,6 +27,15 @@ export interface BillingRouterOptions {
   billing: BillingService;
   tokens: TokenService;
   memberships: GlobalMembershipRepository;
+  /**
+   * Honours `Idempotency-Key` on the routes that charge.
+   *
+   * A retried checkout without it creates a second Stripe session, which is
+   * harmless — only one can be paid and the rest expire. A retried plan
+   * change is a second `updateSubscriptionPrice`, and Stripe prorates each
+   * one.
+   */
+  idempotency?: IdempotencyPort;
 }
 
 const intervalSchema = z.enum(['month', 'year']);
@@ -74,6 +84,12 @@ export function billingRoutes(options: BillingRouterOptions): Router {
     refuseApiKey(),
     requirePermission('billing:write'),
   ] as const;
+
+  /** Honours the header when a store is wired, and is a no-op otherwise. */
+  const replayable = (endpoint: string) =>
+    options.idempotency === undefined
+      ? (_req: Request, _res: Response, next: NextFunction) => next()
+      : idempotent(endpoint, { store: options.idempotency, required: false });
 
   /** The pricing page. Public by design. */
   router.get('/billing/plans', (_req: Request, res: Response) => {
@@ -132,22 +148,27 @@ export function billingRoutes(options: BillingRouterOptions): Router {
     });
   });
 
-  router.post('/billing/checkout', ...write, async (req: Request, res: Response) => {
-    const parsed = checkoutSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new AppError('validation_failed', 'Invalid checkout request', 400, details(parsed.error));
-    }
+  router.post(
+    '/billing/checkout',
+    ...write,
+    replayable('POST /billing/checkout'),
+    async (req: Request, res: Response) => {
+      const parsed = checkoutSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new AppError('validation_failed', 'Invalid checkout request', 400, details(parsed.error));
+      }
 
-    const { trialDays, ...rest } = parsed.data;
-    const session = await billing.startCheckout(requireScope(), {
-      ...rest,
-      // Spread rather than passed: `exactOptionalPropertyTypes` draws a line
-      // between "no trial asked for" and "a trial of undefined", and only the
-      // first is a thing.
-      ...(trialDays === undefined ? {} : { trialDays }),
-    });
-    res.status(201).json({ data: session });
-  });
+      const { trialDays, ...rest } = parsed.data;
+      const session = await billing.startCheckout(requireScope(), {
+        ...rest,
+        // Spread rather than passed: `exactOptionalPropertyTypes` draws a line
+        // between "no trial asked for" and "a trial of undefined", and only the
+        // first is a thing.
+        ...(trialDays === undefined ? {} : { trialDays }),
+      });
+      res.status(201).json({ data: session });
+    },
+  );
 
   /**
    * What the success page should do while it waits.
@@ -183,14 +204,19 @@ export function billingRoutes(options: BillingRouterOptions): Router {
     res.json({ data: await billing.planChangePreview(requireScope(), { planCode }) });
   });
 
-  router.post('/billing/plan', ...write, async (req: Request, res: Response) => {
-    const parsed = planChangeSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new AppError('validation_failed', 'Invalid plan change', 400, details(parsed.error));
-    }
+  router.post(
+    '/billing/plan',
+    ...write,
+    replayable('POST /billing/plan'),
+    async (req: Request, res: Response) => {
+      const parsed = planChangeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new AppError('validation_failed', 'Invalid plan change', 400, details(parsed.error));
+      }
 
-    res.json({ data: await billing.changePlan(requireScope(), parsed.data) });
-  });
+      res.json({ data: await billing.changePlan(requireScope(), parsed.data) });
+    },
+  );
 
   router.post('/billing/cancel', ...write, async (req: Request, res: Response) => {
     const parsed = cancelSchema.safeParse(req.body ?? {});

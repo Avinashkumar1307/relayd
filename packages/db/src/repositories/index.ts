@@ -93,3 +93,9 @@ export { ApiKeyRepository } from './api-keys.js';
 export type { ApiKeyRow } from './api-keys.js';
 export { GlobalApiKeyRepository, shouldTouch, LAST_USED_STALENESS_MS } from './global/api-keys.js';
 export type { ApiKeyResolution } from './global/api-keys.js';
+export {
+  IdempotencyRepository,
+  IDEMPOTENCY_LOCK_MS,
+  IDEMPOTENCY_TTL_MS,
+} from './idempotency.js';
+export type { IdempotencyRecord } from './idempotency.js';

@@ -232,7 +232,7 @@ The gate before external signups open.
 
 - [x] Tables: `api_keys` (hashed secrets, scope arrays), `outbound_webhook_endpoints`, `outbound_webhook_deliveries`
 - [x] Key issue (one-time reveal), list, revoke; scoped-key auth middleware; per-key rate limiting; `billing:write` refused on every key
-- [ ] Idempotency-key replay support on all mutating public endpoints
+- [x] Idempotency-key replay support on all mutating public endpoints
 - [ ] Outbound webhooks: signing secret rotation, delivery log, exponential backoff, auto-disable after sustained failure
 - [ ] Frontend: `/settings/api`, webhook endpoint management
 - [ ] Tests: scope enforcement per endpoint, signature verification from a third-party perspective, rate-limit boundary, idempotency replay

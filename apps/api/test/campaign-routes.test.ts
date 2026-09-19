@@ -9,6 +9,7 @@ import { requestContext } from '../src/middleware/authorize.js';
 import { errorEnvelope } from '../src/middleware/error-envelope.js';
 import { requestId } from '../src/middleware/request-id.js';
 import { campaignRoutes } from '../src/routes/campaigns.js';
+import type { IdempotencyPort } from '../src/middleware/idempotency.js';
 import { TokenService } from '../src/services/tokens.js';
 import type { CampaignService } from '../src/services/campaigns.js';
 
@@ -43,7 +44,11 @@ const tokens = new TokenService({
 const WS = 'ws-a' as WorkspaceId;
 const USER = 'user-1' as UserId;
 
-function buildApp(role: WorkspaceRole, service: Partial<CampaignService> = {}): Express {
+function buildApp(
+  role: WorkspaceRole,
+  service: Partial<CampaignService> = {},
+  idempotency?: IdempotencyPort,
+): Express {
   const findMembership = vi.fn(async (userId: UserId, workspaceId: WorkspaceId) =>
     userId === USER && workspaceId === WS
       ? { workspaceId: WS, workspaceName: 'ws', workspaceSlug: 'ws', role }
@@ -103,6 +108,7 @@ function buildApp(role: WorkspaceRole, service: Partial<CampaignService> = {}): 
       campaigns,
       tokens,
       memberships: { findMembership } as unknown as GlobalMembershipRepository,
+      ...(idempotency === undefined ? {} : { idempotency }),
     }),
   );
   app.use(
@@ -277,5 +283,149 @@ describe('unauthenticated requests', () => {
   it('get 401 rather than 403', async () => {
     const res = await request(buildApp('owner')).get('/api/v1/campaigns');
     expect(res.status).toBe(401);
+  });
+});
+
+describe('Idempotency-Key on launch (docs/17 amendment G)', () => {
+  /** The store the middleware talks to, behaving the way the SQL does. */
+  function memoryStore() {
+    const rows = new Map<
+      string,
+      { requestHash: Buffer; status: 'in_progress' | 'completed'; code: number; body: unknown }
+    >();
+
+    const port: IdempotencyPort = {
+      async claim(_scope, input) {
+        const id = `${input.key}:${input.endpoint}`;
+        const existing = rows.get(id);
+        if (existing !== undefined) {
+          return {
+            claimed: false,
+            existing: {
+              key: input.key,
+              endpoint: input.endpoint,
+              requestHash: existing.requestHash,
+              status: existing.status,
+              responseCode: existing.code,
+              responseBody: existing.body,
+              lockedAt: input.now,
+              expiresAt: new Date(input.now.getTime() + 86_400_000),
+            },
+          };
+        }
+        rows.set(id, {
+          requestHash: input.requestHash,
+          status: 'in_progress',
+          code: 0,
+          body: null,
+        });
+        return { claimed: true, existing: null };
+      },
+      async reclaim() {
+        return true;
+      },
+      async complete(_scope, input) {
+        const id = `${input.key}:${input.endpoint}`;
+        const existing = rows.get(id);
+        if (existing === undefined) return false;
+        rows.set(id, {
+          ...existing,
+          status: 'completed',
+          code: input.responseCode,
+          body: input.responseBody,
+        });
+        return true;
+      },
+      async release(_scope, input) {
+        rows.delete(`${input.key}:${input.endpoint}`);
+      },
+    };
+
+    return port;
+  }
+
+  it('launches once however many times the request is retried', async () => {
+    // What an integrator on an unreliable connection actually needs: the
+    // retry is safe. The guarded transition in Postgres is what stops two
+    // *different* requests, and this is what stops the same one twice.
+    const launch = vi.fn(async () => ({ ok: true as const, recipientCount: 10 }));
+    const app = buildApp('owner', { launch } as unknown as Partial<CampaignService>, memoryStore());
+
+    const send = () =>
+      auth(app, 'post', '/api/v1/campaigns/c1/launch')
+        .set('Idempotency-Key', 'launch-00000001')
+        .send({ consentAttested: true });
+
+    const first = await send();
+    const second = await send();
+
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(second.status).toBe(first.status);
+    expect(second.get('Idempotent-Replay')).toBe('true');
+  });
+
+  it('still launches without the header', async () => {
+    // Accepted, not required: the dashboard shares this route.
+    const launch = vi.fn(async () => ({ ok: true as const, recipientCount: 10 }));
+    const app = buildApp('owner', { launch } as unknown as Partial<CampaignService>, memoryStore());
+
+    const res = await auth(app, 'post', '/api/v1/campaigns/c1/launch').send({ consentAttested: true });
+
+    expect(res.status).toBe(202);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses the same key with a different body', async () => {
+    // On create, where two valid bodies can actually differ. Launch has one
+    // field and it is a literal, so no two valid launch bodies differ at all.
+    const create = vi.fn(async () => ({ id: 'c1' }));
+    const app = buildApp('owner', { create } as unknown as Partial<CampaignService>, memoryStore());
+
+    await auth(app, 'post', '/api/v1/campaigns')
+      .set('Idempotency-Key', 'create-00000001')
+      .send({ name: 'Spring' });
+
+    const second = await auth(app, 'post', '/api/v1/campaigns')
+      .set('Idempotency-Key', 'create-00000001')
+      .send({ name: 'Autumn' });
+
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe('idempotency_key_reuse');
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a field the endpoint ignores as the same request', async () => {
+    // The hash is taken over the *validated* body, because the middleware is
+    // mounted after validation. A client that adds a field we do not read has
+    // not made a different request, and answering `idempotency_key_reuse` to
+    // them would be wrong.
+    const create = vi.fn(async () => ({ id: 'c1' }));
+    const app = buildApp('owner', { create } as unknown as Partial<CampaignService>, memoryStore());
+
+    await auth(app, 'post', '/api/v1/campaigns')
+      .set('Idempotency-Key', 'create-00000001')
+      .send({ name: 'Spring' });
+
+    const second = await auth(app, 'post', '/api/v1/campaigns')
+      .set('Idempotency-Key', 'create-00000001')
+      .send({ name: 'Spring', somethingWeIgnore: true });
+
+    expect(second.status).toBe(201);
+    expect(second.get('Idempotent-Replay')).toBe('true');
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores the header when no store is wired', async () => {
+    const launch = vi.fn(async () => ({ ok: true as const, recipientCount: 10 }));
+    const app = buildApp('owner', { launch } as unknown as Partial<CampaignService>);
+
+    await auth(app, 'post', '/api/v1/campaigns/c1/launch')
+      .set('Idempotency-Key', 'launch-00000001')
+      .send({ consentAttested: true });
+    await auth(app, 'post', '/api/v1/campaigns/c1/launch')
+      .set('Idempotency-Key', 'launch-00000001')
+      .send({ consentAttested: true });
+
+    expect(launch).toHaveBeenCalledTimes(2);
   });
 });

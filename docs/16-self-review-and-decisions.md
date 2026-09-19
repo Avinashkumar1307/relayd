@@ -1625,4 +1625,39 @@ reason.
 
 ---
 
+### 2026-09-19 - Idempotency-Key is honoured, not demanded
+
+`docs/03-api.md` says the header is "required on all `POST` that create or
+charge". `docs/17` amendment G, which supersedes it, says
+`POST /campaigns/:id/launch` *accepts* one. We follow docs/17 and accept
+rather than require, on create, launch, checkout and plan change.
+
+The dashboard shares these routes. Requiring the header would make the web app
+generate and send one on every create for no benefit it does not already have:
+what prevents a duplicate launch is the guarded state transition in Postgres
+(R29), not the key. The key makes a *retry* safe, which is what an integrator
+on an unreliable connection needs and what a browser form post does not.
+
+A route that must have one can still ask: the middleware takes `required`, and
+it defaults to true. Only the shared routes pass false.
+
+---
+
+### 2026-09-19 - the request hash is taken over the validated body
+
+The idempotency middleware is mounted *after* `validateBody`, which replaces
+`req.body` with the parsed result. So the hash covers the fields the endpoint
+actually reads.
+
+Two requests that differ only in a field we ignore are the same request.
+Hashing the raw body would answer `409 idempotency_key_reuse` to a client that
+added a field for its own bookkeeping, which is a confusing refusal of a
+correct retry.
+
+The cost is that a body differing only outside the schema replays rather than
+re-running. That is the intended reading: the endpoint did the same thing both
+times.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
