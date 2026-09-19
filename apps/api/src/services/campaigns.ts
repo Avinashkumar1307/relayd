@@ -8,8 +8,14 @@ import {
   type LifecyclePort,
   type RetryFailedPort,
 } from '@relayd/campaigns';
-import type { AuditLogRepository, CampaignRepository, WorkspaceScope } from '@relayd/db';
+import type {
+  AuditLogRepository,
+  CampaignRepository,
+  ConsentRepository,
+  WorkspaceScope,
+} from '@relayd/db';
 import { AppError } from '@relayd/types';
+import { audienceFingerprint, validateAttestationInput } from '@relayd/campaigns';
 import type { CampaignId } from '@relayd/types';
 import { buildAuditEntry, type Actor } from './audit.js';
 
@@ -32,6 +38,7 @@ import { buildAuditEntry, type Actor } from './audit.js';
 export interface CampaignRepositories {
   campaigns: CampaignRepository;
   auditLogs: AuditLogRepository;
+  consent: ConsentRepository;
 }
 
 export type CampaignUnitOfWork = <T>(
@@ -92,6 +99,12 @@ const LAUNCH_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // agent reading a 422 goes looking for a bug in the request.
   unverified_account: 403,
   pool_routing_unavailable: 403,
+  // 422, unlike the two above. These are not "you are not allowed yet" —
+  // they are "this request is missing something the sender can supply right
+  // now", which is what 422 means and what the launch dialog acts on.
+  consent_not_attested: 422,
+  consent_stale: 422,
+  consent_audience_changed: 422,
   unresolvable_merge_tags: 422,
 };
 
@@ -286,7 +299,23 @@ export class CampaignService {
    * guarded claim in the engine is what makes the outcome correct even if the
    * key mechanism were absent entirely.
    */
-  async launch(scope: WorkspaceScope, id: CampaignId, options: { idempotencyKey?: string } = {}) {
+  async launch(
+    scope: WorkspaceScope,
+    id: CampaignId,
+    options: {
+      idempotencyKey?: string;
+      /**
+       * The consent declaration this launch is made under (docs/06).
+       *
+       * Part of the launch request rather than a separate endpoint, and that
+       * is what makes docs/06's "every launch re-confirms it" structural: a
+       * launch without a deliberate assertion cannot be expressed. See the
+       * note in `packages/campaigns/src/abuse/consent.ts` on why there is no
+       * expiry instead.
+       */
+      consent?: { source: string; detail?: string | null; ip?: string | null };
+    } = {},
+  ) {
     return this.options.unitOfWork(async (repos) => {
       if (options.idempotencyKey !== undefined) {
         const claim = await repos.campaigns.claimLaunchKey(scope, {
@@ -308,6 +337,53 @@ export class CampaignService {
 
           if (replayed !== null) return replayed;
         }
+      }
+
+      // Recorded before the engine reads it, in the same transaction, so a
+      // launch that then fails for an unrelated reason still leaves the
+      // declaration on the record. An attestation that only survives a
+      // successful launch would be missing from exactly the workspaces worth
+      // investigating — the ones whose launches keep being refused.
+      if (options.consent !== undefined) {
+        const problem = validateAttestationInput(options.consent);
+
+        if (problem !== null) {
+          throw new AppError(
+            'validation_failed',
+            problem.reason === 'unknown_source'
+              ? 'Choose where this audience gave consent'
+              : 'Describe where this audience gave consent',
+            422,
+          );
+        }
+
+        // docs/06: "attributed to a user". An API key is not a somebody, and
+        // an attestation it signed would name nobody in the dispute the
+        // record exists for. This is also why `billing:write` is not
+        // grantable to a key (CLAUDE.md section 11) — the same principle.
+        const actor = this.options.currentActor();
+
+        if (actor.type !== 'user' || actor.id === undefined) {
+          throw new AppError(
+            'insufficient_permission',
+            'A consent declaration must be made by a signed-in user, not an API key',
+            403,
+          );
+        }
+
+        const campaign = await repos.campaigns.findById(scope, id);
+        if (campaign === null) throw new AppError('not_found', 'Campaign not found', 404);
+
+        await repos.consent.record(scope, {
+          id: this.options.newId(),
+          subjectKind: 'campaign',
+          subjectId: id,
+          source: options.consent.source,
+          detail: options.consent.detail ?? null,
+          audienceFingerprint: audienceFingerprint(campaign.audience),
+          attestedBy: actor.id,
+          attestedIp: options.consent.ip ?? null,
+        });
       }
 
       const result = await launchCampaign(id, this.options.ports.launch(repos, scope));

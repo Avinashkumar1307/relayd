@@ -103,3 +103,5 @@ export { OutboundWebhookRepository } from './outbound-webhooks.js';
 export type { WebhookEndpointRow, WebhookDeliveryRow } from './outbound-webhooks.js';
 export { RampRepository } from './ramp.js';
 export type { RampState } from './ramp.js';
+export { ConsentRepository } from './consent.js';
+export type { AttestationRow } from './consent.js';

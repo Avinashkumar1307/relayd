@@ -17,6 +17,7 @@ import { requireScope } from '../context.js';
 import { idempotent, type IdempotencyPort } from '../middleware/idempotency.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
 import type { ApiKeyAuthOptions } from '../middleware/api-key-auth.js';
+import { refuseApiKey } from '../middleware/api-key-auth.js';
 import { validateBody } from '../middleware/validate.js';
 import type { CampaignService } from '../services/campaigns.js';
 import type { TokenService } from '../services/tokens.js';
@@ -189,17 +190,40 @@ export function campaignRoutes(options: CampaignRouterOptions): Router {
     },
   );
 
+  // A launch carries a consent declaration, and docs/06 says that is
+  // "attributed to a user". `context.ts` already takes the position that a
+  // key action is the key's, "rather than whoever happened to mint it two
+  // months ago" — so a key has nobody to attribute an assertion to, and an
+  // assertion attributed to somebody who was not there is worth nothing in
+  // the dispute the record exists for.
+  //
+  // Refused here rather than in the service so the rule is visible next to
+  // the route, the same way `billing:write` is (CLAUDE.md section 11).
+  const noKeys = refuseApiKey();
+
   router.post(
     '/campaigns/:id/launch',
     ...chain,
     launch,
+    noKeys,
     validateBody(launchCampaignSchema),
     replayable('POST /campaigns/:id/launch'),
     async (req: Request, res: Response) => {
       const key = idempotencyKey(req);
 
+      const body = req.body as { consent: { source: string; detail?: string } };
+
       const result = await campaigns.launch(requireScope(), id(req), {
         ...(key === undefined ? {} : { idempotencyKey: key }),
+        consent: {
+          source: body.consent.source,
+          detail: body.consent.detail ?? null,
+          // For a dispute months later about who asserted this and from
+          // where. Not the raw header: `req.ip` is what Express resolved
+          // through the configured proxy trust, so a client-supplied
+          // X-Forwarded-For cannot write a false address into the record.
+          ip: req.ip ?? null,
+        },
       });
 
       // 202, not 200. The snapshot is taken but nothing has been sent, and a

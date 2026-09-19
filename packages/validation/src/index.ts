@@ -59,6 +59,8 @@ export {
   updateCampaignSchema,
   scheduleCampaignSchema,
   launchCampaignSchema,
+  consentAttestationSchema,
+  CONSENT_SOURCE_VALUES,
   testSendSchema as testSendCampaignSchema,
   cloneCampaignSchema,
   listCampaignsSchema,

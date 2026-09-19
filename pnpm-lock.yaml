@@ -431,6 +431,9 @@ importers:
 
   packages/testing:
     dependencies:
+      '@relayd/campaigns':
+        specifier: workspace:^
+        version: link:../campaigns
       '@relayd/config':
         specifier: workspace:^
         version: link:../config
@@ -443,6 +446,9 @@ importers:
       '@relayd/queue':
         specifier: workspace:^
         version: link:../queue
+      '@relayd/validation':
+        specifier: workspace:^
+        version: link:../validation
       '@testcontainers/postgresql':
         specifier: ^10.13.2
         version: 10.28.0

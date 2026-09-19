@@ -17,10 +17,12 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@relayd/campaigns": "workspace:^",
     "@relayd/config": "workspace:^",
     "@relayd/db": "workspace:^",
     "@relayd/logger": "workspace:^",
     "@relayd/queue": "workspace:^",
+    "@relayd/validation": "workspace:^",
     "@testcontainers/postgresql": "^10.13.2",
     "@testcontainers/redis": "^10.13.2",
     "drizzle-orm": "^0.36.0",

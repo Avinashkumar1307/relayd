@@ -105,3 +105,5 @@ export type {
 } from './platform.js';
 
 export { workspaceSendQuota, workspaceTrust } from './abuse.js';
+export { consentAttestations } from './abuse.js';
+export type { ConsentSubjectKind } from './abuse.js';

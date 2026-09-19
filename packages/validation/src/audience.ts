@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CONSENT_SOURCE_VALUES } from './campaigns.js';
 import { emailSchema } from './auth.js';
 
 /**
@@ -163,6 +164,18 @@ export const importMappingSchema = z
          * asks, and it is what lets you suspend a workspace that lied."
          */
         consentDeclaration: z.string().min(10).max(500),
+        /**
+         * The declared source, from the same vocabulary a launch uses.
+         *
+         * docs/06 asks for "a declared consent source" at import and the
+         * same thing again at launch. `consentDeclaration` above is the
+         * sender's own words, copied onto every contact; this is the value
+         * that makes "how many workspaces claim to be importing from a
+         * previous provider" a GROUP BY rather than a reading exercise.
+         */
+        consentSource: z.enum(CONSENT_SOURCE_VALUES, {
+          errorMap: () => ({ message: 'Choose where these contacts gave consent' }),
+        }),
       })
       .strict(),
   })

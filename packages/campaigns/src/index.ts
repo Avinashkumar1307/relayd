@@ -140,3 +140,17 @@ export type {
   FirstWeekMetrics,
   AutoLiftVerdict,
 } from './abuse/ramp.js';
+
+export {
+  CONSENT_SOURCES,
+  MIN_DETAIL_LENGTH,
+  audienceFingerprint,
+  attestationAuthorises,
+  validateAttestationInput,
+} from './abuse/consent.js';
+export type {
+  ConsentSource,
+  Attestation,
+  AttestationVerdict,
+  AttestationInputProblem,
+} from './abuse/consent.js';

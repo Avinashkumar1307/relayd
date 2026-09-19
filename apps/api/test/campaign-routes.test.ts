@@ -151,7 +151,7 @@ describe('campaign:launch is not campaign:write (docs/06)', () => {
     // sending is not.
     const launch = vi.fn();
     const res = await auth(buildApp('editor', { launch } as never), 'post', '/api/v1/campaigns/c1/launch')
-      .send({ consentAttested: true });
+      .send({ consent: { source: 'signup_form' } });
 
     expect(res.status).toBe(403);
     expect(launch).not.toHaveBeenCalled();
@@ -159,7 +159,7 @@ describe('campaign:launch is not campaign:write (docs/06)', () => {
 
   it('lets an admin launch one', async () => {
     const res = await auth(buildApp('admin'), 'post', '/api/v1/campaigns/c1/launch').send({
-      consentAttested: true,
+      consent: { source: 'signup_form' },
     });
 
     expect(res.status).toBe(202);
@@ -193,7 +193,7 @@ describe('launch', () => {
     // launch as "done" shows a completed campaign with a zero send count for
     // the next several seconds.
     const res = await auth(buildApp('owner'), 'post', '/api/v1/campaigns/c1/launch').send({
-      consentAttested: true,
+      consent: { source: 'signup_form' },
     });
 
     expect(res.status).toBe(202);
@@ -224,7 +224,7 @@ describe('launch', () => {
 
     await auth(buildApp('owner', { launch } as never), 'post', '/api/v1/campaigns/c1/launch')
       .set('Idempotency-Key', 'req-2026-09-18-abc')
-      .send({ consentAttested: true });
+      .send({ consent: { source: 'signup_form' } });
 
     expect(seen).toBe('req-2026-09-18-abc');
   });
@@ -237,7 +237,7 @@ describe('launch', () => {
     });
 
     await auth(buildApp('owner', { launch } as never), 'post', '/api/v1/campaigns/c1/launch').send({
-      consentAttested: true,
+      consent: { source: 'signup_form' },
     });
 
     expect(seen).toBeUndefined();
@@ -248,7 +248,7 @@ describe('launch', () => {
     // arbitrarily large rows.
     const res = await auth(buildApp('owner'), 'post', '/api/v1/campaigns/c1/launch')
       .set('Idempotency-Key', 'x'.repeat(300))
-      .send({ consentAttested: true });
+      .send({ consent: { source: 'signup_form' } });
 
     expect(res.status).toBe(400);
   });
@@ -257,7 +257,7 @@ describe('launch', () => {
     for (const key of ['has space', 'has/slash', 'has%percent', 'has"quote']) {
       const res = await auth(buildApp('owner'), 'post', '/api/v1/campaigns/c1/launch')
         .set('Idempotency-Key', key)
-        .send({ consentAttested: true });
+        .send({ consent: { source: 'signup_form' } });
 
       expect(res.status, key).toBe(400);
     }
@@ -267,7 +267,7 @@ describe('launch', () => {
     const launch = vi.fn();
     await auth(buildApp('owner', { launch } as never), 'post', '/api/v1/campaigns/c1/launch')
       .set('Idempotency-Key', 'bad key')
-      .send({ consentAttested: true });
+      .send({ consent: { source: 'signup_form' } });
 
     expect(launch).not.toHaveBeenCalled();
   });
@@ -354,7 +354,7 @@ describe('Idempotency-Key on launch (docs/17 amendment G)', () => {
     const send = () =>
       auth(app, 'post', '/api/v1/campaigns/c1/launch')
         .set('Idempotency-Key', 'launch-00000001')
-        .send({ consentAttested: true });
+        .send({ consent: { source: 'signup_form' } });
 
     const first = await send();
     const second = await send();
@@ -369,7 +369,7 @@ describe('Idempotency-Key on launch (docs/17 amendment G)', () => {
     const launch = vi.fn(async () => ({ ok: true as const, recipientCount: 10 }));
     const app = buildApp('owner', { launch } as unknown as Partial<CampaignService>, memoryStore());
 
-    const res = await auth(app, 'post', '/api/v1/campaigns/c1/launch').send({ consentAttested: true });
+    const res = await auth(app, 'post', '/api/v1/campaigns/c1/launch').send({ consent: { source: 'signup_form' } });
 
     expect(res.status).toBe(202);
     expect(launch).toHaveBeenCalledTimes(1);
@@ -421,10 +421,10 @@ describe('Idempotency-Key on launch (docs/17 amendment G)', () => {
 
     await auth(app, 'post', '/api/v1/campaigns/c1/launch')
       .set('Idempotency-Key', 'launch-00000001')
-      .send({ consentAttested: true });
+      .send({ consent: { source: 'signup_form' } });
     await auth(app, 'post', '/api/v1/campaigns/c1/launch')
       .set('Idempotency-Key', 'launch-00000001')
-      .send({ consentAttested: true });
+      .send({ consent: { source: 'signup_form' } });
 
     expect(launch).toHaveBeenCalledTimes(2);
   });

@@ -11,6 +11,11 @@ import {
 } from '../../api/campaigns.js';
 import { audienceApi, audienceKeys } from '../../api/audience.js';
 import { templateApi, templateKeys } from '../../api/templates.js';
+import {
+  CONSENT_SOURCE_LABELS,
+  consentIsComplete,
+  type ConsentSource,
+} from '../../components/consent.js';
 import { Badge, Button, Cell, EmptyState, Loading, LoadError, Page, Table, formatDate } from '../../components/ui.js';
 import {
   WIZARD_STEPS,
@@ -517,7 +522,8 @@ function ReviewStep({ campaign }: { campaign: Campaign }) {
   const issues = usePreflight(campaign);
   const blocking = issues.filter((issue) => issue.severity === 'blocking');
   const warnings = issues.filter((issue) => issue.severity === 'warning');
-  const [attested, setAttested] = useState(false);
+  const [source, setSource] = useState<ConsentSource | ''>('');
+  const [detail, setDetail] = useState('');
 
   /**
    * One key per mounted review step, not one per click.
@@ -531,7 +537,11 @@ function ReviewStep({ campaign }: { campaign: Campaign }) {
   const [idempotencyKey] = useState(() => crypto.randomUUID());
 
   const launch = useMutation({
-    mutationFn: () => campaignsApi.launch(campaign.id, idempotencyKey),
+    mutationFn: () =>
+      campaignsApi.launch(campaign.id, idempotencyKey, {
+        source: source as ConsentSource,
+        ...(detail.trim() === '' ? {} : { detail: detail.trim() }),
+      }),
     onSuccess: () => client.invalidateQueries({ queryKey: campaignKeys.one(campaign.id) }),
   });
 
@@ -554,23 +564,64 @@ function ReviewStep({ campaign }: { campaign: Campaign }) {
         </p>
       ))}
 
-      <label className="flex items-start gap-2 text-sm text-slate-700">
-        <input
-          type="checkbox"
-          checked={attested}
-          onChange={(event) => setAttested(event.target.checked)}
-          className="mt-0.5"
-        />
-        {/* docs/06 wants this at launch as well as at import: a list imported
-            six months ago is not what is being attested to today. */}
-        <span>
-          I confirm everyone in this audience has agreed to receive email from us.
-        </span>
-      </label>
+      {/*
+        A declared source, not a tick box.
+
+        The tick box was here first and recorded nothing — it could not be
+        shown to a provider asking why we let this workspace send, which is
+        the only reason it exists. docs/06: "every launch re-confirms it.
+        Stored, timestamped, attributed to a user."
+
+        No default selection, deliberately. A pre-selected first option
+        would be attested by everyone who clicked past this screen without
+        reading it, and an attestation the sender did not mean is worse than
+        none: it looks like evidence.
+      */}
+      <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+        <label htmlFor="launch-consent" className="block text-sm font-medium text-slate-800">
+          Where did this audience agree to hear from you?
+        </label>
+        <select
+          id="launch-consent"
+          value={source}
+          onChange={(event) => setSource(event.target.value as ConsentSource)}
+          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">Choose one…</option>
+          {CONSENT_SOURCE_LABELS.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+
+        {source === 'other' ? (
+          <div className="space-y-1">
+            <label htmlFor="launch-consent-detail" className="block text-sm text-slate-700">
+              Describe how they agreed
+            </label>
+            <textarea
+              id="launch-consent-detail"
+              value={detail}
+              onChange={(event) => setDetail(event.target.value)}
+              rows={2}
+              placeholder="Collected at our trade stand, paper forms scanned and retained"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+        ) : null}
+
+        <p className="text-xs text-slate-500">
+          Recorded against this campaign with your name and the time. This is what we show a
+          provider who asks why we let this send.
+        </p>
+      </div>
 
       <Button
         type="button"
-        disabled={!canLaunch(issues) || !attested || launch.isPending}
+        disabled={
+          !canLaunch(issues) || !consentIsComplete(source, detail) || launch.isPending
+        }
         onClick={() => launch.mutate()}
       >
         {launch.isPending ? 'Starting…' : 'Send campaign'}

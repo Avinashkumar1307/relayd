@@ -24,7 +24,12 @@ import { CampaignWizardPage, CampaignsPage } from '../src/routes/campaigns/campa
  */
 
 const responses = new Map<string, unknown>();
-let requests: { url: string; method: string; headers: Record<string, string> }[] = [];
+let requests: {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: Record<string, unknown> | undefined;
+}[] = [];
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify({ data: body }), {
@@ -48,6 +53,13 @@ beforeEach(() => {
         url,
         method,
         headers: (init?.headers ?? {}) as Record<string, string>,
+        // Recorded so a test can assert what was actually sent. Without it a
+        // request that reached the server as `{}` looks identical to one
+        // carrying a declaration.
+        body:
+          typeof init?.body === 'string'
+            ? (JSON.parse(init.body) as Record<string, unknown>)
+            : undefined,
       });
 
       // Longest path first. `/campaigns/c1` is a prefix of
@@ -235,13 +247,16 @@ describe('the launch button (F29)', () => {
     const review = await screen.findByRole('button', { name: /Review/u });
     await userEvent.click(review);
 
-    const attest = await screen.findByRole('checkbox');
-    await userEvent.click(attest);
+    // A declared source, not a tick box. The tick box recorded nothing and
+    // could not be shown to a provider asking why we let this workspace
+    // send, which is the only reason the control exists.
+    const source = await screen.findByLabelText(/Where did this audience agree/u);
+    await userEvent.selectOptions(source, 'signup_form');
 
     return screen.getByRole('button', { name: /Send campaign/u });
   }
 
-  it('requires the consent attestation before it is enabled', async () => {
+  it('requires a declared consent source before it is enabled', async () => {
     responses.set('GET /campaigns/c1', { campaign: DRAFT, counters: null });
     responses.set('POST /campaigns/audience-preview', { eligible: 1000, suppressed: 0, total: 1000 });
 
@@ -282,11 +297,56 @@ describe('the launch button (F29)', () => {
     );
   });
 
-  it('attests consent in the body as well', async () => {
+  it('sends the declared source in the body', async () => {
+    // Not merely "a launch happened". The value is the whole point: an
+    // attestation that reached the server as `{}` would satisfy a test that
+    // only checked the request was made, and would record nothing.
     const send = await openReview();
     await userEvent.click(send);
 
-    expect(requests.some((r) => r.url.includes('/launch') && r.method === 'POST')).toBe(true);
+    const launch = requests.find((r) => r.url.includes('/launch') && r.method === 'POST');
+
+    expect(launch?.body).toMatchObject({ consent: { source: 'signup_form' } });
+  });
+
+  it('asks for a description when the source is "other"', async () => {
+    // Without a required explanation, `other` becomes the option everybody
+    // picks to avoid answering.
+    responses.set('GET /campaigns/c1', { campaign: DRAFT, counters: null });
+    responses.set('POST /campaigns/audience-preview', { eligible: 1000, suppressed: 0, total: 1000 });
+
+    wrap(<CampaignWizardPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /Review/u }));
+
+    const source = await screen.findByLabelText(/Where did this audience agree/u);
+    await userEvent.selectOptions(source, 'other');
+
+    const send = screen.getByRole('button', { name: /Send campaign/u });
+    expect(send.hasAttribute('disabled')).toBe(true);
+
+    await userEvent.type(
+      await screen.findByLabelText(/Describe how they agreed/u),
+      'Collected at our trade stand on paper forms',
+    );
+
+    expect(send.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('starts with nothing selected', async () => {
+    // A pre-selected first option would be attested by everybody who clicked
+    // past this screen without reading it, and an attestation the sender did
+    // not mean is worse than none: it looks like evidence.
+    responses.set('GET /campaigns/c1', { campaign: DRAFT, counters: null });
+    responses.set('POST /campaigns/audience-preview', { eligible: 1000, suppressed: 0, total: 1000 });
+
+    wrap(<CampaignWizardPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /Review/u }));
+
+    const source = (await screen.findByLabelText(
+      /Where did this audience agree/u,
+    )) as HTMLSelectElement;
+
+    expect(source.value).toBe('');
   });
 });
 

@@ -160,17 +160,26 @@ const WRITES: Route[] = [
   { method: 'post', path: '/api/v1/campaigns', body: { name: 'Spring' }, scope: 'campaign:write' },
   { method: 'patch', path: '/api/v1/campaigns/c1', body: { name: 'Autumn' }, scope: 'campaign:write' },
   { method: 'delete', path: '/api/v1/campaigns/c1', scope: 'campaign:write' },
-  {
-    method: 'post',
-    path: '/api/v1/campaigns/c1/launch',
-    body: { consentAttested: true },
-    scope: 'campaign:launch',
-  },
   { method: 'post', path: '/api/v1/campaigns/c1/pause', scope: 'campaign:launch' },
 ];
 
 /** Routes no key may reach, whatever its scopes. */
 const KEY_FORBIDDEN: Route[] = [
+  // Launch, because a launch carries a consent declaration and docs/06 says
+  // that is "attributed to a user". `apps/api/src/context.ts` already takes
+  // the position that a key action is the key's, "rather than whoever
+  // happened to mint it two months ago" — and an assertion about where a
+  // stranger's list came from, attributed to somebody who was not there, is
+  // worth nothing in the dispute it exists for.
+  //
+  // This is a product decision the docs do not settle, and it costs
+  // API-driven launches. Flagged to the owner. Reversing it means deciding
+  // what a key's attestation is attributed to.
+  {
+    method: 'post',
+    path: '/api/v1/campaigns/c1/launch',
+    body: { consent: { source: 'signup_form' } },
+  },
   { method: 'post', path: '/api/v1/api-keys', body: { name: 'x', scopes: ['contact:read'] } },
   { method: 'delete', path: '/api/v1/api-keys/key-1' },
   {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppError } from '@relayd/types';
+import { audienceFingerprint } from '@relayd/campaigns';
 import type { CampaignId } from '@relayd/types';
 import type { WorkspaceScope } from '@relayd/db';
 import { CampaignService } from '../src/services/campaigns.js';
@@ -15,6 +16,8 @@ import type { CampaignRepositories, CampaignServiceOptions } from '../src/servic
  * are: which failure becomes which status, what a replayed launch returns,
  * and that nothing in a polling path counts recipients.
  */
+
+const NOW = new Date('2026-09-19T12:00:00.000Z');
 
 const SCOPE = { workspaceId: 'ws-1' } as unknown as WorkspaceScope;
 const ID = 'c1' as CampaignId;
@@ -64,6 +67,12 @@ function service(over: {
   lifecycleResult?: Awaited<ReturnType<typeof import('@relayd/campaigns').applyLifecycleAction>>;
 } = {}) {
   const audits: string[] = [];
+  const attestations: {
+    subjectKind: string;
+    source: string;
+    attestedBy: string;
+    audienceFingerprint: string | null;
+  }[] = [];
   const dispatched: string[] = [];
 
   const campaigns = {
@@ -116,6 +125,23 @@ function service(over: {
         audits.push(entry.action);
       },
     } as unknown as CampaignRepositories['auditLogs'],
+    consent: {
+      async record(
+        _scope: unknown,
+        input: {
+          subjectKind: string;
+          source: string;
+          attestedBy: string;
+          audienceFingerprint: string | null;
+        },
+      ) {
+        attestations.push(input);
+        return input;
+      },
+      async newestFor() {
+        return null;
+      },
+    } as unknown as CampaignRepositories['consent'],
   };
 
   const launchResult = over.launchResult ?? {
@@ -172,6 +198,19 @@ function service(over: {
           },
           async workspaceIsInRamp() {
             return failure === 'pool_routing_unavailable';
+          },
+          async readConsentAttestation() {
+            if (failure === 'consent_not_attested') return null;
+            return {
+              source: 'signup_form' as const,
+              detail: null,
+              audienceFingerprint:
+                failure === 'consent_audience_changed'
+                  ? 'not-the-current-audience'
+                  : audienceFingerprint({}),
+              attestedAt: NOW,
+              attestedBy: 'user-1',
+            };
           },
           async snapshotAudience() {
             return {
@@ -232,7 +271,7 @@ function service(over: {
     },
   };
 
-  return { service: new CampaignService(options), audits, dispatched, campaigns };
+  return { service: new CampaignService(options), audits, dispatched, campaigns, attestations };
 }
 
 describe('progress never counts recipients (R13, F13)', () => {
@@ -548,5 +587,67 @@ describe('the anti-abuse refusals are not validation errors', () => {
     });
 
     await expect(s.launch(SCOPE, ID)).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('the launch records the consent declaration (docs/06)', () => {
+  const consent = { source: 'signup_form', detail: null, ip: '203.0.113.9' };
+
+  it('writes an attestation, attributed to the actor', async () => {
+    // docs/06: "Stored, timestamped, attributed to a user." A validated
+    // declaration that is never written is a tick box with extra steps.
+    const { service: s, attestations } = service();
+
+    await s.launch(SCOPE, ID, { consent });
+
+    expect(attestations).toEqual([
+      expect.objectContaining({ subjectKind: 'campaign', source: 'signup_form' }),
+    ]);
+  });
+
+  it('records the audience fingerprint', async () => {
+    // Without it, the attestation is a claim about a campaign — and a
+    // campaign is a row whose audience can be edited afterwards. The engine
+    // has nothing to compare against and the swap goes unnoticed.
+    const { service: s, attestations } = service();
+
+    await s.launch(SCOPE, ID, { consent });
+
+    expect(attestations[0]?.audienceFingerprint).toEqual(expect.any(String));
+    expect(attestations[0]?.audienceFingerprint).not.toBeNull();
+  });
+
+  it('refuses an unknown source instead of storing it', async () => {
+    // The database CHECK would reject it too, but only after the round trip
+    // and inside whatever transaction the launch is holding — and the error
+    // a customer would see is a constraint violation.
+    const { service: s, attestations } = service();
+
+    await expect(
+      s.launch(SCOPE, ID, { consent: { source: 'trust_me', detail: null, ip: null } }),
+    ).rejects.toMatchObject({ status: 422 });
+
+    expect(attestations).toEqual([]);
+  });
+
+  it('refuses an unexplained "other"', async () => {
+    const { service: s } = service();
+
+    await expect(
+      s.launch(SCOPE, ID, { consent: { source: 'other', detail: null, ip: null } }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
+  it('records it even when the launch then fails', async () => {
+    // An attestation that only survives a successful launch would be missing
+    // from exactly the workspaces worth investigating: the ones whose
+    // launches keep being refused.
+    const { service: s, attestations } = service({
+      launchResult: { ok: false, failure: 'empty_audience', message: 'none' },
+    });
+
+    await expect(s.launch(SCOPE, ID, { consent })).rejects.toThrow();
+
+    expect(attestations).toHaveLength(1);
   });
 });

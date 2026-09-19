@@ -57,15 +57,49 @@ export const scheduleCampaignSchema = z.object({
   timezone: z.string().trim().min(1).max(64),
 });
 
+/**
+ * The consent sources, matching `CONSENT_SOURCES` in
+ * `packages/campaigns/src/abuse/consent.ts` and the CHECK in migration 0016.
+ *
+ * Duplicated rather than imported because `packages/validation` is shared
+ * with `apps/web`, and pulling the campaigns package into the browser bundle
+ * to reach one array would drag the whole send engine with it. The list is
+ * short, it changes with a migration, and a test asserts the two agree.
+ */
+export const CONSENT_SOURCE_VALUES = [
+  'signup_form',
+  'checkout_optin',
+  'in_person',
+  'existing_customer',
+  'imported_from_previous_provider',
+  'other',
+] as const;
+
+export const consentAttestationSchema = z
+  .object({
+    source: z.enum(CONSENT_SOURCE_VALUES, {
+      errorMap: () => ({ message: 'Choose where this audience gave consent' }),
+    }),
+    detail: z.string().trim().max(2000).optional(),
+  })
+  .refine((value) => value.source !== 'other' || (value.detail ?? '').length >= 10, {
+    // Without this, `other` becomes the option everybody picks to avoid
+    // answering, and the attestation stops being evidence of anything.
+    message: 'Describe where this audience gave consent',
+    path: ['detail'],
+  });
+
 export const launchCampaignSchema = z.object({
   /**
    * The consent attestation docs/06 requires at launch, not only at import.
    * A customer who imported a list six months ago is attesting about the list
    * they are mailing today.
+   *
+   * A declared source rather than a bare tick box. The tick box was here
+   * first and recorded nothing: it could not be shown to a provider asking
+   * why we let this workspace send, which is the only reason it exists.
    */
-  consentAttested: z.literal(true, {
-    errorMap: () => ({ message: 'You must confirm you have consent to email this audience' }),
-  }),
+  consent: consentAttestationSchema,
 });
 
 export const testSendSchema = z.object({

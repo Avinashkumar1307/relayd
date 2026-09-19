@@ -159,6 +159,7 @@ export const audienceApi = {
         addToListIds: string[];
         tagIds: string[];
         consentDeclaration: string;
+        consentSource: string;
       };
     },
   ) => api.post<ImportJob>(`/audience/imports/${id}/mapping`, input),

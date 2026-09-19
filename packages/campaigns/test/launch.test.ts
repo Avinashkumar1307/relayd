@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LAUNCHABLE_STATES, launchCampaign, type LaunchPort } from '../src/engine/launch.js';
+import { audienceFingerprint } from '../src/abuse/consent.js';
 
 /**
  * Campaign launch (INVARIANTS R28, R29; review findings F28, F29).
@@ -9,6 +10,8 @@ import { LAUNCHABLE_STATES, launchCampaign, type LaunchPort } from '../src/engin
  * both are races — so most of these tests are about ordering rather than
  * outcomes.
  */
+
+const NOW = new Date('2026-09-19T12:00:00.000Z');
 
 const CAMPAIGN = {
   id: 'c1',
@@ -49,6 +52,16 @@ function port(overrides: Partial<LaunchPort> = {}) {
     async workspaceIsInRamp() {
       calls.push('ramp');
       return false;
+    },
+    async readConsentAttestation() {
+      calls.push('consent');
+      return {
+        source: 'signup_form' as const,
+        detail: null,
+        audienceFingerprint: audienceFingerprint(CAMPAIGN.audience),
+        attestedAt: NOW,
+        attestedBy: 'user-1',
+      };
     },
     async snapshotAudience() {
       calls.push('snapshot');
@@ -492,5 +505,65 @@ describe('the anti-abuse gates (docs/06)', () => {
       calls.indexOf('snapshot') === -1 ? Infinity : calls.indexOf('snapshot'),
     );
     expect(calls).not.toContain('snapshot');
+  });
+});
+
+describe('consent is re-confirmed at launch (docs/06)', () => {
+  it('refuses a campaign with no attestation', async () => {
+    const { port: p } = port({
+      async readConsentAttestation() {
+        return null;
+      },
+    });
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.failure).toBe('consent_not_attested');
+  });
+
+  it('refuses one made before the audience changed', async () => {
+    // The attack: attest about a small hand-built list, swap the audience
+    // for a purchased one, launch.
+    const { port: p } = port({
+      async readConsentAttestation() {
+        return {
+          source: 'signup_form' as const,
+          detail: null,
+          audienceFingerprint: audienceFingerprint({ listIds: ['something-else'] }),
+          attestedAt: NOW,
+          attestedBy: 'user-1',
+        };
+      },
+    });
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.failure).toBe('consent_audience_changed');
+  });
+
+  it('checks consent before taking a snapshot', async () => {
+    // A launch that is going to be refused should not first write a
+    // recipient row per contact, and the fingerprint is about the audience
+    // *definition*, which needs no snapshot to evaluate.
+    const { port: p, calls } = port({
+      async readConsentAttestation() {
+        return null;
+      },
+    });
+
+    await launchCampaign('c1', p);
+
+    expect(calls).not.toContain('snapshot');
+    expect(calls).toContain('release');
+  });
+
+  it('launches when consent is fresh and about this audience', async () => {
+    // Without this, every test above passes just as well with a gate that
+    // refuses every launch.
+    const { port: p } = port();
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.ok).toBe(true);
   });
 });

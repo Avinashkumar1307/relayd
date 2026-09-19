@@ -70,3 +70,54 @@ export const workspaceTrust = pgTable('workspace_trust', {
     .notNull()
     .default(sql`now()`),
 });
+
+/**
+ * Consent attestations (migration 0016; docs/06 "Anti-abuse").
+ *
+ * Append-only, enforced by a trigger rather than by convention. Evidence you
+ * can rewrite after the fact is worth nothing in the dispute it exists for,
+ * and "the repository has no update method" is not a guarantee — a psql
+ * session or a future repository can both still do it.
+ */
+export const consentAttestations = pgTable(
+  'consent_attestations',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+
+    subjectKind: text('subject_kind').notNull(),
+    subjectId: uuid('subject_id').notNull(),
+
+    source: text('source').notNull(),
+    detail: text('detail'),
+
+    /**
+     * What the campaign's audience looked like when this was asserted.
+     *
+     * Closes the swap: attest about a small hand-built list, change the
+     * audience to a purchased one, launch. Null for imports, where the
+     * subject is the file.
+     */
+    audienceFingerprint: text('audience_fingerprint'),
+
+    /** docs/06: "attributed to a user". Never an API key — a key is not a somebody. */
+    attestedBy: uuid('attested_by').notNull(),
+    attestedAt: timestamp('attested_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    attestedIp: text('attested_ip'),
+  },
+  (table) => ({
+    bySubject: index('ix_ca_subject').on(
+      table.workspaceId,
+      table.subjectKind,
+      table.subjectId,
+      table.attestedAt,
+    ),
+    byWorkspace: index('ix_ca_workspace').on(table.workspaceId, table.attestedAt),
+  }),
+);
+
+export type ConsentSubjectKind = 'import' | 'campaign';

@@ -1827,6 +1827,83 @@ Express middleware is *not* in the package — it is duplicated in
 matching what `request-id.ts` already does. The alternative would make the
 worker and the scheduler, which serve no HTTP, depend on Express.
 
+### 2026-09-19 - consent attestation is a table, not a field in `options`
+
+docs/02 specifies `import_jobs.options.consentDeclaration` and says why it
+matters: "This is what lets you defend a workspace when a provider or a
+regulator asks, and it is what lets you suspend a workspace that lied."
+
+docs/06 asks for more than that string can carry: "Every import records a
+declared consent source; every launch re-confirms it. Stored, timestamped,
+attributed to a user."
+
+A string inside a jsonb blob has no timestamp of its own, no attribution, and
+nothing stopping it being edited afterwards to say something else — which is
+exactly what it would need to survive to be worth anything in the dispute it
+exists for. So migration 0016 adds `consent_attestations`, append-only,
+enforced by a trigger rather than by the repository having no update method.
+
+`options.consentDeclaration` stays, because docs/02 also says it is copied
+onto every contact the import creates. The two are not redundant: the
+declaration is the sender's own words, which a regulator reads; the
+attestation's `source` is a fixed vocabulary, which makes "how many
+workspaces claim to be importing from a previous provider" a `GROUP BY`
+rather than a reading exercise.
+
+The launch side did not exist at all. The `consentAttested: z.literal(true)`
+in `launchCampaignSchema` recorded nothing — it could not be shown to
+anybody, which is the only reason the control exists.
+
+### 2026-09-19 - the attestation is bound to an audience, and has no expiry
+
+Two decisions inside the above that the documents do not settle.
+
+**Bound to an audience.** The attestation stores a fingerprint of the
+campaign's audience definition, and a launch is refused if it no longer
+matches. Without it the claim is about a campaign, and a campaign is a row
+whose audience can be edited: attest about a small hand-built list, swap in a
+purchased one, launch.
+
+**No expiry.** The obvious design gives an attestation a short TTL so that
+"re-confirms at launch" means "ticked recently". It breaks scheduled
+campaigns, which the scheduler launches with nobody present — any TTL short
+enough to mean something fails every one of them, and one long enough not to
+means nothing. The re-confirmation is structural instead: the launch request
+carries the declaration, so a launch without a deliberate assertion cannot be
+expressed.
+
+Stated rather than hidden: the fingerprint pins the audience *definition*,
+not its membership. A campaign scheduled against a list and launched a week
+later mails whoever is in that list then. Catching that needs a membership
+count pinned at attestation time and compared at snapshot, and it is not
+built — the import-side attestation is what covers contacts that arrived in
+between.
+
+### 2026-09-19 - an API key cannot launch a campaign. **Owner decision needed.**
+
+docs/06 says the attestation is "attributed to a user".
+`apps/api/src/context.ts` already takes the position that an action taken
+with a key is recorded as the key, "rather than as whoever happened to mint
+it two months ago". Those two together mean a key has nobody to attribute a
+consent declaration to, and an assertion attributed to somebody who was not
+there is worth nothing in the dispute the record exists for.
+
+So `POST /campaigns/:id/launch` now carries `refuseApiKey()`, alongside the
+billing routes, and `campaign:launch` on a key reaches pause and resume but
+not launch.
+
+**This costs API-driven launches**, which is a normal thing for a customer's
+system to want, and no document settles it. The alternatives, if the owner
+wants them:
+
+1. Attribute to the key's creating user, and store the key id alongside so
+   the record is not misleading. Needs a column and a lookup.
+2. Allow it and attribute to the key alone, relaxing docs/06's wording.
+3. Leave it as built: API keys manage campaigns, a person sends them.
+
+Built to (3) as the safe default, because it is the only one of the three
+that cannot produce a record which says something untrue.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

@@ -28,6 +28,8 @@
  * see.
  */
 
+import { attestationAuthorises, type Attestation } from '../abuse/consent.js';
+
 export type LaunchFailure =
   | 'not_launchable'
   | 'no_template'
@@ -38,6 +40,8 @@ export type LaunchFailure =
   | 'unverified_sender'
   | 'unverified_account'
   | 'pool_routing_unavailable'
+  | 'consent_not_attested'
+  | 'consent_audience_changed'
   | 'unresolvable_merge_tags';
 
 export interface LaunchPort {
@@ -91,6 +95,15 @@ export interface LaunchPort {
    * campaign rather than of the day.
    */
   workspaceIsInRamp(workspaceId: string): Promise<boolean>;
+
+  /**
+   * The newest consent attestation for this campaign, or null.
+   *
+   * docs/06: "every launch re-confirms it". Read inside the launch
+   * transaction, so an attestation written concurrently is either visible to
+   * this launch or belongs to the next one — never half of each.
+   */
+  readConsentAttestation(campaignId: string): Promise<Attestation | null>;
 
 
   /**
@@ -221,7 +234,30 @@ export async function launchCampaign(
     );
   }
 
-  // 5. The entitlement row, FOR SHARE (R28). Read before the snapshot, held
+  // 5. Consent. docs/06: "every launch re-confirms it."
+  //
+  //    Before the snapshot, because a launch that is going to be refused
+  //    should not first write a recipient row per contact — and because the
+  //    fingerprint check below is about the audience *definition*, which is
+  //    known now and does not need the snapshot to evaluate.
+  const attestation = await port.readConsentAttestation(campaignId);
+  const verdict = attestationAuthorises(attestation, campaign.audience);
+
+  if (!verdict.ok) {
+    // Three distinct failures rather than one, because the sender has to do
+    // something different in each case and "consent not confirmed" when they
+    // confirmed it two minutes ago reads as a bug.
+    if (verdict.reason === 'audience_changed') {
+      return fail(
+        'consent_audience_changed',
+        'The audience changed after consent was confirmed. Review the recipients and confirm again.',
+      );
+    }
+
+    return fail('consent_not_attested', 'Confirm where this audience gave consent before sending');
+  }
+
+  // 6. The entitlement row, FOR SHARE (R28). Read before the snapshot, held
   //    until this transaction ends, so a downgrade cannot commit in the gap.
   const entitlement = await port.readEntitlementForShare(campaign.workspaceId);
 
@@ -234,7 +270,7 @@ export async function launchCampaign(
     );
   }
 
-  // 6. Snapshot. Deduplicated by the unique index, so running twice inserts
+  // 7. Snapshot. Deduplicated by the unique index, so running twice inserts
   //    nothing the second time.
   const snapshot = await port.snapshotAudience({
     campaignId,
@@ -250,7 +286,7 @@ export async function launchCampaign(
     );
   }
 
-  // 7. The limit, against the snapshot that was just taken — not against an
+  // 8. The limit, against the snapshot that was just taken — not against an
   //    estimate made before it.
   if (entitlement.monthlySendLimit !== null) {
     const remaining = entitlement.monthlySendLimit - entitlement.used;

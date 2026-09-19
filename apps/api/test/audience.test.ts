@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ContactId, ContactListId, TagId, WorkspaceId } from '@relayd/types';
+import type { ContactId, ContactListId, ImportJobId, TagId, WorkspaceId } from '@relayd/types';
 import { workspaceScope } from '@relayd/db';
 import { AudienceService, type AudienceRepositories } from '../src/services/audience.js';
 
@@ -42,7 +42,18 @@ function buildAudienceWorld() {
   const copy = <T>(row: T): T => ({ ...row });
   const now = () => new Date('2026-09-17T12:00:00Z');
 
+  const attestations: { subjectKind: string; source: string; attestedBy: string }[] = [];
+
   const repos: AudienceRepositories = {
+    consent: {
+      async record(_s: unknown, input: { subjectKind: string; source: string; attestedBy: string }) {
+        attestations.push(input);
+        return input;
+      },
+      async newestFor() {
+        return null;
+      },
+    } as unknown as AudienceRepositories['consent'],
     contacts: {
       async findByEmail(_s: unknown, email: string) {
         const found = contacts.find((c) => c.email === email && !c.deleted);
@@ -252,6 +263,12 @@ function buildAudienceWorld() {
       async listRowErrors() {
         return [];
       },
+      async setMapping(_s: unknown, id: string) {
+        const row = imports.find((i) => i.id === id);
+        if (row === undefined || row.status !== 'pending') return false;
+        row.status = 'validating';
+        return true;
+      },
     } as unknown as AudienceRepositories['imports'],
 
     auditLogs: {
@@ -271,6 +288,7 @@ function buildAudienceWorld() {
     suppressed,
     segments,
     imports,
+    attestations,
     audit,
     previewCalls,
     setPreviewResult: (n: number) => {
@@ -542,5 +560,86 @@ describe('imports', () => {
     if (row !== undefined) row.status = 'completed';
 
     await expect(service.cancelImport(scope, job.id)).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe('an import records a consent attestation (docs/06)', () => {
+  async function startImport() {
+    const { job } = await service.createImport(scope, {
+      filename: 'contacts.csv',
+      byteSize: 1024,
+      fileType: 'csv',
+    });
+
+    return job.id as ImportJobId;
+  }
+
+  it('records the declared source, attributed and timestamped', async () => {
+    // docs/06: "Every import records a declared consent source ... Stored,
+    // timestamped, attributed to a user." The pre-existing
+    // `options.consentDeclaration` is a string inside a jsonb blob: it has
+    // no timestamp of its own, no attribution, and nothing stops it being
+    // edited afterwards to say something else.
+    const id = await startImport();
+
+    await service.setImportMapping(scope, id, {
+      mapping: { A: 'email' },
+      options: {
+        updateExisting: true,
+        addToListIds: [],
+        tagIds: [],
+        consentDeclaration: 'Collected through our website signup form since 2024',
+        consentSource: 'signup_form',
+      },
+    });
+
+    expect(world.attestations).toEqual([
+      expect.objectContaining({
+        subjectKind: 'import',
+        source: 'signup_form',
+        attestedBy: 'user-1',
+      }),
+    ]);
+  });
+
+  it('keeps the sender\u2019s own words alongside the vocabulary value', async () => {
+    // The two are not redundant. The source answers "how many workspaces
+    // claim to be importing from a previous provider" with a GROUP BY; the
+    // declaration is what a regulator actually reads.
+    const id = await startImport();
+
+    await service.setImportMapping(scope, id, {
+      mapping: { A: 'email' },
+      options: {
+        updateExisting: true,
+        addToListIds: [],
+        tagIds: [],
+        consentDeclaration: 'Exported from our previous ESP, double opt-in',
+        consentSource: 'imported_from_previous_provider',
+      },
+    });
+
+    expect(world.attestations[0]).toMatchObject({
+      detail: 'Exported from our previous ESP, double opt-in',
+    });
+  });
+
+  it('carries no audience fingerprint', async () => {
+    // The subject is the file, not an audience — and that null is what stops
+    // an import attestation being reused to authorise a campaign launch.
+    const id = await startImport();
+
+    await service.setImportMapping(scope, id, {
+      mapping: { A: 'email' },
+      options: {
+        updateExisting: true,
+        addToListIds: [],
+        tagIds: [],
+        consentDeclaration: 'Collected in person at trade shows during 2025',
+        consentSource: 'in_person',
+      },
+    });
+
+    expect(world.attestations[0]).not.toHaveProperty('audienceFingerprint');
   });
 });

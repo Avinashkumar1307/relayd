@@ -10,6 +10,7 @@ import {
   type ImportStatus,
 } from '../../api/audience.js';
 import { IfPermitted } from '../../auth/guards.js';
+import { CONSENT_SOURCE_LABELS, type ConsentSource } from '../../components/consent.js';
 import { Badge, Button, Cell, EmptyState, LoadError, Loading, Page, Table, formatDate } from '../../components/ui.js';
 
 /**
@@ -365,6 +366,7 @@ function MappingStep({
   const [columns, setColumns] = useState<string[]>(headers);
   const [mapping, setMapping] = useState<Record<string, string>>(() => guessMapping(headers));
   const [declaration, setDeclaration] = useState('');
+  const [source, setSource] = useState<ConsentSource | ''>('');
   const [updateExisting, setUpdateExisting] = useState(true);
 
   const submit = useMutation({
@@ -376,6 +378,7 @@ function MappingStep({
           addToListIds: [],
           tagIds: [],
           consentDeclaration: declaration.trim(),
+          consentSource: source as ConsentSource,
         },
       }),
     onSuccess: onDone,
@@ -383,6 +386,7 @@ function MappingStep({
 
   const emailMapped = Object.values(mapping).includes('email');
   const declarationValid = declaration.trim().length >= 10;
+  const sourceChosen = source !== '';
 
   return (
     <section className="space-y-4 rounded-lg border border-slate-300 bg-white p-5">
@@ -449,6 +453,36 @@ function MappingStep({
           </label>
 
           <div className="space-y-1">
+            <label htmlFor="consent-source" className="block text-sm font-medium text-slate-800">
+              Where did these people give consent?
+            </label>
+            {/*
+              A chosen value alongside the free text below, not instead of
+              it. The vocabulary is what makes "how many workspaces claim to
+              be importing from a previous provider" a GROUP BY; the free
+              text is what a regulator actually reads.
+
+              No default selection. A pre-selected "Signup form" would be
+              attested by everyone who clicked past this screen without
+              reading it, which is the opposite of what an attestation is
+              for.
+            */}
+            <select
+              id="consent-source"
+              value={source}
+              onChange={(event) => setSource(event.target.value as ConsentSource)}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="">Choose one…</option>
+              {CONSENT_SOURCE_LABELS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
             <label htmlFor="consent-declaration" className="block text-sm font-medium text-slate-800">
               How did these people consent?
             </label>
@@ -472,7 +506,7 @@ function MappingStep({
 
           <div className="flex gap-2">
             <Button
-              disabled={!emailMapped || !declarationValid || submit.isPending}
+              disabled={!emailMapped || !declarationValid || !sourceChosen || submit.isPending}
               onClick={() => submit.mutate()}
             >
               {submit.isPending ? 'Starting…' : 'Start import'}

@@ -124,8 +124,8 @@ export const campaignsApi = {
    * retry has to reuse it — a server-minted key would be a new key on every
    * attempt, which is the same as having none (F29).
    */
-  launch: (id: string, idempotencyKey: string) =>
-    api.post<LaunchResult>(`/campaigns/${id}/launch`, { consentAttested: true }, {
+  launch: (id: string, idempotencyKey: string, consent: { source: string; detail?: string }) =>
+    api.post<LaunchResult>(`/campaigns/${id}/launch`, { consent }, {
       headers: { 'Idempotency-Key': idempotencyKey },
     }),
 

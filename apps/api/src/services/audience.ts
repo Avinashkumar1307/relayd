@@ -10,6 +10,7 @@ import type {
 } from '@relayd/types';
 import { compilePreviewCount, SegmentAstError } from '@relayd/audience';
 import type {
+  ConsentRepository,
   ContactListRepository,
   ContactRepository,
   ContactRow,
@@ -30,6 +31,7 @@ export interface AudienceRepositories {
   suppressions: SuppressionRepository;
   imports: ImportJobRepository;
   auditLogs: AuditLogRepository;
+  consent: ConsentRepository;
 }
 
 export type AudienceUnitOfWork = <T>(
@@ -514,6 +516,7 @@ export class AudienceService {
         addToListIds: string[];
         tagIds: string[];
         consentDeclaration: string;
+        consentSource: string;
       };
     },
   ) {
@@ -539,6 +542,31 @@ export class AudienceService {
           `This import is ${job.status} and its mapping can no longer be changed`,
           409,
         );
+      }
+
+      // docs/06: "Every import records a declared consent source ... Stored,
+      // timestamped, attributed to a user."
+      //
+      // A row rather than a field inside `options`, which is where
+      // `consentDeclaration` lives (docs/02). The jsonb blob has no
+      // timestamp of its own, no attribution, and nothing stopping it being
+      // edited later to say something else — which is exactly what it would
+      // need to survive to be worth anything in a dispute.
+      //
+      // No `audienceFingerprint`: the subject here is the file, not an
+      // audience. That null is also what stops an import attestation being
+      // reused to authorise a campaign launch.
+      const actor = this.options.currentActor();
+
+      if (actor.type === 'user' && actor.id !== undefined) {
+        await repos.consent.record(scope, {
+          id: this.options.newId(),
+          subjectKind: 'import',
+          subjectId: id,
+          source: input.options.consentSource,
+          detail: input.options.consentDeclaration,
+          attestedBy: actor.id,
+        });
       }
 
       await this.audit(repos, scope, {
