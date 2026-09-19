@@ -248,7 +248,7 @@ The gate before external signups open.
 
 - [x] Terraform: VPC, subnets, security groups, ALB, four ECS Fargate ARM64 services (+ scheduler as a single-task service), RDS Multi-AZ in production only, ElastiCache (one instance, keyspace prefixes), S3, CloudFront, Route53, KMS, Secrets Manager, ECR; VPC endpoints for S3, ECR, Secrets Manager, CloudWatch Logs
 - [x] IAM: `secretsmanager:GetSecretValue` scoped by resource prefix, never `*` (R21)
-- [ ] CI/CD: build once, promote the same image digest; migrations as a one-off ECS task before service update; smoke tests against staging; manual approval to production; rollback = redeploy previous digest
+- [x] CI/CD: build once, promote the same image digest; migrations as a one-off ECS task before service update; smoke tests against staging; manual approval to production; rollback = redeploy previous digest
 - [ ] Observability: Sentry, CloudWatch dashboards and alarms (queue depth, DLQ size, unmatched-webhook rate, billing divergence, complaint rate), Prometheus endpoint, trace-id chain verified end to end
 - [ ] Backups: PITR enabled; **timed restore drill** documented and executed
 

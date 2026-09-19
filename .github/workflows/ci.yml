@@ -127,6 +127,72 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:isolation
 
+  # The billing matrix against Stripe test mode.
+  #
+  # Its own job because of RELAYD_REQUIRE_BILLING_TESTS. CLAUDE.md section 4:
+  # "CI sets that variable from Phase 8 onward, because a billing suite that
+  # silently skips in CI is indistinguishable from one that passes." Locally
+  # the same command prints SKIPPED and exits 0 so a developer without Stripe
+  # credentials is never blocked; here, a missing key fails the job.
+  billing:
+    name: billing
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      RELAYD_REQUIRE_BILLING_TESTS: '1'
+      STRIPE_TEST_KEY: ${{ secrets.STRIPE_TEST_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build
+      - run: pnpm test:billing
+
+  # Terraform is checked as Terraform, not only as text.
+  #
+  # `packages/testing/test/terraform-policy.isolation.test.ts` reads the .tf
+  # files and asserts policy properties, but it cannot tell you that a file
+  # parses, that a variable reference resolves, or that a module's inputs
+  # match its declarations. `validate` does, and needs no credentials and no
+  # state — `-backend=false` is what keeps it offline.
+  terraform:
+    name: terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.8'
+          terraform_wrapper: false
+
+      - name: Formatting
+        run: terraform fmt -check -recursive infra/terraform
+
+      # Every module and both environments. A loop rather than one call
+      # because `validate` works on a single directory, and a module that is
+      # currently unreferenced would otherwise never be checked.
+      - name: Validate
+        run: |
+          set -euo pipefail
+          status=0
+
+          for directory in infra/terraform/modules/*/ infra/terraform/environments/*/; do
+            echo "==> $directory"
+            if terraform -chdir="$directory" init -backend=false -input=false >/dev/null &&
+               terraform -chdir="$directory" validate -no-color; then
+              :
+            else
+              status=1
+            fi
+          done
+
+          exit $status
+
   build:
     name: build
     runs-on: ubuntu-latest

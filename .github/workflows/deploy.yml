@@ -1,0 +1,230 @@
+name: Deploy
+
+# Build once on main, promote that one digest through staging to production.
+#
+# docs/10: "Build once, promote the same image digest through staging to
+# production. Never rebuild for production — a rebuilt image is a different
+# artifact than the one you tested."
+#
+# The shape that enforces it: `build` is the only job that can produce an
+# image, it outputs a digest, and every job after it takes that digest as an
+# input. No later job has the Docker context, so no later job *can* rebuild.
+#
+# Order, per docs/10's CI/CD diagram:
+#
+#   build → push to ECR → migrate staging → deploy staging → smoke
+#         → manual approval → migrate production → deploy production → smoke
+#
+# Migrations run before the service update in both environments, which is
+# what makes expand-then-contract load-bearing: for the length of a deploy
+# the new schema is live under the old code.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: 'Promote an existing digest (sha256:...) instead of building'
+        required: false
+        type: string
+
+# Deploys are serialised. Two concurrent deploys would race on the migration
+# task and on `update-service`, and `cancel-in-progress` is deliberately off:
+# cancelling a deploy halfway leaves services pointed at a revision the
+# pipeline never verified.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # OIDC. No long-lived AWS keys exist in this repository — the deploy role
+  # is assumed per job and the credentials expire with the job.
+  id-token: write
+
+env:
+  NODE_VERSION: '22'
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+
+jobs:
+  # --------------------------------------------------------------- build
+  build:
+    name: build and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    outputs:
+      image: ${{ steps.result.outputs.image }}
+      digest: ${{ steps.result.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # The dispatch path skips the build entirely and promotes a digest that
+      # already exists. This is how a rollback-forward works, and how a
+      # production deploy of last week's artifact works, without the
+      # temptation to rebuild the same commit and hope it is identical.
+      - name: Promote an existing digest
+        if: inputs.image_digest != ''
+        run: |
+          set -euo pipefail
+          digest='${{ inputs.image_digest }}'
+
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "image_digest must start with sha256:" >&2; exit 1 ;;
+          esac
+
+          # Prove it exists before anything downstream assumes it does.
+          aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageDigest="$digest" \
+            --query 'imageDetails[0].imagePushedAt' \
+            --output text
+
+          echo "DIGEST=$digest" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-qemu-action@v3
+        if: inputs.image_digest == ''
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+        if: inputs.image_digest == ''
+
+      # ARM64, per CLAUDE.md section 2. Tagged with the commit SHA for human
+      # readability; nothing downstream resolves by tag.
+      - name: Build and push
+        if: inputs.image_digest == ''
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          repo="$REGISTRY/$ECR_REPOSITORY"
+
+          docker buildx build \
+            --platform linux/arm64 \
+            -f infra/docker/Dockerfile \
+            --tag "$repo:${GITHUB_SHA}" \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --metadata-file metadata.json \
+            --push \
+            .
+
+          digest=$(jq -r '."containerimage.digest"' metadata.json)
+          test -n "$digest" && test "$digest" != "null"
+          echo "DIGEST=$digest" >> "$GITHUB_ENV"
+
+      - id: result
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          image="$REGISTRY/$ECR_REPOSITORY@$DIGEST"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "### Image" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$image" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  # ------------------------------------------------------------- staging
+  staging:
+    name: staging
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: staging
+      url: https://${{ vars.STAGING_HOSTNAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Migrate
+        run: >-
+          bash scripts/deploy/migrate.sh
+          relayd-staging
+          relayd-staging-migrate
+          '${{ needs.build.outputs.image }}'
+          api
+
+      - name: Deploy
+        run: >-
+          bash scripts/deploy/deploy-services.sh
+          relayd-staging staging '${{ needs.build.outputs.image }}'
+
+      - name: Smoke
+        run: bash scripts/deploy/smoke.sh "https://${{ vars.STAGING_HOSTNAME }}"
+
+  # ---------------------------------------------------------- production
+  #
+  # The approval gate is the `production` environment's required reviewers,
+  # configured on the repository rather than here — a gate written in this
+  # file could be removed in the same pull request that needed approving.
+  production:
+    name: production
+    needs: [build, staging]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://${{ vars.PRODUCTION_HOSTNAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PRODUCTION_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # The same digest that staging just ran. Stated as its own step
+      # because this is the property the whole workflow exists to preserve,
+      # and a reviewer reading the log should be able to see it rather than
+      # infer it.
+      - name: The digest staging verified
+        run: |
+          echo "Promoting ${{ needs.build.outputs.image }}"
+          echo "This is the digest staging ran and smoke-tested. Nothing was rebuilt."
+
+      - name: Migrate
+        run: >-
+          bash scripts/deploy/migrate.sh
+          relayd-production
+          relayd-production-migrate
+          '${{ needs.build.outputs.image }}'
+          api
+
+      - name: Deploy
+        run: >-
+          bash scripts/deploy/deploy-services.sh
+          relayd-production production '${{ needs.build.outputs.image }}'
+
+      - name: Smoke
+        run: bash scripts/deploy/smoke.sh "https://${{ vars.PRODUCTION_HOSTNAME }}"
+
+      - name: How to roll this back
+        if: always()
+        run: |
+          {
+            echo "### Rollback"
+            echo
+            echo "Run the **Rollback** workflow against \`production\`."
+            echo "It resolves the previous digest on its own; no digest needs to be found by hand."
+            echo
+            echo "This deploy shipped:"
+            echo '```'
+            echo "${{ needs.build.outputs.image }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

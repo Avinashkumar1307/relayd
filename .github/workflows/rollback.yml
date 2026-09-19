@@ -1,0 +1,98 @@
+name: Rollback
+
+# Redeploy the previous image digest. docs/10: "Application rollback is
+# redeploying the previous image digest, under 3 minutes."
+#
+# Deliberately separate from Deploy, and deliberately small. During an
+# incident this is the thing somebody runs while reading it for the first
+# time, so it does one thing, it says what it is about to do, and it does
+# not build anything.
+#
+# **This does not roll the database back.** docs/10: "Database rollback is
+# almost never a down-migration — it is a forward fix." Expand-then-contract
+# is what makes rolling the application back safe: the old code still works
+# against the new schema. If a migration is the problem, this will not help,
+# and the runbook in docs/runbooks is the right document.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Which environment to roll back'
+        required: true
+        type: choice
+        options: [staging, production]
+      image_digest:
+        description: 'Roll back to this exact image (leave empty to use the previous one)'
+        required: false
+        type: string
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  rollback:
+    name: rollback ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.environment == 'production' && vars.AWS_PRODUCTION_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - id: target
+        name: Resolve the target image
+        run: |
+          set -euo pipefail
+
+          if [ -n '${{ inputs.image_digest }}' ]; then
+            registry="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
+            image="$registry/${{ vars.ECR_REPOSITORY }}@${{ inputs.image_digest }}"
+          else
+            image=$(bash scripts/deploy/previous-digest.sh '${{ inputs.environment }}')
+          fi
+
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "Rolling ${{ inputs.environment }} back to:"
+          echo "  $image"
+
+      # No migration step, on purpose.
+      #
+      # Running migrations during a rollback would apply the *new* schema
+      # again, or, worse, invite somebody to add a down-migration here. The
+      # schema stays where it is and the code goes back to the version that
+      # ran against it yesterday.
+      - name: Redeploy
+        run: >-
+          bash scripts/deploy/deploy-services.sh
+          'relayd-${{ inputs.environment }}'
+          '${{ inputs.environment }}'
+          '${{ steps.target.outputs.image }}'
+
+      - name: Smoke
+        run: >-
+          bash scripts/deploy/smoke.sh
+          "https://${{ inputs.environment == 'production' && vars.PRODUCTION_HOSTNAME || vars.STAGING_HOSTNAME }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Rolled ${{ inputs.environment }} back"
+            echo
+            echo '```'
+            echo "${{ steps.target.outputs.image }}"
+            echo '```'
+            echo
+            echo "The database schema was **not** changed. If the failure was a migration,"
+            echo "this rollback will not have fixed it — see docs/runbooks."
+          } >> "$GITHUB_STEP_SUMMARY"
