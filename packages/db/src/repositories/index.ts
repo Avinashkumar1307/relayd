@@ -105,3 +105,6 @@ export { RampRepository } from './ramp.js';
 export type { RampState } from './ramp.js';
 export { ConsentRepository } from './consent.js';
 export type { AttestationRow } from './consent.js';
+export { EnforcementRepository } from './enforcement.js';
+export type { EnforcementRow, EnforcementStage } from './enforcement.js';
+export { GlobalEnforcementRepository } from './global/enforcement.js';

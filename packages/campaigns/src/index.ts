@@ -154,3 +154,39 @@ export type {
   AttestationVerdict,
   AttestationInputProblem,
 } from './abuse/consent.js';
+
+export {
+  STAGES,
+  AUTOMATIC_STAGES,
+  COMPLAINT_REVIEW_RATE,
+  COMPLAINT_PAUSE_RATE,
+  BOUNCE_HYGIENE_RATE,
+  MIN_SAMPLE,
+  WINDOW_DAYS,
+  RECOVERY_DAYS,
+  stageRank,
+  isAutomatic,
+  complaintRate,
+  hardBounceRate,
+  hasEnoughSample,
+  triggerFor,
+  stageForTrigger,
+  decide,
+  mayLaunch,
+  maySend,
+  needsReview,
+} from './abuse/enforcement.js';
+export type {
+  EnforcementStage,
+  EnforcementState,
+  EnforcementDecision,
+  EnforcementTrigger,
+  ComplaintMetrics,
+} from './abuse/enforcement.js';
+
+export { runEnforcementSweep, DEFAULT_ENFORCEMENT_SWEEP } from './abuse/sweep.js';
+export type {
+  EnforcementSweepPort,
+  EnforcementSweepResult,
+  EnforcementSweepOptions,
+} from './abuse/sweep.js';

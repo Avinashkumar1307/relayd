@@ -1,5 +1,16 @@
 import { sql } from 'drizzle-orm';
-import { date, index, integer, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  date,
+  index,
+  integer,
+  numeric,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { workspaces } from './identity.js';
 
 /**
@@ -121,3 +132,54 @@ export const consentAttestations = pgTable(
 );
 
 export type ConsentSubjectKind = 'import' | 'campaign';
+
+/**
+ * Enforcement state (migration 0017; docs/06 "Anti-abuse").
+ *
+ * One row per workspace, created when the first enforcement action lands.
+ * Absent means `none` — a workspace nobody has had cause to act on is not
+ * under enforcement.
+ *
+ * Kept apart from `workspaceTrust` on purpose. They look similar and are
+ * not: trust is about age and is written once or twice in a workspace's
+ * lifetime; this is written by a nightly job and read on every launch.
+ */
+export const workspaceEnforcement = pgTable(
+  'workspace_enforcement',
+  {
+    workspaceId: uuid('workspace_id')
+      .primaryKey()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+
+    stage: text('stage').notNull().default('none'),
+    reason: text('reason'),
+
+    /** The measured rate at the moment of the decision. */
+    observedRate: numeric('observed_rate'),
+    observedSends: integer('observed_sends'),
+
+    /** Reset on every change, so the recovery clock runs from this stage. */
+    enteredAt: timestamp('entered_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+
+    /** While true the automatic job does nothing, in either direction. */
+    heldByOperator: boolean('held_by_operator').notNull().default(false),
+    note: text('note'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => ({
+    // Partial, matching migration 0017. Almost every workspace is `none`,
+    // and an index that carried them all would be mostly a copy of the
+    // primary key that the sweep never reads.
+    byStage: index('ix_we_stage')
+      .on(table.stage, table.enteredAt)
+      .where(sql`${table.stage} <> 'none'`),
+  }),
+);

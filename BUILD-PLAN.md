@@ -268,7 +268,7 @@ The gate before external signups open.
 
 - [x] Verified email + verified sender identity before any send; 500 sends/day cap for accounts under 7 days; new accounts excluded from pool routing
 - [x] Consent attestation at import and at launch, stored with the campaign
-- [ ] Complaint-rate auto-pause at 0.3%; graduated account enforcement ladder
+- [x] Complaint-rate auto-pause at 0.3%; graduated account enforcement ladder
 - [ ] Launch-time phishing lint; link reputation checks; global cross-workspace block list
 - [ ] External penetration test; findings above informational closed or accepted in writing
 - [ ] Secret scanning and dependency audit in CI; incident-response runbook in `docs/runbooks/`

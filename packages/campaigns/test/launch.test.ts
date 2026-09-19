@@ -53,6 +53,14 @@ function port(overrides: Partial<LaunchPort> = {}) {
       calls.push('ramp');
       return false;
     },
+    async readEnforcementStage() {
+      calls.push('enforcement');
+      return 'none' as const;
+    },
+    async launchIsApproved() {
+      calls.push('approved');
+      return true;
+    },
     async readConsentAttestation() {
       calls.push('consent');
       return {
@@ -565,5 +573,107 @@ describe('consent is re-confirmed at launch (docs/06)', () => {
     const result = await launchCampaign('c1', p);
 
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('the enforcement ladder stops a launch (docs/06)', () => {
+  it('refuses a paused workspace', async () => {
+    const { port: p } = port({
+      async readEnforcementStage() {
+        return 'paused' as const;
+      },
+    });
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.failure).toBe('enforcement_paused');
+  });
+
+  it('refuses every stage above paused', async () => {
+    for (const stage of ['suspended', 'terminated'] as const) {
+      const { port: p } = port({
+        async readEnforcementStage() {
+          return stage;
+        },
+      });
+
+      const result = await launchCampaign('c1', p);
+      expect(result.failure, stage).toBe('enforcement_paused');
+    }
+  });
+
+  it('refuses an unapproved campaign while under review', async () => {
+    const { port: p } = port({
+      async readEnforcementStage() {
+        return 'review_required' as const;
+      },
+      async launchIsApproved() {
+        return false;
+      },
+    });
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.failure).toBe('enforcement_review_required');
+  });
+
+  it('allows an approved campaign while under review', async () => {
+    // Without this, the test above passes just as well with a stage that
+    // blocks unconditionally — which would make `review_required` a second
+    // name for `paused` and collapse the ladder.
+    const { port: p } = port({
+      async readEnforcementStage() {
+        return 'review_required' as const;
+      },
+      async launchIsApproved() {
+        return true;
+      },
+    });
+
+    expect((await launchCampaign('c1', p)).ok).toBe(true);
+  });
+
+  it('lets a warned workspace send without approval', async () => {
+    // A warning that stopped sending would be a pause with a friendlier
+    // name, and the five-rung ladder would really have three.
+    const { port: p, calls } = port({
+      async readEnforcementStage() {
+        return 'warned' as const;
+      },
+    });
+
+    expect((await launchCampaign('c1', p)).ok).toBe(true);
+    expect(calls).not.toContain('approved');
+  });
+
+  it('checks enforcement before taking a snapshot', async () => {
+    // A paused workspace should not first write a recipient row per contact.
+    const { port: p, calls } = port({
+      async readEnforcementStage() {
+        return 'paused' as const;
+      },
+    });
+
+    await launchCampaign('c1', p);
+
+    expect(calls).not.toContain('snapshot');
+    expect(calls).toContain('release');
+  });
+
+  it('checks enforcement before consent', async () => {
+    // A paused workspace should be told it is paused, not asked to tick a
+    // consent box it will then be refused on anyway.
+    const { port: p } = port({
+      async readEnforcementStage() {
+        return 'paused' as const;
+      },
+      async readConsentAttestation() {
+        return null;
+      },
+    });
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.failure).toBe('enforcement_paused');
   });
 });

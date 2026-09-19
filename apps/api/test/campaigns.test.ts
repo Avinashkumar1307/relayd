@@ -18,6 +18,7 @@ import type { CampaignRepositories, CampaignServiceOptions } from '../src/servic
  */
 
 const NOW = new Date('2026-09-19T12:00:00.000Z');
+const CONSENT = { source: 'signup_form', detail: null, ip: null };
 
 const SCOPE = { workspaceId: 'ws-1' } as unknown as WorkspaceScope;
 const ID = 'c1' as CampaignId;
@@ -198,6 +199,14 @@ function service(over: {
           },
           async workspaceIsInRamp() {
             return failure === 'pool_routing_unavailable';
+          },
+          async readEnforcementStage() {
+            if (failure === 'enforcement_paused') return 'paused' as const;
+            if (failure === 'enforcement_review_required') return 'review_required' as const;
+            return 'none' as const;
+          },
+          async launchIsApproved() {
+            return failure !== 'enforcement_review_required';
           },
           async readConsentAttestation() {
             if (failure === 'consent_not_attested') return null;
@@ -649,5 +658,26 @@ describe('the launch records the consent declaration (docs/06)', () => {
     await expect(s.launch(SCOPE, ID, { consent })).rejects.toThrow();
 
     expect(attestations).toHaveLength(1);
+  });
+});
+
+describe('enforcement refusals are not validation errors', () => {
+  it('maps a paused workspace to 403', async () => {
+    // 403: the workspace is not allowed to send right now. Telling somebody
+    // their campaign is malformed when their account is paused sends them
+    // looking in entirely the wrong place.
+    const { service: s } = service({
+      launchResult: { ok: false, failure: 'enforcement_paused', message: 'paused' },
+    });
+
+    await expect(s.launch(SCOPE, ID, { consent: CONSENT })).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('maps a workspace under review to 403', async () => {
+    const { service: s } = service({
+      launchResult: { ok: false, failure: 'enforcement_review_required', message: 'review' },
+    });
+
+    await expect(s.launch(SCOPE, ID, { consent: CONSENT })).rejects.toMatchObject({ status: 403 });
   });
 });

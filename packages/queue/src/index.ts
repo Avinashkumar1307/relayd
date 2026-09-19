@@ -26,3 +26,4 @@ export type {
 } from './dead-letters.js';
 export { withTrace, resumeTrace, withoutTrace, TRACE_FIELD } from './trace.js';
 export type { Traced } from './trace.js';
+export { GLOBAL_JOB_TYPES, isGlobalJob } from './global-jobs.js';

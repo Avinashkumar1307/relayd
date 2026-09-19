@@ -105,6 +105,12 @@ const LAUNCH_FAILURE_STATUS: Readonly<Record<string, number>> = {
   consent_not_attested: 422,
   consent_stale: 422,
   consent_audience_changed: 422,
+  // 403: the workspace is not allowed to send right now. Not 422 — there is
+  // nothing wrong with the request, and telling somebody their campaign is
+  // malformed when their account is paused sends them looking in the wrong
+  // place entirely.
+  enforcement_paused: 403,
+  enforcement_review_required: 403,
   unresolvable_merge_tags: 422,
 };
 

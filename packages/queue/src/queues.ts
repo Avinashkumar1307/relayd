@@ -32,6 +32,7 @@ export const QUEUE_NAMES = [
   'provider-verify',
   'outbound-webhook',
   'partition-maintenance',
+  'enforcement-sweep',
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
@@ -169,6 +170,30 @@ export const QUEUE_SETTINGS: Readonly<Record<QueueName, QueueSettings>> = {
     removeOnComplete: { count: 30, age: 7 * DAY },
     removeOnFail: { count: 100, age: 30 * DAY },
     description: 'Creates email_events and usage_records partitions seven days ahead (R25).',
+  },
+
+  'enforcement-sweep': {
+    name: 'enforcement-sweep',
+    // One. It reads every workspace under enforcement and every workspace
+    // that sent in the window; two of them would compute the same rates
+    // twice and race on the same rows for no gain.
+    concurrency: 1,
+    // The rate query is an aggregate over a month of `email_events` for
+    // every workspace that sent. That is minutes, not seconds, once there
+    // is real traffic.
+    lockDuration: 10 * 60_000,
+    // Two. An enforcement decision that fails is re-made on the next tick
+    // from the same data, so retrying hard buys nothing — and the one thing
+    // worse than a late pause is a pause applied twice with different
+    // numbers because the metrics moved between attempts.
+    attempts: 2,
+    backoff: { type: 'fixed', delay: 5 * 60_000 },
+    removeOnComplete: { count: 90, age: 30 * DAY },
+    // Kept far longer than most. "Why was this workspace not paused" is a
+    // question asked weeks later, and the failed job is the answer.
+    removeOnFail: { count: 500, age: 90 * DAY },
+    description:
+      'Complaint-rate monitoring and the enforcement ladder (docs/06). Cross-tenant.',
   },
 
   'event-ingest': {

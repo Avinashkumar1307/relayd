@@ -29,6 +29,7 @@
  */
 
 import { attestationAuthorises, type Attestation } from '../abuse/consent.js';
+import { mayLaunch, needsReview, type EnforcementStage } from '../abuse/enforcement.js';
 
 export type LaunchFailure =
   | 'not_launchable'
@@ -42,6 +43,8 @@ export type LaunchFailure =
   | 'pool_routing_unavailable'
   | 'consent_not_attested'
   | 'consent_audience_changed'
+  | 'enforcement_paused'
+  | 'enforcement_review_required'
   | 'unresolvable_merge_tags';
 
 export interface LaunchPort {
@@ -95,6 +98,25 @@ export interface LaunchPort {
    * campaign rather than of the day.
    */
   workspaceIsInRamp(workspaceId: string): Promise<boolean>;
+
+  /**
+   * The workspace's enforcement stage (docs/06 "Response ladder").
+   *
+   * Read inside the launch transaction. A workspace paused by the nightly
+   * sweep between the client loading the page and pressing send must not get
+   * one more campaign out.
+   */
+  readEnforcementStage(workspaceId: string): Promise<EnforcementStage>;
+
+  /**
+   * Whether an operator has approved this specific campaign.
+   *
+   * Only consulted at `review_required`. Per campaign rather than per
+   * workspace, because "we looked at this one" is the thing being asserted —
+   * a workspace-level approval would wave through every campaign after it,
+   * which is the same as not being in review at all.
+   */
+  launchIsApproved(campaignId: string): Promise<boolean>;
 
   /**
    * The newest consent attestation for this campaign, or null.
@@ -234,7 +256,29 @@ export async function launchCampaign(
     );
   }
 
-  // 5. Consent. docs/06: "every launch re-confirms it."
+  // 5. The enforcement ladder (docs/06 "Response ladder").
+  //
+  //    Before consent, because a paused workspace should be told it is
+  //    paused rather than asked to tick a consent box it will then be
+  //    refused on anyway. The order of these two is the difference between a
+  //    message that explains and one that wastes somebody's afternoon.
+  const stage = await port.readEnforcementStage(campaign.workspaceId);
+
+  if (!mayLaunch(stage)) {
+    return fail(
+      'enforcement_paused',
+      'Sending is paused for this workspace. Check the notice in your dashboard for what to do next.',
+    );
+  }
+
+  if (needsReview(stage) && !(await port.launchIsApproved(campaignId))) {
+    return fail(
+      'enforcement_review_required',
+      'This workspace is under review. Campaigns need approval before they can be sent.',
+    );
+  }
+
+  // 6. Consent. docs/06: "every launch re-confirms it."
   //
   //    Before the snapshot, because a launch that is going to be refused
   //    should not first write a recipient row per contact — and because the
@@ -257,7 +301,7 @@ export async function launchCampaign(
     return fail('consent_not_attested', 'Confirm where this audience gave consent before sending');
   }
 
-  // 6. The entitlement row, FOR SHARE (R28). Read before the snapshot, held
+  // 7. The entitlement row, FOR SHARE (R28). Read before the snapshot, held
   //    until this transaction ends, so a downgrade cannot commit in the gap.
   const entitlement = await port.readEntitlementForShare(campaign.workspaceId);
 
@@ -270,7 +314,7 @@ export async function launchCampaign(
     );
   }
 
-  // 7. Snapshot. Deduplicated by the unique index, so running twice inserts
+  // 8. Snapshot. Deduplicated by the unique index, so running twice inserts
   //    nothing the second time.
   const snapshot = await port.snapshotAudience({
     campaignId,
@@ -286,7 +330,7 @@ export async function launchCampaign(
     );
   }
 
-  // 8. The limit, against the snapshot that was just taken — not against an
+  // 9. The limit, against the snapshot that was just taken — not against an
   //    estimate made before it.
   if (entitlement.monthlySendLimit !== null) {
     const remaining = entitlement.monthlySendLimit - entitlement.used;

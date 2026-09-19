@@ -1904,6 +1904,60 @@ wants them:
 Built to (3) as the safe default, because it is the only one of the three
 that cannot produce a record which says something untrue.
 
+### 2026-09-19 - automation pauses, but never suspends
+
+docs/06's ladder is "Warn, then require review before launch, then pause
+sending, then suspend, then terminate with data export." It does not say
+which rungs a job may climb on its own.
+
+The nightly sweep may reach `paused` and no further. Suspension and
+termination end a paying customer's business with us, they are the two the
+customer cannot undo by fixing their list, and no metric is a good enough
+reason to do either without a person looking - docs/06 puts the ops console
+for reviewing flagged workspaces in the same paragraph, which is what those
+two stages are for.
+
+Pausing *is* automatic, because by the time a human looks the damage is
+already spreading through a shared pool.
+
+Three further decisions the document leaves open:
+
+**Escalation skips rungs; release does not.** A workspace that jumps from
+clean to 2% complaints goes straight to `paused` - the ladder describes the
+sequence a workspace experiences, not a rate limit on how fast we may react.
+Coming back is one rung at a time, so the first thing a workspace does after
+a pause is a launch somebody looked at.
+
+**A sample floor of 500 sends.** 0.3% of 100 sends is 0.3 complaints, so
+without a floor a single complaint on a small campaign auto-pauses the
+workspace. 500 is the point at which one complaint (0.2%) is still under the
+pause threshold: no individual recipient's click can stop a workspace
+sending.
+
+**A ceiling of 50 escalations per run.** If the rate query broke and made
+every workspace look like a spammer, an unbounded sweep would pause the
+entire customer base in one night. Releases still apply past the ceiling,
+because a run that stopped entirely would also strand every workspace that
+had already cleaned up.
+
+### 2026-09-19 - `packages/queue/global-jobs.ts` now exists
+
+CLAUDE.md section 8 and finding F20 both name this file: the allowlist of job
+types that may connect as `relayd_global` and bypass RLS. Two tests referred
+to it. It had never been created, so in practice there was no allowlist -
+which is the state F20 describes as reducing the four-layer isolation story
+to one layer.
+
+It is a list rather than a flag on each job definition on purpose: a boolean
+is set by whoever is writing that job at the moment they are frustrated their
+query returns nothing, where a list in its own file is a diff that says "this
+job can now read every customer's data".
+
+Three entries: `partition-maintenance`, `billing-reconcile` and the new
+`enforcement-sweep`. The bar is that the job's *purpose* is cross-tenant, not
+its convenience - a job that processes many workspaces one at a time should
+open a scoped transaction per workspace instead.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
