@@ -4,7 +4,8 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { createLogger } from '@relayd/logger';
 import { workspaceScope } from '@relayd/db';
-import type { IdempotencyRecord, WorkspaceId } from '@relayd/db';
+import type { IdempotencyRecord } from '@relayd/db';
+import type { WorkspaceId } from '@relayd/types';
 import {
   canonicalHash,
   idempotent,

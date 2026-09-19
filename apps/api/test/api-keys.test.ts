@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AppError, PERMISSIONS, canApiKeyHold } from '@relayd/types';
-import type { UserId, WorkspaceRole } from '@relayd/types';
+import type { UserId, WorkspaceId, WorkspaceRole } from '@relayd/types';
 import type { WorkspaceScope } from '@relayd/db';
 import { hashToken } from '@relayd/utils';
 import {
@@ -24,7 +24,8 @@ import {
  * field called `keyHash` contains a hash.
  */
 
-const SCOPE = { workspaceId: 'ws-1' } as unknown as WorkspaceScope;
+const WORKSPACE = 'ws-1' as WorkspaceId;
+const SCOPE = { workspaceId: WORKSPACE } as unknown as WorkspaceScope;
 const USER = 'user-1' as UserId;
 const NOW = new Date('2026-09-19T12:00:00.000Z');
 
@@ -44,52 +45,65 @@ function service(
 
   let ids = 0;
 
+  // Annotated rather than cast, so the fake's parameters and return shapes
+  // are checked against the real repository. A bare object literal behind an
+  // `as unknown as` gives every parameter `any`, which is how a fake drifts
+  // away from the thing it stands in for without a test noticing.
+  const keyRepository: Pick<
+    ApiKeyRepositories['apiKeys'],
+    'create' | 'list' | 'find' | 'revoke' | 'countActive'
+  > = {
+    async create(_scope, input) {
+      created.push(input);
+      return {
+        id: input.id,
+        workspaceId: WORKSPACE,
+        name: input.name,
+        keyPrefix: input.keyPrefix,
+        scopes: [...input.scopes],
+        lastUsedAt: null,
+        expiresAt: input.expiresAt ?? null,
+        revokedAt: null,
+        createdBy: input.createdBy ?? null,
+        createdAt: NOW,
+      };
+    },
+    async list() {
+      return [];
+    },
+    async find(_scope, keyId) {
+      return {
+        id: keyId,
+        workspaceId: WORKSPACE,
+        name: 'CI',
+        keyPrefix: 'rk_live_aaaa',
+        scopes: ['contact:read'],
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+        createdBy: USER,
+        createdAt: NOW,
+      };
+    },
+    async revoke(_scope, input) {
+      revoked.push(input.keyId);
+      return true;
+    },
+    async countActive() {
+      return over.existing ?? 0;
+    },
+  };
+
   const repos: ApiKeyRepositories = {
-    apiKeys: {
-      async create(_scope, input) {
-        created.push(input);
-        return {
-          id: input.id,
-          workspaceId: 'ws-1',
-          name: input.name,
-          keyPrefix: input.keyPrefix,
-          scopes: [...input.scopes],
-          lastUsedAt: null,
-          expiresAt: input.expiresAt ?? null,
-          revokedAt: null,
-          createdBy: input.createdBy ?? null,
-          createdAt: NOW,
-        };
-      },
-      async list() {
-        return [];
-      },
-      async find(_scope, keyId) {
-        return {
-          id: keyId,
-          workspaceId: 'ws-1',
-          name: 'CI',
-          keyPrefix: 'rk_live_aaaa',
-          scopes: ['contact:read'],
-          lastUsedAt: null,
-          expiresAt: null,
-          revokedAt: null,
-          createdBy: USER,
-          createdAt: NOW,
-        };
-      },
-      async revoke(_scope, input) {
-        revoked.push(input.keyId);
-        return true;
-      },
-      async countActive() {
-        return over.existing ?? 0;
-      },
-      ...over.keys,
-    } as unknown as ApiKeyRepositories['apiKeys'],
+    // The cast is only for the methods the service never calls; the five it
+    // does call are type-checked above.
+    apiKeys: { ...keyRepository, ...over.keys } as unknown as ApiKeyRepositories['apiKeys'],
 
     auditLogs: {
-      async append(_scope, entry: { action: string; after?: unknown; before?: unknown }) {
+      async append(
+        _scope: WorkspaceScope,
+        entry: { action: string; after?: unknown; before?: unknown },
+      ) {
         audits.push(entry);
       },
     } as unknown as ApiKeyRepositories['auditLogs'],
