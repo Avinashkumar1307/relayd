@@ -19,6 +19,10 @@ import { templateRoutes, type TemplateRouterOptions } from './routes/templates.j
 import { operatorRoutes, type OperatorRouterOptions } from './routes/operator.js';
 import { billingRoutes, type BillingRouterOptions } from './routes/billing.js';
 import { apiKeyRoutes, type ApiKeyRouterOptions } from './routes/api-keys.js';
+import {
+  outboundWebhookRoutes,
+  type OutboundWebhookRouterOptions,
+} from './routes/outbound-webhooks.js';
 
 /**
  * Express 5, with the guard rails docs/01 asks for: thin route handlers, one
@@ -47,6 +51,7 @@ export interface AppDependencies extends HealthDependencies {
   analytics?: AnalyticsRouterOptions;
   billing?: BillingRouterOptions;
   apiKeys?: ApiKeyRouterOptions;
+  outboundWebhooks?: OutboundWebhookRouterOptions;
   operator?: OperatorRouterOptions;
 }
 
@@ -103,6 +108,10 @@ export function createApp(deps: AppDependencies): Express {
 
   if (deps.apiKeys !== undefined) {
     app.use('/api/v1', apiKeyRoutes(deps.apiKeys));
+  }
+
+  if (deps.outboundWebhooks !== undefined) {
+    app.use('/api/v1', outboundWebhookRoutes(deps.outboundWebhooks));
   }
 
   // Cross-tenant by nature, and gated by an operator check that denies by

@@ -99,3 +99,5 @@ export {
   IDEMPOTENCY_TTL_MS,
 } from './idempotency.js';
 export type { IdempotencyRecord } from './idempotency.js';
+export { OutboundWebhookRepository } from './outbound-webhooks.js';
+export type { WebhookEndpointRow, WebhookDeliveryRow } from './outbound-webhooks.js';
