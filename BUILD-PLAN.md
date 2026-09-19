@@ -251,6 +251,12 @@ The gate before external signups open.
 - [x] CI/CD: build once, promote the same image digest; migrations as a one-off ECS task before service update; smoke tests against staging; manual approval to production; rollback = redeploy previous digest
 - [x] Observability: Sentry, CloudWatch dashboards and alarms (queue depth, DLQ size, unmatched-webhook rate, billing divergence, complaint rate), Prometheus endpoint, trace-id chain verified end to end
 - [ ] Backups: PITR enabled; **timed restore drill** documented and executed
+  - PITR is enabled and validated in Terraform (`backup_retention_days >= 1`), the drill is
+    written up in `docs/runbooks/restore-drill.md` and automated in `scripts/dr/restore-drill.sh`,
+    and its refusals are proven by `packages/testing/test/restore-drill.test.ts`.
+    **The drill has not been executed** — that needs an AWS account with a live RDS instance,
+    and this repository has never been deployed. The box stays unticked until it is run and
+    a row is added to the drill log.
 
 **Gate:** Restore from PITR inside the one-hour RTO with a stopwatch; first migration visible in the staging database; a single email traceable from request id → recipient id → provider message id in one query; a deliberately broken deploy rolls back in under five minutes.
 
