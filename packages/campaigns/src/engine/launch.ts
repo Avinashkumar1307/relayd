@@ -36,6 +36,8 @@ export type LaunchFailure =
   | 'entitlement_exceeded'
   | 'no_entitlement'
   | 'unverified_sender'
+  | 'unverified_account'
+  | 'pool_routing_unavailable'
   | 'unresolvable_merge_tags';
 
 export interface LaunchPort {
@@ -66,6 +68,30 @@ export interface LaunchPort {
 
   /** Whether the sender's identity is still verified with the provider. */
   senderIsUsable(senderAccountId: string): Promise<boolean>;
+
+  /**
+   * Whether the workspace owner has verified their email address.
+   *
+   * docs/06: "Email verification before any send." Checked at launch rather
+   * than only at signup, because an account can be created, verified, have
+   * its email changed, and be launched from — and the verification that
+   * matters is the current one.
+   */
+  ownerEmailIsVerified(workspaceId: string): Promise<boolean>;
+
+  /**
+   * Whether the workspace is still inside its new-account ramp (docs/06).
+   *
+   * Only the boolean, not the daily counter: the per-day cap is a rate limit
+   * enforced page by page in `dispatch`, and refusing a launch because
+   * today's 500 are already spent would tell a real customer their campaign
+   * is too big, which is neither true nor the message.
+   *
+   * What *is* refused here is pool routing, which is a property of the
+   * campaign rather than of the day.
+   */
+  workspaceIsInRamp(workspaceId: string): Promise<boolean>;
+
 
   /**
    * Writes the audience snapshot.
@@ -164,7 +190,38 @@ export async function launchCampaign(
     );
   }
 
-  // 3. The entitlement row, FOR SHARE (R28). Read before the snapshot, held
+  // 3. The account itself. docs/06: "Email verification before any send."
+  //
+  // After the sender check and before the entitlement read, because an
+  // unverified account is a cheaper refusal than a row lock and because the
+  // sender message is the more useful one when both are wrong.
+  if (!(await port.ownerEmailIsVerified(campaign.workspaceId))) {
+    return fail(
+      'unverified_account',
+      'Verify the workspace owner’s email address before sending',
+    );
+  }
+
+  // 4. Pool routing, for a workspace still in its ramp.
+  //
+  //    docs/06 excludes new accounts from pool routing. A pool spreads a
+  //    campaign across several provider connections, which is exactly how a
+  //    spammer spreads reputation damage and outruns a per-connection rate
+  //    limit — and a workspace days old is the one whose reputation nobody
+  //    knows yet.
+  //
+  //    Refused rather than silently downgraded to a single sender. Quietly
+  //    sending from somewhere other than where the customer chose is worse
+  //    than saying no: it works, so nobody asks why, and the first they hear
+  //    of it is a report attributing sends to the wrong identity.
+  if (campaign.sendingPoolId !== null && (await port.workspaceIsInRamp(campaign.workspaceId))) {
+    return fail(
+      'pool_routing_unavailable',
+      'New workspaces send from a single verified sender for their first 7 days. Choose a sender, or contact support to lift the limit.',
+    );
+  }
+
+  // 5. The entitlement row, FOR SHARE (R28). Read before the snapshot, held
   //    until this transaction ends, so a downgrade cannot commit in the gap.
   const entitlement = await port.readEntitlementForShare(campaign.workspaceId);
 
@@ -177,7 +234,7 @@ export async function launchCampaign(
     );
   }
 
-  // 4. Snapshot. Deduplicated by the unique index, so running twice inserts
+  // 6. Snapshot. Deduplicated by the unique index, so running twice inserts
   //    nothing the second time.
   const snapshot = await port.snapshotAudience({
     campaignId,
@@ -193,7 +250,7 @@ export async function launchCampaign(
     );
   }
 
-  // 5. The limit, against the snapshot that was just taken — not against an
+  // 7. The limit, against the snapshot that was just taken — not against an
   //    estimate made before it.
   if (entitlement.monthlySendLimit !== null) {
     const remaining = entitlement.monthlySendLimit - entitlement.used;

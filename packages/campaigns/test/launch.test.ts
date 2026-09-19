@@ -42,6 +42,14 @@ function port(overrides: Partial<LaunchPort> = {}) {
       calls.push('sender');
       return true;
     },
+    async ownerEmailIsVerified() {
+      calls.push('ownerVerified');
+      return true;
+    },
+    async workspaceIsInRamp() {
+      calls.push('ramp');
+      return false;
+    },
     async snapshotAudience() {
       calls.push('snapshot');
       return { inserted: 1000, suppressedAtSnapshot: 12 };
@@ -366,5 +374,123 @@ describe('what a successful launch records', () => {
     await launchCampaign('c1', p);
 
     expect(calls.filter((c) => c === 'snapshot')).toHaveLength(1);
+  });
+});
+
+describe('the anti-abuse gates (docs/06)', () => {
+  it('refuses to launch from an unverified account', async () => {
+    // docs/06: "Email verification before any send." Checked at launch, not
+    // only at signup: an account can be created, verified, have its email
+    // changed, and be launched from.
+    const { port: p } = port({
+      async ownerEmailIsVerified() {
+        return false;
+      },
+    });
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.ok).toBe(false);
+    expect(result.failure).toBe('unverified_account');
+  });
+
+  it('releases the claim so the draft stays editable', async () => {
+    // Every other pre-flight failure does this; a new one that forgot would
+    // strand the campaign in `validating` with no dispatcher and no way for
+    // the customer to fix it.
+    const { port: p, calls } = port({
+      async ownerEmailIsVerified() {
+        return false;
+      },
+    });
+
+    await launchCampaign('c1', p);
+
+    expect(calls).toContain('release');
+  });
+
+  it('refuses pool routing for a workspace still in its ramp', async () => {
+    // docs/06 excludes new accounts from pool routing: a pool spreads a
+    // campaign across provider connections, which is how a spammer spreads
+    // reputation damage and outruns a per-connection limit.
+    const { port: p } = port({
+      async readCampaign() {
+        return { ...CAMPAIGN, senderAccountId: null, sendingPoolId: 'pool-1' };
+      },
+      async workspaceIsInRamp() {
+        return true;
+      },
+    });
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.ok).toBe(false);
+    expect(result.failure).toBe('pool_routing_unavailable');
+  });
+
+  it('refuses rather than silently sending from a single sender', async () => {
+    // Quietly sending from somewhere other than where the customer chose is
+    // worse than saying no: it works, so nobody asks why, and the first they
+    // hear of it is a report attributing sends to the wrong identity.
+    const { port: p, calls } = port({
+      async readCampaign() {
+        return { ...CAMPAIGN, senderAccountId: null, sendingPoolId: 'pool-1' };
+      },
+      async workspaceIsInRamp() {
+        return true;
+      },
+    });
+
+    await launchCampaign('c1', p);
+
+    expect(calls).not.toContain('snapshot');
+  });
+
+  it('allows a ramped workspace to launch from a single sender', async () => {
+    // The ramp restricts pools, not sending. Without this, the test above
+    // passes just as well with a gate that refuses every launch from a new
+    // workspace — which would make the product unusable on day one.
+    const { port: p } = port({
+      async workspaceIsInRamp() {
+        return true;
+      },
+    });
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('allows an established workspace to use a pool', async () => {
+    const { port: p } = port({
+      async readCampaign() {
+        return { ...CAMPAIGN, senderAccountId: null, sendingPoolId: 'pool-1' };
+      },
+      async workspaceIsInRamp() {
+        return false;
+      },
+    });
+
+    const result = await launchCampaign('c1', p);
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('checks the account before taking a snapshot', async () => {
+    // Order matters for cost: a snapshot of a 500k audience is the
+    // expensive part of a launch, and there is nothing to learn from taking
+    // one for a workspace that cannot send.
+    const { port: p, calls } = port({
+      async ownerEmailIsVerified() {
+        return false;
+      },
+    });
+
+    await launchCampaign('c1', p);
+
+    expect(calls.indexOf('ownerVerified')).toBeLessThan(
+      calls.indexOf('snapshot') === -1 ? Infinity : calls.indexOf('snapshot'),
+    );
+    expect(calls).not.toContain('snapshot');
   });
 });

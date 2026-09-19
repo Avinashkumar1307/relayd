@@ -25,11 +25,14 @@ export const DISPATCH_PAGE = 500;
 /** Campaign states in which the dispatcher should keep claiming. */
 const DISPATCHABLE_STATES = new Set(['queueing', 'sending']);
 
+import { allowanceForBatch, type WorkspaceTrust } from '../abuse/ramp.js';
+
 export type DispatchStop =
   | 'completed'
   | 'drained'
   | 'not_dispatchable'
   | 'halted'
+  | 'ramp_capped'
   | 'window_stalled';
 
 export interface DispatchableCampaign {
@@ -57,6 +60,25 @@ export interface DispatchPort {
    * dispatcher's own writes.
    */
   inFlightCount(campaignId: string): Promise<number>;
+
+  /**
+   * The new-workspace ramp inputs: when the workspace was created, its trust
+   * row, and how many it has already sent today (docs/06 "Anti-abuse").
+   *
+   * Read every page, not once per dispatch, for the same reason the campaign
+   * state is: a cap checked once at the top of a 500k-recipient dispatch is
+   * not a cap. Three values in one call because they are compared against
+   * each other and must describe the same moment.
+   *
+   * Returning null means the workspace is not ramped and the cap does not
+   * apply — an established workspace pays nothing for this check beyond the
+   * read.
+   */
+  readRampState(workspaceId: string): Promise<{
+    createdAt: Date;
+    trust: WorkspaceTrust | null;
+    sentToday: number;
+  } | null>;
 
   /**
    * The atomic claim, safe with N concurrent dispatchers:
@@ -98,6 +120,13 @@ export interface DispatchPort {
   isHalted(campaignId: string): Promise<boolean>;
 
   sleep(ms: number): Promise<void>;
+
+  /**
+   * The clock. Injected rather than called directly so the ramp's day
+   * boundary can be tested — the interesting cases are all at UTC midnight,
+   * and a test that waits for one is not a test.
+   */
+  now(): Date;
 
   recordEvent(input: { campaignId: string; eventType: string; detail: unknown }): Promise<void>;
 }
@@ -185,9 +214,56 @@ export async function dispatchCampaign(
 
     stallPolls = 0;
 
-    // 4. The claim. `FOR UPDATE SKIP LOCKED`, so a second dispatcher takes
+    // 4. The new-workspace ramp (docs/06: "First 7 days capped at 500
+    //    emails/day regardless of plan").
+    //
+    //    It trims the page rather than refusing it, which is what makes the
+    //    cap a rate limit and not a wall: a 5,000-recipient campaign from a
+    //    day-one workspace sends 500 today and the rest as the days pass.
+    //    That is what a legitimate new customer expects and what a spammer
+    //    finds useless.
+    //
+    //    Checked here rather than at launch for the same reason: refusing
+    //    the launch would tell a real customer their campaign is too big,
+    //    which is not true and not the message.
+    //
+    //    Deliberately *after* the entitlement check that happened at launch
+    //    and not instead of it. An entitlement is bought, and a stolen card
+    //    buys the largest one; the ramp is earned with time and behaviour,
+    //    neither of which is purchasable.
+    let allowed = Math.min(page, window - inFlight);
+    const ramp = await port.readRampState(campaign.workspaceId);
+
+    if (ramp !== null) {
+      allowed = allowanceForBatch(
+        { workspaceId: campaign.workspaceId, createdAt: ramp.createdAt, trust: ramp.trust },
+        ramp.sentToday,
+        allowed,
+        port.now(),
+      );
+
+      if (allowed === 0) {
+        // Not an error and not a completion. The campaign stays in
+        // `sending`; the next scheduled dispatch picks it up, and the first
+        // one after UTC midnight finds a fresh allowance.
+        await port.recordEvent({
+          campaignId,
+          eventType: 'dispatch.ramp_capped',
+          detail: { sentToday: ramp.sentToday },
+        });
+
+        return {
+          stopped: 'ramp_capped',
+          enqueued,
+          pages,
+          detail: `${ramp.sentToday} sent today on a new-workspace cap`,
+        };
+      }
+    }
+
+    // 5. The claim. `FOR UPDATE SKIP LOCKED`, so a second dispatcher takes
     //    the next page rather than blocking on this one.
-    const claimed = await port.claimNextRecipients(campaignId, Math.min(page, window - inFlight));
+    const claimed = await port.claimNextRecipients(campaignId, allowed);
 
     if (claimed.length === 0) {
       // Ran dry. Completion is guarded, so losing the race with the
@@ -196,7 +272,7 @@ export async function dispatchCampaign(
       return { stopped: completed ? 'completed' : 'drained', enqueued, pages };
     }
 
-    // 5. The F3 window: these rows are `queued` in Postgres and in no queue
+    // 6. The F3 window: these rows are `queued` in Postgres and in no queue
     //    until this returns.
     try {
       await port.enqueueSends({ campaignId, recipients: claimed });

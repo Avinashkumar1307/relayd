@@ -17,6 +17,8 @@ import {
  * when the enqueue fails underneath it.
  */
 
+const NOW = new Date('2026-09-19T12:00:00.000Z');
+
 function recipients(n: number, offset = 0): ClaimedRecipient[] {
   return Array.from({ length: n }, (_, i) => ({ id: `r${offset + i}`, workspaceId: 'ws-1' }));
 }
@@ -70,6 +72,16 @@ function port(overrides: Partial<DispatchPort> = {}, pool = 1200) {
     },
     async sleep(ms) {
       sleeps.push(ms);
+    },
+    now() {
+      return NOW;
+    },
+    async readRampState() {
+      // Not ramped, so the cap does not apply and these tests measure the
+      // window and the throttle rather than the ramp. The ramp's own
+      // behaviour is in ramp.test.ts and in the cases at the bottom of this
+      // file.
+      return null;
     },
     async recordEvent(input) {
       events.push(input.eventType);
@@ -416,5 +428,150 @@ describe('the defaults', () => {
   it('are the ones docs/04 specifies', () => {
     expect(DISPATCH_WINDOW).toBe(5_000);
     expect(DISPATCH_PAGE).toBe(500);
+  });
+});
+
+describe('the new-workspace ramp (docs/06)', () => {
+  const DAY = 86_400_000;
+  const young = { createdAt: new Date(NOW.getTime() - DAY), trust: null };
+
+  it('trims a page to what is left of the day', async () => {
+    // The property that makes the cap a rate limit and not a wall. A
+    // 1,000-recipient campaign from a day-one workspace that has already
+    // sent 300 enqueues 200 and then stops, rather than refusing everything
+    // or sending everything.
+    //
+    // `sentToday` advances with what is enqueued, as it does in reality. A
+    // fake that returned a constant would let the loop trim to the same
+    // remainder on every page and drain the whole campaign 200 at a time —
+    // which is how a cap that does not actually cap looks from the outside.
+    let sentToday = 300;
+
+    const { port: p, enqueued } = port(
+      {
+        async readRampState() {
+          return { ...young, sentToday };
+        },
+        async enqueueSends(input) {
+          sentToday += input.recipients.length;
+        },
+      },
+      1000,
+    );
+
+    const result = await dispatchCampaign('c1', p, { page: 500 });
+
+    expect(enqueued).toHaveLength(0);
+    expect(sentToday).toBe(500);
+    expect(result.enqueued).toBe(200);
+    expect(result.stopped).toBe('ramp_capped');
+  });
+
+  it('stops without completing the campaign', async () => {
+    // `ramp_capped` is not `completed` and not `drained`. If it completed,
+    // the remaining 800 recipients would never send; if it were an error,
+    // the job would retry in a loop against a cap that will not move until
+    // midnight.
+    const { port: p, calls } = port(
+      {
+        async readRampState() {
+          return { ...young, sentToday: 500 };
+        },
+      },
+      1000,
+    );
+
+    const result = await dispatchCampaign('c1', p, { page: 500 });
+
+    expect(result.stopped).toBe('ramp_capped');
+    expect(result.enqueued).toBe(0);
+    expect(calls).not.toContain('maybeComplete');
+  });
+
+  it('re-reads the ramp every page, not once per dispatch', async () => {
+    // A cap checked once at the top of a 500k-recipient dispatch is not a
+    // cap. This counts the reads across a multi-page run.
+    let reads = 0;
+
+    const { port: p } = port(
+      {
+        async readRampState() {
+          reads += 1;
+          return null;
+        },
+      },
+      1000,
+    );
+
+    await dispatchCampaign('c1', p, { page: 500 });
+
+    expect(reads).toBeGreaterThan(1);
+  });
+
+  it('does not cap an established workspace', async () => {
+    const { port: p, enqueued } = port(
+      {
+        async readRampState() {
+          return null;
+        },
+      },
+      1000,
+    );
+
+    const result = await dispatchCampaign('c1', p, { page: 500 });
+
+    expect(enqueued).toHaveLength(1000);
+    expect(result.stopped).toBe('completed');
+  });
+
+  it('records why it stopped', async () => {
+    // A campaign that stops mid-send with no event is a support ticket
+    // nobody can answer.
+    const { port: p, events } = port(
+      {
+        async readRampState() {
+          return { ...young, sentToday: 500 };
+        },
+      },
+      1000,
+    );
+
+    await dispatchCampaign('c1', p, { page: 500 });
+
+    expect(events).toContain('dispatch.ramp_capped');
+  });
+
+  it('still respects the window when the ramp allows more', async () => {
+    // The two limits compose: whichever is smaller wins. A ramp allowance
+    // of 500 must not enlarge a page the window had already narrowed to
+    // 100. Asserted on the size actually claimed, because the totals across
+    // a multi-page run cannot tell the two limits apart.
+    const claims: number[] = [];
+    let sentToday = 0;
+
+    const { port: p } = port(
+      {
+        async inFlightCount() {
+          return 4_900;
+        },
+        async readRampState() {
+          return { ...young, sentToday };
+        },
+        async enqueueSends(input) {
+          sentToday += input.recipients.length;
+        },
+      },
+      1000,
+    );
+
+    const claim = p.claimNextRecipients.bind(p);
+    p.claimNextRecipients = async (campaignId, limit) => {
+      claims.push(limit);
+      return claim(campaignId, limit);
+    };
+
+    await dispatchCampaign('c1', p, { page: 500, window: 5_000 });
+
+    expect(claims[0]).toBe(100);
   });
 });

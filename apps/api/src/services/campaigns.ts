@@ -86,6 +86,12 @@ const LAUNCH_FAILURE_STATUS: Readonly<Record<string, number>> = {
   entitlement_exceeded: 402,
   no_entitlement: 402,
   unverified_sender: 422,
+  // 403, not 422. Both are things the customer must change, but a 422 says
+  // "this request was malformed" and these two are "you are not allowed to
+  // do this yet" — an anti-abuse refusal, not a validation error. A support
+  // agent reading a 422 goes looking for a bug in the request.
+  unverified_account: 403,
+  pool_routing_unavailable: 403,
   unresolvable_merge_tags: 422,
 };
 

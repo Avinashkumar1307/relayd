@@ -103,3 +103,5 @@ export type {
   WebhookEndpointStatus,
   WebhookDeliveryStatus,
 } from './platform.js';
+
+export { workspaceSendQuota, workspaceTrust } from './abuse.js';

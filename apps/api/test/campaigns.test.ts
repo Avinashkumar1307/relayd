@@ -154,7 +154,7 @@ function service(over: {
               workspaceId: 'ws-1',
               templateVersionId: failure === 'no_template' ? null : 'v1',
               senderAccountId: failure === 'no_sender' ? null : 'sa-1',
-              sendingPoolId: null,
+              sendingPoolId: failure === 'pool_routing_unavailable' ? 'pool-1' : null,
               audience: {},
             };
           },
@@ -166,6 +166,12 @@ function service(over: {
           },
           async senderIsUsable() {
             return failure !== 'unverified_sender';
+          },
+          async ownerEmailIsVerified() {
+            return failure !== 'unverified_account';
+          },
+          async workspaceIsInRamp() {
+            return failure === 'pool_routing_unavailable';
           },
           async snapshotAudience() {
             return {
@@ -521,5 +527,26 @@ describe('the audience preview', () => {
     const result = await s.previewAudience(SCOPE, { listIds: ['l1'] });
 
     expect(result.eligible).toBeLessThan(result.total);
+  });
+});
+
+describe('the anti-abuse refusals are not validation errors', () => {
+  it('maps an unverified account to 403', async () => {
+    // 403, not 422. Both are things the customer must change, but 422 says
+    // "this request was malformed" — and a support agent reading one goes
+    // looking for a bug in the request rather than at the account.
+    const { service: s } = service({
+      launchResult: { ok: false, failure: 'unverified_account', message: 'verify' },
+    });
+
+    await expect(s.launch(SCOPE, ID)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('maps a pool refused to a new workspace to 403', async () => {
+    const { service: s } = service({
+      launchResult: { ok: false, failure: 'pool_routing_unavailable', message: 'no pools yet' },
+    });
+
+    await expect(s.launch(SCOPE, ID)).rejects.toMatchObject({ status: 403 });
   });
 });

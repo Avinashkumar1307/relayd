@@ -117,3 +117,26 @@ export type {
   IngestResult,
   NormalisedEvent,
 } from './engine/events.js';
+
+export {
+  ageInDays,
+  isInRamp,
+  rampCapFor,
+  excludedFromPoolRouting,
+  sendGate,
+  allowanceForBatch,
+  autoLiftVerdict,
+  quotaDay,
+  RAMP_DAYS,
+  RAMP_DAILY_CAP,
+  AUTO_LIFT_MAX_COMPLAINT_RATE,
+  AUTO_LIFT_MAX_BOUNCE_RATE,
+  AUTO_LIFT_MIN_SENDS,
+} from './abuse/ramp.js';
+export type {
+  WorkspaceTrust,
+  RampSubject,
+  SendGate,
+  FirstWeekMetrics,
+  AutoLiftVerdict,
+} from './abuse/ramp.js';

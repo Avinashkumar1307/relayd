@@ -266,7 +266,7 @@ The gate before external signups open.
 
 **Read first:** `docs/06-security-and-tracking.md` §15 (anti-abuse), `docs/17-review-findings.md` F6, F20
 
-- [ ] Verified email + verified sender identity before any send; 500 sends/day cap for accounts under 7 days; new accounts excluded from pool routing
+- [x] Verified email + verified sender identity before any send; 500 sends/day cap for accounts under 7 days; new accounts excluded from pool routing
 - [ ] Consent attestation at import and at launch, stored with the campaign
 - [ ] Complaint-rate auto-pause at 0.3%; graduated account enforcement ladder
 - [ ] Launch-time phishing lint; link reputation checks; global cross-workspace block list
