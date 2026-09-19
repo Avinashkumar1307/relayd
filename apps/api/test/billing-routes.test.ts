@@ -121,7 +121,6 @@ describe('billing:write is owner-only (CLAUDE.md section 11)', () => {
     const res = await auth(buildApp('owner'), 'post', '/api/v1/billing/checkout').send({
       planCode: PLANS.growth,
       interval: 'month',
-      email: 'a@example.com',
     });
 
     expect(res.status).toBe(201);
@@ -133,7 +132,6 @@ describe('billing:write is owner-only (CLAUDE.md section 11)', () => {
     const res = await auth(buildApp('admin'), 'post', '/api/v1/billing/checkout').send({
       planCode: PLANS.growth,
       interval: 'month',
-      email: 'a@example.com',
     });
 
     expect(res.status).toBe(403);
@@ -166,7 +164,6 @@ describe('billing:write is owner-only (CLAUDE.md section 11)', () => {
       const res = await auth(buildApp('editor'), 'post', path).send({
         planCode: PLANS.growth,
         interval: 'month',
-        email: 'a@example.com',
       });
 
       expect(res.status, path).toBe(403);
@@ -246,11 +243,31 @@ describe('validation', () => {
   it('names the offending field', async () => {
     const res = await auth(buildApp('owner'), 'post', '/api/v1/billing/checkout').send({
       planCode: PLANS.growth,
-      interval: 'month',
-      email: 'not-an-email',
+      interval: 'week',
     });
 
-    expect(res.body.error.details?.[0]?.path).toBe('email');
+    expect(res.body.error.details?.[0]?.path).toBe('interval');
+  });
+
+  it('ignores an email the client supplies', async () => {
+    // The billing address is the owner's and is read server-side. A client
+    // that could choose it could point a Stripe customer's receipts at
+    // somebody else.
+    let seen: Record<string, unknown> = {};
+    const app = buildApp('owner', {
+      async startCheckout(_scope: never, input: Record<string, unknown>) {
+        seen = input;
+        return { id: 'cs', url: 'https://x', expiresAt: new Date() };
+      },
+    } as never);
+
+    await auth(app, 'post', '/api/v1/billing/checkout').send({
+      planCode: PLANS.growth,
+      interval: 'month',
+      email: 'attacker@example.com',
+    });
+
+    expect(seen['email']).toBeUndefined();
   });
 
   it('defaults a cancellation to period end', async () => {

@@ -28,11 +28,18 @@ import {
 } from './routes/campaigns/campaigns.js';
 import { ProvidersPage } from './routes/providers/providers.js';
 import { SendersPage } from './routes/providers/senders.js';
+import {
+  BillingPage,
+  CancelSubscriptionPage,
+  CheckoutCancelPage,
+  CheckoutSuccessPage,
+  InvoicesPage,
+  PlansPage,
+} from './routes/billing/billing.js';
 
 /**
- * Phases 1 to 6: authentication, workspace settings, audience, provider
- * connections, templates and campaigns. Analytics and billing arrive with the
- * phases that own them.
+ * Phases 1 to 8: authentication, workspace settings, audience, provider
+ * connections, templates, campaigns, analytics and billing.
  */
 export function App() {
   return (
@@ -83,6 +90,13 @@ export function App() {
 
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/senders" element={<SendersPage />} />
+
+        <Route path="/billing" element={<BillingPage />} />
+        <Route path="/billing/plans" element={<PlansPage />} />
+        <Route path="/billing/success" element={<CheckoutSuccessPage />} />
+        <Route path="/billing/cancel" element={<CheckoutCancelPage />} />
+        <Route path="/billing/invoices" element={<InvoicesPage />} />
+        <Route path="/billing/subscription/cancel" element={<CancelSubscriptionPage />} />
 
         <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
         <Route path="/settings/team" element={<TeamSettingsPage />} />
@@ -154,6 +168,7 @@ function AppShell() {
               |
             </span>
 
+            <NavLink to="/billing">Billing</NavLink>
             <NavLink to="/settings/workspace">Workspace</NavLink>
             <NavLink to="/settings/team">Team</NavLink>
             <button

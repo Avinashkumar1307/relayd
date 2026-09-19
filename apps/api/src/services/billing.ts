@@ -111,6 +111,16 @@ export interface BillingRepositoryLike {
   } | null>;
 
   providerCustomerId(scope: WorkspaceScope): Promise<string | null>;
+
+  /**
+   * The address Stripe should send receipts to: the workspace owner's.
+   *
+   * Read server-side rather than accepted from the request. A client that
+   * could choose it could create a Stripe customer carrying somebody else's
+   * address, and `billing:write` is owner-only anyway — so the owner is both
+   * the right answer and the only caller.
+   */
+  billingEmail(scope: WorkspaceScope): Promise<string | null>;
 }
 
 export type BillingUnitOfWork = <T>(fn: (repos: BillingRepositories) => Promise<T>) => Promise<T>;
@@ -211,12 +221,20 @@ export class BillingService {
   /** Starts a Checkout Session. R18's ordering lives in `@relayd/billing`. */
   async startCheckout(
     scope: WorkspaceScope,
-    input: { planCode: string; interval: Interval; email: string; trialDays?: number },
+    input: { planCode: string; interval: Interval; trialDays?: number },
   ) {
+    const email = await this.options.unitOfWork((repos) => repos.billing.billingEmail(scope));
+
+    if (email === null) {
+      // No owner to bill. Nothing useful can be done with a Stripe customer
+      // that has no address, and inventing one would put receipts nowhere.
+      throw new AppError('not_found', 'This workspace has no billing contact', 404);
+    }
+
     const result = await startCheckout(
       {
         workspaceId: scope.workspaceId as string,
-        email: input.email,
+        email,
         planCode: input.planCode,
         interval: input.interval,
         successUrl: `${this.options.appUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -438,6 +456,19 @@ export function conflictDetails(
 ): ErrorDetail[] {
   return conflicts.map((conflict) => ({
     path: conflict.feature,
-    message: `${conflict.current.toLocaleString()} in use, ${conflict.targetLimit.toLocaleString()} allowed on that plan`,
+    message: `${group(conflict.current)} in use, ${group(conflict.targetLimit)} allowed on that plan`,
   }));
+}
+
+/**
+ * Digit grouping, pinned to one locale.
+ *
+ * The server has no user locale to read, so an unpinned `toLocaleString`
+ * formats according to whatever locale the container happens to boot with —
+ * which makes the same number read differently depending on where it ran.
+ * The pre-check endpoint returns the raw numbers so the UI can format them
+ * properly for the person looking at them; this string is the fallback.
+ */
+function group(value: number): string {
+  return value.toLocaleString('en-US');
 }

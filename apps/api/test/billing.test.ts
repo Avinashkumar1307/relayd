@@ -91,6 +91,9 @@ function service(
     async providerCustomerId() {
       return 'cus_123';
     },
+    async billingEmail() {
+      return 'owner@example.com';
+    },
     ...over.repo,
   };
 
@@ -332,7 +335,6 @@ describe('checkout', () => {
     const session = await s.startCheckout(SCOPE, {
       planCode: PLANS.growth,
       interval: 'month',
-      email: 'a@example.com',
     });
 
     expect(session?.url).toContain('checkout.stripe.com');
@@ -352,7 +354,6 @@ describe('checkout', () => {
     await s.startCheckout(SCOPE, {
       planCode: PLANS.growth,
       interval: 'month',
-      email: 'a@example.com',
     });
 
     expect(seen.successUrl).toContain('/billing/success');
@@ -375,7 +376,6 @@ describe('checkout', () => {
     await s.startCheckout(SCOPE, {
       planCode: PLANS.growth,
       interval: 'month',
-      email: 'a@example.com',
     });
 
     expect(seen.successUrl).toContain('{CHECKOUT_SESSION_ID}');
@@ -391,7 +391,7 @@ describe('checkout', () => {
     });
 
     await expect(
-      s.startCheckout(SCOPE, { planCode: PLANS.growth, interval: 'month', email: 'a@e.test' }),
+      s.startCheckout(SCOPE, { planCode: PLANS.growth, interval: 'month' }),
     ).rejects.toMatchObject({ status: 409, code: 'conflict' });
   });
 
@@ -399,7 +399,7 @@ describe('checkout', () => {
     const { service: s } = service();
 
     await expect(
-      s.startCheckout(SCOPE, { planCode: PLANS.enterprise, interval: 'month', email: 'a@e.test' }),
+      s.startCheckout(SCOPE, { planCode: PLANS.enterprise, interval: 'month' }),
     ).rejects.toMatchObject({ status: 403 });
   });
 
@@ -415,7 +415,7 @@ describe('checkout', () => {
     });
 
     await expect(
-      s.startCheckout(SCOPE, { planCode: PLANS.growth, interval: 'month', email: 'a@e.test' }),
+      s.startCheckout(SCOPE, { planCode: PLANS.growth, interval: 'month' }),
     ).rejects.toMatchObject({ status: 502, code: 'provider_unavailable' });
   });
 });
@@ -564,6 +564,21 @@ describe('changing plan', () => {
 
     expect(error.details?.[0]?.message).toContain('48,210');
     expect(error.details?.[0]?.message).toContain('2,500');
+  });
+
+  it('groups those numbers the same way wherever it runs', async () => {
+    // The server has no user locale, so an unpinned `toLocaleString` formats
+    // by whatever the container booted with — 48,210 on one host and 48.210
+    // on another, for the same account.
+    const { service: s } = service();
+
+    const error = (await s
+      .changePlan(SCOPE, { planCode: PLANS.starter, interval: 'month' })
+      .catch((caught: unknown) => caught)) as AppError;
+
+    expect(error.details?.[0]?.message).toBe(
+      '48,210 in use, 2,500 allowed on that plan',
+    );
   });
 
   it('refuses a plan nobody may select themselves', async () => {

@@ -32,9 +32,9 @@ const intervalSchema = z.enum(['month', 'year']);
 const checkoutSchema = z.object({
   planCode: z.string().min(1).max(32),
   interval: intervalSchema,
-  email: z.string().email(),
-  // Present only for a plan whose catalogue entry offers one; the service
-  // does not invent a trial for a plan that has none.
+  // No email. The billing address is the workspace owner's and is read
+  // server-side: a client that could choose it could create a Stripe customer
+  // carrying somebody else's address.
   trialDays: z.number().int().min(0).max(90).optional(),
 });
 
