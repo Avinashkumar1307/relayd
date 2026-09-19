@@ -9,6 +9,7 @@ import {
   VerifyEmailPage,
 } from './routes/auth-pages.js';
 import { TeamSettingsPage, WorkspaceSettingsPage } from './routes/settings-pages.js';
+import { ApiSettingsPage } from './routes/settings/api.js';
 import { ContactsPage } from './routes/audience/contacts.js';
 import { ListsPage, SuppressionsPage, TagsPage } from './routes/audience/collections.js';
 import { ImportsPage } from './routes/audience/imports.js';
@@ -100,6 +101,7 @@ export function App() {
 
         <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
         <Route path="/settings/team" element={<TeamSettingsPage />} />
+        <Route path="/settings/api" element={<ApiSettingsPage />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -171,6 +173,7 @@ function AppShell() {
             <NavLink to="/billing">Billing</NavLink>
             <NavLink to="/settings/workspace">Workspace</NavLink>
             <NavLink to="/settings/team">Team</NavLink>
+            <NavLink to="/settings/api">API</NavLink>
             <button
               type="button"
               onClick={() => void logout()}

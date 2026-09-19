@@ -234,7 +234,7 @@ The gate before external signups open.
 - [x] Key issue (one-time reveal), list, revoke; scoped-key auth middleware; per-key rate limiting; `billing:write` refused on every key
 - [x] Idempotency-key replay support on all mutating public endpoints
 - [x] Outbound webhooks: signing secret rotation, delivery log, exponential backoff, auto-disable after sustained failure
-- [ ] Frontend: `/settings/api`, webhook endpoint management
+- [x] Frontend: `/settings/api`, webhook endpoint management
 - [ ] Tests: scope enforcement per endpoint, signature verification from a third-party perspective, rate-limit boundary, idempotency replay
 
 **Gate:** An external integrator can create a contact, launch a campaign and receive a signed delivery event without the web app; a read-scoped key cannot write anything.
