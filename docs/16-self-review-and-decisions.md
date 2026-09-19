@@ -1700,6 +1700,49 @@ Rotation keeps the previous secret live for 24 hours. A rotation with no
 overlap breaks every consumer at the instant it lands, which makes rotation
 something nobody ever does.
 
+### 2026-09-19 - `api` cannot read a workspace provider secret
+
+F21 says to scope `GetSecretValue` by path. It does not say which of the four
+task roles get the grant, so the Terraform picks: `worker` and `edge` read
+`relayd/{env}/ws/*`, `api` does not, and `scheduler` reads nothing under `ws/`
+at all. All four read `relayd/{env}/app/*`.
+
+`api` is the only one of the four that takes arbitrary authenticated input on
+a path that can reach a URL fetch, which makes it the SSRF surface F21 is
+about. It needs to *write* a connection secret, and it does — the write grant
+and the read grant are separate statements — but nothing in the dashboard API
+needs to read one back. A provider call happens in `worker`; a webhook
+signature check happens in `edge` against that connection's own secret.
+
+So an RCE in `api` yields the ability to overwrite a customer's credential,
+which is loud and recoverable, rather than to exfiltrate every customer's SES
+keys, which is neither.
+
+The lists are module variables (`workspace_secret_readers`,
+`workspace_secret_writers`) rather than hardcoded, so adding `api` back is a
+one-line change with a visible diff, and
+`packages/testing/test/terraform-policy.isolation.test.ts` asserts `api` is
+absent from the reader list — a negative control confirms that adding it fails
+the suite.
+
+### 2026-09-19 - Terraform is asserted as text, not as a plan
+
+`packages/testing/test/terraform-policy.isolation.test.ts` reads the committed
+`.tf` files and parses block structure by brace depth. It does not run
+`terraform plan`, which R34's wording asks for.
+
+A plan needs credentials and a state backend, which the unit suite has
+neither of, and running one in CI would mean giving the test runner an AWS
+role — a larger hole than the one the test closes. What the text form proves
+is the thing F21 and F34 are actually about: a wildcard nobody meant to
+commit. What it cannot see is a policy attached out of band or a console
+change, and that belongs with a drift check against a real account, which is
+on the Phase 10 gate.
+
+Terraform is not installed on the development machine this was written on, so
+`terraform validate` and `terraform fmt` have not been run against these
+files. CI runs both from Phase 10 onward.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
