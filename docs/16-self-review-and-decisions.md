@@ -1534,4 +1534,39 @@ a default plan and nothing else in the ladder changes.
 
 ---
 
+### 2026-09-19 - the billing matrix is twenty-four cases, not twelve
+
+`BUILD-PLAN.md` asks `pnpm test:billing` to cover "the twelve critical cases
+in `docs/12-testing.md`". docs/12's table is B1 to B24.
+
+We follow docs/12. `packages/billing/test/matrix.billing.test.ts` covers the
+cases that can be proved against the deterministic fake gateway docs/12 also
+asks for, numbered so a failure names the row it broke, and it runs on every
+`pnpm test` rather than only when a Stripe key is present.
+
+Six cases are deferred to the Stripe-test-mode half, because a fake cannot
+prove them and a fake that claimed to would be worse than nothing:
+
+  B6 (invalid signature) belongs to the edge route and is proved there
+  against a real verifier.
+  B11 (expired card) is Stripe's decline code, not our branch.
+  B18, B19 (refunds) and B20 (dispute) need Stripe objects we do not create.
+  B24 (overage reported to the provider) needs a metered subscription item.
+
+---
+
+### 2026-09-19 - the dunning job selects on the stage, not only on the clock
+
+Writing B10 found a real gap. A successful payment clears
+`first_failed_at`, and `workspacesInDunning` originally selected rows with a
+live clock — so the workspace dropped out of the job on exactly the tick that
+was supposed to release its held campaigns, and they stayed held until
+somebody noticed.
+
+The query now returns a workspace with a live clock **or** a stage other than
+`current`, and `firstFailedAt` on the port row is nullable to match. That is
+what makes recovery observable rather than merely true.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

@@ -385,6 +385,43 @@ describe('advancing one workspace', () => {
   });
 });
 
+describe('a workspace whose clock has been cleared', () => {
+  it('is still walked back to current', async () => {
+    // A payment clears `first_failed_at` and leaves the stage behind. The job
+    // has to see it once more to release what it held, so the port returns a
+    // row with a null clock and this has to cope.
+    const { port, calls } = harness();
+
+    const outcome = await advanceDunning(
+      workspace({ status: 'active', firstFailedAt: null, stage: 'restricted' }),
+      at(20),
+      port,
+    );
+
+    expect(outcome.stage).toBe('current');
+    expect(calls).toContain('release');
+  });
+
+  it('sends no further notices once the clock is gone', async () => {
+    // A cleared clock is `current` whatever the stored status says, so the
+    // only thing left to do is release and stop.
+    const { port, notices } = harness();
+
+    await advanceDunning(
+      workspace({
+        status: 'past_due',
+        firstFailedAt: null,
+        stage: 'restricted',
+        noticesSentDays: [],
+      }),
+      at(40),
+      port,
+    );
+
+    expect(notices).toEqual([]);
+  });
+});
+
 describe('when the payment finally arrives', () => {
   it('releases held campaigns', async () => {
     // Automatically. Making the customer re-schedule what we held is a

@@ -220,7 +220,7 @@ The gate before external signups open.
 - [x] `billing-reconcile` nightly job + divergence metric (R19)
 - [x] API: checkout session, portal session, subscription read, plan-change pre-check, upgrade, downgrade, cancel, invoices, usage, webhook endpoint
 - [x] Frontend: `/billing`, `/billing/plans`, `/billing/checkout`, `/billing/success` (polls; server-side lookup fallback after 10 s), `/billing/cancel`, `/billing/invoices`, `/billing/payment-method`, usage meters, past-due banner, downgrade blocker dialog
-- [ ] `pnpm test:billing`: the twelve critical cases in `docs/12-testing.md` + metering invariants + duplicated and reordered webhook replays
+- [x] `pnpm test:billing`: the twelve critical cases in `docs/12-testing.md` + metering invariants + duplicated and reordered webhook replays
 
 **Gate:** Full billing matrix green against Stripe test mode; entitlements dropped and rebuilt with byte-identical output; a frontend that never receives the success redirect converges within one poll; R14–R19 tests pass.
 

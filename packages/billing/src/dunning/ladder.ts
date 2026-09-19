@@ -233,13 +233,22 @@ export function mayDelete(input: {
 }
 
 export interface DunningPort {
-  /** Workspaces with a live failure clock. */
+  /**
+   * Workspaces the ladder still has something to say about.
+   *
+   * A live failure clock **or** a stage other than `current`. The second half
+   * is what makes recovery observable: a payment that succeeds clears the
+   * clock, and a query that only looked at the clock would drop the workspace
+   * out of the job on exactly the tick that was supposed to release its held
+   * campaigns.
+   */
   workspacesInDunning(now: Date): Promise<
     {
       workspaceId: string;
       subscriptionId: string;
       status: string;
-      firstFailedAt: Date;
+      /** Null once a payment has cleared it; the stage is then what matters. */
+      firstFailedAt: Date | null;
       stage: DunningStage;
       noticesSentDays: number[];
     }[]
@@ -283,7 +292,7 @@ export async function advanceDunning(
     workspaceId: string;
     subscriptionId: string;
     status: string;
-    firstFailedAt: Date;
+    firstFailedAt: Date | null;
     stage: DunningStage;
     noticesSentDays: number[];
   },
@@ -327,7 +336,14 @@ export async function advanceDunning(
     return outcome;
   }
 
-  const day = daysBetween(workspace.firstFailedAt, now);
+  const failedAt = workspace.firstFailedAt;
+
+  // Unreachable: `dunningStage` answers `current` for a null clock, and that
+  // branch returned above. Narrowed rather than defaulted, because a default
+  // here would be a made-up day number nobody could trace back to anything.
+  if (failedAt === null) return outcome;
+
+  const day = daysBetween(failedAt, now);
 
   for (const noticeDay of dueNotices({ day, sentDays: workspace.noticesSentDays })) {
     await port.sendNotice({ workspaceId: workspace.workspaceId, day: noticeDay, stage });

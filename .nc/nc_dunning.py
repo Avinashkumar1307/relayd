@@ -79,6 +79,10 @@ MUTATIONS = [
      "  if (input.status === 'active' || input.status === 'trialing') return 'current';",
      "  if (input.status === 'active') return 'current';"),
 
+    ("a cleared clock is not treated as current",
+     "  if (input.status === 'active' || input.status === 'trialing') return 'current';",
+     "  if ((input.status === 'active' || input.status === 'trialing') && false) return 'current';"),
+
     ("a backwards clock skips ahead",
      "  if (!Number.isFinite(ms) || ms < 0) return 0;",
      "  if (!Number.isFinite(ms)) return 0;"),
@@ -159,7 +163,7 @@ def main():
     baseline = run()
     if baseline.returncode != 0:
         print("BASELINE FAILS")
-        print(baseline.stdout[-3000:])
+        print(baseline.stdout[-3000:].encode("ascii","replace").decode("ascii"))
         return 1
 
     print("baseline green\n")
