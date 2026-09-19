@@ -89,3 +89,7 @@ export { MeteringRepository } from './metering.js';
 export type { UsageAggregateRow, UsageLedgerRow, AggregateKeyInput } from './metering.js';
 export { EntitlementsRepository } from './entitlements.js';
 export type { EntitlementRecord, WorkspaceBillingStateRow } from './entitlements.js';
+export { ApiKeyRepository } from './api-keys.js';
+export type { ApiKeyRow } from './api-keys.js';
+export { GlobalApiKeyRepository, shouldTouch, LAST_USED_STALENESS_MS } from './global/api-keys.js';
+export type { ApiKeyResolution } from './global/api-keys.js';

@@ -4,6 +4,7 @@ import type { GlobalMembershipRepository } from '@relayd/db';
 import { AppError } from '@relayd/types';
 import { requireScope } from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
+import { refuseApiKey } from '../middleware/api-key-auth.js';
 import { statusForEntitlementDenial, type BillingService } from '../services/billing.js';
 import type { TokenService } from '../services/tokens.js';
 
@@ -64,7 +65,15 @@ export function billingRoutes(options: BillingRouterOptions): Router {
   const auth = authenticate(options.tokens);
   const workspace = requireWorkspace({ memberships: options.memberships });
   const read = [auth, workspace, requirePermission('billing:read')] as const;
-  const write = [auth, workspace, requirePermission('billing:write')] as const;
+  // `refuseApiKey` as well as the owner-only permission. `billing:write` is
+  // already ungrantable to a key, so this is the second of two — and the one
+  // that still holds if somebody ever edits the forbidden set.
+  const write = [
+    auth,
+    workspace,
+    refuseApiKey(),
+    requirePermission('billing:write'),
+  ] as const;
 
   /** The pricing page. Public by design. */
   router.get('/billing/plans', (_req: Request, res: Response) => {

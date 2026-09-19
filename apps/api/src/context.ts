@@ -23,6 +23,21 @@ export interface Principal {
   tokenVersion: number;
 }
 
+/**
+ * An API key acting on its own behalf.
+ *
+ * Deliberately not a `Principal`. A key has no user, no session and no token
+ * version, and giving it a synthetic one would let code that means "a person
+ * did this" quietly accept a key — which is exactly the distinction the audit
+ * log's `actor_type` exists to record.
+ */
+export interface ApiKeyPrincipal {
+  keyId: string;
+  workspaceId: string;
+  name: string;
+  scopes: readonly Permission[];
+}
+
 export interface WorkspaceContext {
   scope: WorkspaceScope;
   role: WorkspaceRole;
@@ -31,6 +46,7 @@ export interface WorkspaceContext {
 
 interface MutableRequestContext {
   principal?: Principal;
+  apiKey?: ApiKeyPrincipal;
   workspace?: WorkspaceContext;
 }
 
@@ -44,6 +60,32 @@ export function runWithRequestContext<T>(fn: () => T): T {
 export function setPrincipal(principal: Principal): void {
   const context = storage.getStore();
   if (context !== undefined) context.principal = principal;
+}
+
+export function setApiKeyPrincipal(apiKey: ApiKeyPrincipal): void {
+  const context = storage.getStore();
+  if (context !== undefined) context.apiKey = apiKey;
+}
+
+export function tryGetApiKeyPrincipal(): ApiKeyPrincipal | undefined {
+  return storage.getStore()?.apiKey;
+}
+
+/**
+ * Who the request is, for an audit row.
+ *
+ * Returns the key when one is authenticated and the user otherwise, so an
+ * action taken with a key is recorded as `api_key` rather than as whoever
+ * happened to mint it two months ago.
+ */
+export function currentActor(): { type: 'user' | 'api_key'; id: string } | undefined {
+  const apiKey = storage.getStore()?.apiKey;
+  if (apiKey !== undefined) return { type: 'api_key', id: apiKey.keyId };
+
+  const principal = storage.getStore()?.principal;
+  if (principal !== undefined) return { type: 'user', id: principal.userId };
+
+  return undefined;
 }
 
 export function setWorkspaceContext(workspace: WorkspaceContext): void {

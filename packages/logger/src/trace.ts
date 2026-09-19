@@ -27,6 +27,8 @@ export interface TraceContext {
   subscriptionId?: string;
   invoiceId?: string;
   paymentId?: string;
+  /** The API key a request authenticated with, never the key itself. */
+  apiKeyId?: string;
 }
 
 const storage = new AsyncLocalStorage<TraceContext>();
