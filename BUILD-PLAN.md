@@ -230,7 +230,7 @@ The gate before external signups open.
 
 **Read first:** `docs/03-api.md`
 
-- [ ] Tables: `api_keys` (hashed secrets, scope arrays), `outbound_webhook_endpoints`, `outbound_webhook_deliveries`
+- [x] Tables: `api_keys` (hashed secrets, scope arrays), `outbound_webhook_endpoints`, `outbound_webhook_deliveries`
 - [ ] Key issue (one-time reveal), list, revoke; scoped-key auth middleware; per-key rate limiting; `billing:write` refused on every key
 - [ ] Idempotency-key replay support on all mutating public endpoints
 - [ ] Outbound webhooks: signing secret rotation, delivery log, exponential backoff, auto-disable after sustained failure

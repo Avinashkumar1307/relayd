@@ -92,3 +92,14 @@ export type {
   PaymentStatus,
   CouponDuration,
 } from './billing.js';
+export {
+  apiKeys,
+  idempotencyKeys,
+  outboundWebhookEndpoints,
+  outboundWebhookDeliveries,
+} from './platform.js';
+export type {
+  IdempotencyStatus,
+  WebhookEndpointStatus,
+  WebhookDeliveryStatus,
+} from './platform.js';

@@ -1569,4 +1569,60 @@ what makes recovery observable rather than merely true.
 
 ---
 
+### 2026-09-19 - API keys are sha256, not argon2id
+
+`docs/06-security-and-tracking.md` said "Prefixed random 32 bytes, argon2id
+hashed, prefix indexed for lookup, shown once". Corrected, with the owner's
+agreement, to sha256 with the hash itself indexed for lookup.
+
+`packages/utils/src/crypto/tokens.ts` already makes the argument for refresh,
+invitation and reset tokens: 32 bytes of CSPRNG output is 256 bits of full
+entropy, so there is nothing to brute-force and a KDF adds latency and
+nothing else. An API key is the same kind of value, and unlike a password it
+is verified on *every* request.
+
+The cost mattered more here than elsewhere. argon2id at the documented
+m=64MB, t=3, p=4 is roughly 100ms and 64MB per verification. docs/06 also
+sets 1000 requests per minute per key, so a single busy key implies more than
+one concurrent 64MB allocation continuously — and an unauthenticated caller
+spraying invalid keys makes us pay the same cost, which is a denial of
+service with no credential required.
+
+Two consequences in the schema, both improvements:
+
+  `uq_apikey_hash` becomes load-bearing. A salted hash can never collide, so
+  under argon2id that unique index could never fire; unsalted, it is the
+  lookup path and it catches a hash computed over a constant on the second
+  key rather than after the fact.
+
+  `ix_apikey_prefix` becomes a UI index rather than the authentication path,
+  and the revocation check moves to the row — a revoked key is now *found*
+  and refused as revoked, rather than not found at all, which is a better
+  error for the integrator holding it.
+
+Passwords remain argon2id. Nothing about that changes.
+
+---
+
+### 2026-09-19 - outbound_webhook_deliveries, and one row per event
+
+`BUILD-PLAN.md` names `outbound_webhook_deliveries` in Phase 9; `docs/02`
+defines `outbound_webhook_endpoints` and stops there. The table is designed
+here.
+
+One row per `(endpoint_id, event_id)`, enforced by a unique index, with
+`attempt` counting the tries and the response columns holding the most recent
+one. A delivery that succeeded on the fourth go reads as attempt 4 with a
+200; one still failing reads as its last error.
+
+Per-attempt rows were the alternative and would say more, at several times
+the volume for a table nobody reads except when debugging. The unique index
+is the stronger guarantee of the two: it is what makes a producer that emits
+the same event twice send it once.
+
+Partitioned monthly by `created_at`, like `email_events` and for the same
+reason.
+
+---
+
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

@@ -102,7 +102,7 @@ A dedicated suite, run in CI, that must never be skipped:
 | Token transport | Refresh in HttpOnly Secure SameSite=Lax cookie; access token in memory only, never localStorage |
 | CSRF | Double-submit token on all cookie-authenticated state-changing routes. SameSite alone is not enough for the refresh endpoint |
 | MFA | TOTP, required for owners on paid workspaces; recovery codes hashed |
-| API keys | Prefixed random 32 bytes, argon2id hashed, prefix indexed for lookup, shown once |
+| API keys | Prefixed random 32 bytes, sha256 hashed, the hash indexed for lookup, prefix shown in the UI, key shown once. Not argon2id: 32 CSPRNG bytes is full entropy, so a KDF buys nothing and costs ~100ms on every API request — see docs/16, 2026-09-19 |
 | Session invalidation | `ver` claim compared against a Redis per-user version, bumped on password, role or MFA change, so a 15-minute token window is not a 15-minute privilege window |
 
 ## Threat by threat
