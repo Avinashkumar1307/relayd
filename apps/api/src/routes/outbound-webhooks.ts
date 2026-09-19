@@ -4,7 +4,7 @@ import { AppError } from '@relayd/types';
 import type { GlobalMembershipRepository } from '@relayd/db';
 import { requireScope, requirePrincipal } from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
-import { refuseApiKey } from '../middleware/api-key-auth.js';
+import { refuseApiKey, type ApiKeyAuthOptions } from '../middleware/api-key-auth.js';
 import { WEBHOOK_EVENT_TYPES, type OutboundWebhookService } from '../services/outbound-webhooks.js';
 import type { TokenService } from '../services/tokens.js';
 
@@ -24,6 +24,14 @@ import type { TokenService } from '../services/tokens.js';
 export interface OutboundWebhookRouterOptions {
   webhooks: OutboundWebhookService;
   tokens: TokenService;
+  /**
+   * Accepts API keys as well as session tokens when wired.
+   *
+   * Absent in a deployment or a test that has no key store, and then a
+   * key-shaped credential falls through to JWT verification and is refused
+   * there — never accepted slowly.
+   */
+  apiKeys?: ApiKeyAuthOptions;
   memberships: GlobalMembershipRepository;
 }
 
@@ -55,7 +63,7 @@ export function outboundWebhookRoutes(options: OutboundWebhookRouterOptions): Ro
   const { webhooks } = options;
 
   const manage = [
-    authenticate(options.tokens),
+    authenticate(options.tokens, options.apiKeys),
     requireWorkspace({ memberships: options.memberships }),
     refuseApiKey(),
     requirePermission('apikey:write'),

@@ -4,7 +4,7 @@ import type { GlobalMembershipRepository } from '@relayd/db';
 import { AppError } from '@relayd/types';
 import { requireScope } from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
-import { refuseApiKey } from '../middleware/api-key-auth.js';
+import { refuseApiKey, type ApiKeyAuthOptions } from '../middleware/api-key-auth.js';
 import { idempotent, type IdempotencyPort } from '../middleware/idempotency.js';
 import { statusForEntitlementDenial, type BillingService } from '../services/billing.js';
 import type { TokenService } from '../services/tokens.js';
@@ -26,6 +26,14 @@ import type { TokenService } from '../services/tokens.js';
 export interface BillingRouterOptions {
   billing: BillingService;
   tokens: TokenService;
+  /**
+   * Accepts API keys as well as session tokens when wired.
+   *
+   * Absent in a deployment or a test that has no key store, and then a
+   * key-shaped credential falls through to JWT verification and is refused
+   * there — never accepted slowly.
+   */
+  apiKeys?: ApiKeyAuthOptions;
   memberships: GlobalMembershipRepository;
   /**
    * Honours `Idempotency-Key` on the routes that charge.
@@ -72,7 +80,7 @@ export function billingRoutes(options: BillingRouterOptions): Router {
   const router = Router();
   const { billing } = options;
 
-  const auth = authenticate(options.tokens);
+  const auth = authenticate(options.tokens, options.apiKeys);
   const workspace = requireWorkspace({ memberships: options.memberships });
   const read = [auth, workspace, requirePermission('billing:read')] as const;
   // `refuseApiKey` as well as the owner-only permission. `billing:write` is

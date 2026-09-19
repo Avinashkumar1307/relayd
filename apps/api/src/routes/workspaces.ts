@@ -6,6 +6,7 @@ import type { GlobalMembershipRepository } from '@relayd/db';
 import { emailSchema } from '@relayd/validation';
 import { requirePrincipal, requireScope, requireWorkspaceContext } from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
+import type { ApiKeyAuthOptions } from '../middleware/api-key-auth.js';
 import { validateBody } from '../middleware/validate.js';
 import type { TokenService } from '../services/tokens.js';
 import type { WorkspaceService } from '../services/workspaces.js';
@@ -46,6 +47,14 @@ const acceptInvitationSchema = z.object({ token: z.string().min(1).max(512) }).s
 export interface WorkspaceRouterOptions {
   workspaces: WorkspaceService;
   tokens: TokenService;
+  /**
+   * Accepts API keys as well as session tokens when wired.
+   *
+   * Absent in a deployment or a test that has no key store, and then a
+   * key-shaped credential falls through to JWT verification and is refused
+   * there — never accepted slowly.
+   */
+  apiKeys?: ApiKeyAuthOptions;
   memberships: GlobalMembershipRepository;
   /** Resolves the caller's email, needed to match an invitation. */
   lookupUserEmail: (userId: UserId) => Promise<string | null>;
@@ -55,7 +64,7 @@ export function workspaceRoutes(options: WorkspaceRouterOptions): Router {
   const router = Router();
   const { workspaces } = options;
 
-  const auth = authenticate(options.tokens);
+  const auth = authenticate(options.tokens, options.apiKeys);
   const workspace = requireWorkspace({ memberships: options.memberships });
 
   router.get('/current', auth, workspace, requirePermission('workspace:read'), async (_req, res) => {
@@ -201,7 +210,7 @@ export function invitationRoutes(options: WorkspaceRouterOptions): Router {
 
   router.post(
     '/accept',
-    authenticate(options.tokens),
+    authenticate(options.tokens, options.apiKeys),
     validateBody(acceptInvitationSchema),
     async (req: Request, res: Response) => {
       const principal = requirePrincipal();

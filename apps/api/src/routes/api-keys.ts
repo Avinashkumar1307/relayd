@@ -4,7 +4,7 @@ import { AppError, PERMISSIONS } from '@relayd/types';
 import type { GlobalMembershipRepository } from '@relayd/db';
 import { requireScope, requireWorkspaceContext, requirePrincipal } from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
-import { refuseApiKey } from '../middleware/api-key-auth.js';
+import { refuseApiKey, type ApiKeyAuthOptions } from '../middleware/api-key-auth.js';
 import { MAX_KEY_LIFETIME_DAYS, type ApiKeyService } from '../services/api-keys.js';
 import type { TokenService } from '../services/tokens.js';
 
@@ -31,6 +31,15 @@ import type { TokenService } from '../services/tokens.js';
 export interface ApiKeyRouterOptions {
   apiKeys: ApiKeyService;
   tokens: TokenService;
+  /**
+   * Recognises API keys, so one that reaches here is refused with 403 rather
+   * than 401.
+   *
+   * Named apart from `apiKeys` above, which is the *service* that mints them.
+   * These routes refuse keys outright; this field is only what lets them tell
+   * a key from a malformed token.
+   */
+  apiKeyAuth?: ApiKeyAuthOptions;
   memberships: GlobalMembershipRepository;
 }
 
@@ -48,7 +57,7 @@ export function apiKeyRoutes(options: ApiKeyRouterOptions): Router {
   const router = Router();
   const { apiKeys } = options;
 
-  const auth = authenticate(options.tokens);
+  const auth = authenticate(options.tokens, options.apiKeyAuth);
   const workspace = requireWorkspace({ memberships: options.memberships });
   const noKeys = refuseApiKey();
 

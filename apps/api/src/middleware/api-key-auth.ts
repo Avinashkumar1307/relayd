@@ -134,7 +134,7 @@ export function authenticateApiKey(options: ApiKeyAuthOptions): RequestHandler {
       scope: workspaceScope(resolved.workspaceId as WorkspaceId),
       // A key has no role. `viewer` is the floor, so any code that reaches
       // for the role rather than the scopes gets the least it could have —
-      // and `requireScopeOrPermission` below never consults it.
+      // and `requirePermission` checks the scopes, never this.
       role: 'viewer',
       permissions: scopes,
     });
@@ -165,40 +165,6 @@ export function usableScopes(stored: readonly string[]): Permission[] {
   return stored.filter(
     (scope): scope is Permission => known.has(scope) && canApiKeyHold(scope as Permission),
   );
-}
-
-/**
- * Requires a scope of the key, or the equivalent permission of a user.
- *
- * One middleware for both credentials so a route cannot accidentally be
- * reachable by a key and not by a person, or the reverse. A key is checked
- * against its scopes; a user falls through to the role matrix.
- */
-export function requireScopeOrPermission(
-  permission: Permission,
-  userCheck: RequestHandler,
-): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const apiKey = tryGetApiKeyPrincipal();
-
-    if (apiKey === undefined) {
-      userCheck(req, res, next);
-      return;
-    }
-
-    if (!apiKey.scopes.includes(permission)) {
-      next(
-        new AppError(
-          'insufficient_permission',
-          `This API key does not have ${permission}`,
-          403,
-        ),
-      );
-      return;
-    }
-
-    next();
-  };
 }
 
 /**

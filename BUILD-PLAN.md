@@ -235,7 +235,7 @@ The gate before external signups open.
 - [x] Idempotency-key replay support on all mutating public endpoints
 - [x] Outbound webhooks: signing secret rotation, delivery log, exponential backoff, auto-disable after sustained failure
 - [x] Frontend: `/settings/api`, webhook endpoint management
-- [ ] Tests: scope enforcement per endpoint, signature verification from a third-party perspective, rate-limit boundary, idempotency replay
+- [x] Tests: scope enforcement per endpoint, signature verification from a third-party perspective, rate-limit boundary, idempotency replay
 
 **Gate:** An external integrator can create a contact, launch a campaign and receive a signed delivery event without the web app; a read-scoped key cannot write anything.
 

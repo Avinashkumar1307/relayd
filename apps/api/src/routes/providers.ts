@@ -11,6 +11,7 @@ import {
 } from '@relayd/validation';
 import { requireScope } from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
+import type { ApiKeyAuthOptions } from '../middleware/api-key-auth.js';
 import { validateBody } from '../middleware/validate.js';
 import type { ProviderService } from '../services/providers.js';
 import type { TokenService } from '../services/tokens.js';
@@ -28,6 +29,14 @@ import type { TokenService } from '../services/tokens.js';
 export interface ProviderRouterOptions {
   providers: ProviderService;
   tokens: TokenService;
+  /**
+   * Accepts API keys as well as session tokens when wired.
+   *
+   * Absent in a deployment or a test that has no key store, and then a
+   * key-shaped credential falls through to JWT verification and is refused
+   * there — never accepted slowly.
+   */
+  apiKeys?: ApiKeyAuthOptions;
   memberships: GlobalMembershipRepository;
 }
 
@@ -35,7 +44,7 @@ export function providerRoutes(options: ProviderRouterOptions): Router {
   const router = Router();
   const { providers } = options;
 
-  const auth = authenticate(options.tokens);
+  const auth = authenticate(options.tokens, options.apiKeys);
   const workspace = requireWorkspace({ memberships: options.memberships });
   const chain = [auth, workspace] as const;
 

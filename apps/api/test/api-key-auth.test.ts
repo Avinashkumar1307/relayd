@@ -9,10 +9,9 @@ import {
   authenticateApiKey,
   isApiKeyCredential,
   refuseApiKey,
-  requireScopeOrPermission,
   usableScopes,
 } from '../src/middleware/api-key-auth.js';
-import { requestContext } from '../src/middleware/authorize.js';
+import { requestContext, requirePermission } from '../src/middleware/authorize.js';
 import { errorEnvelope } from '../src/middleware/error-envelope.js';
 import { requestId } from '../src/middleware/request-id.js';
 import {
@@ -90,21 +89,16 @@ function buildApp(
     });
   });
 
-  app.get(
-    '/needs-launch',
-    requireScopeOrPermission('campaign:launch', (_req, _res, next) => next()),
-    (_req: Request, res: Response) => {
-      res.json({ data: { ok: true } });
-    },
-  );
+  // The real permission middleware, which checks a key against its scopes and
+  // a user against the role matrix. One middleware for both, so a route
+  // cannot be reachable by a key and not by a person, or the reverse.
+  app.get('/needs-launch', requirePermission('campaign:launch'), (_req: Request, res: Response) => {
+    res.json({ data: { ok: true } });
+  });
 
-  app.get(
-    '/needs-read',
-    requireScopeOrPermission('contact:read', (_req, _res, next) => next()),
-    (_req: Request, res: Response) => {
-      res.json({ data: { ok: true } });
-    },
-  );
+  app.get('/needs-read', requirePermission('contact:read'), (_req: Request, res: Response) => {
+    res.json({ data: { ok: true } });
+  });
 
   app.get('/no-keys', refuseApiKey(), (_req: Request, res: Response) => {
     res.json({ data: { ok: true } });

@@ -8,9 +8,11 @@ import {
   runWithRequestContext,
   setPrincipal,
   setWorkspaceContext,
+  tryGetApiKeyPrincipal,
   tryGetPrincipal,
   tryGetWorkspaceContext,
 } from '../context.js';
+import { authenticateApiKey, isApiKeyCredential, type ApiKeyAuthOptions } from './api-key-auth.js';
 import type { TokenService } from '../services/tokens.js';
 
 /**
@@ -37,12 +39,29 @@ export function requestContext(_req: Request, _res: Response, next: NextFunction
  * "expired" from "malformed" from "wrong signature" tells an attacker which
  * part of a forged token to fix next.
  */
-export function authenticate(tokens: TokenService): RequestHandler {
-  return async (req: Request, _res: Response, next: NextFunction) => {
+export function authenticate(tokens: TokenService, apiKeys?: ApiKeyAuthOptions): RequestHandler {
+  // Built once rather than per request: the key path is the same middleware
+  // either way, and constructing it inside the handler would rebuild a
+  // closure on every call for no reason.
+  const keyPath = apiKeys === undefined ? null : authenticateApiKey(apiKeys);
+
+  return async (req: Request, res: Response, next: NextFunction) => {
     const header = req.get('authorization');
 
     if (header === undefined || !header.startsWith('Bearer ')) {
       next(new AppError('unauthenticated', 'Authentication required', 401));
+      return;
+    }
+
+    // `rk_live_` is the fork. A session token and an API key are different
+    // credentials answering to different rules, and deciding by shape here
+    // means every route gets both without knowing about either.
+    //
+    // When no key options are wired, a key-shaped credential falls through to
+    // JWT verification and is refused there — a deployment without the key
+    // path must not accept keys, not even slowly.
+    if (keyPath !== null && isApiKeyCredential(header)) {
+      keyPath(req, res, next);
       return;
     }
 
@@ -86,6 +105,14 @@ export interface WorkspaceMiddlewareOptions {
  */
 export function requireWorkspace(options: WorkspaceMiddlewareOptions): RequestHandler {
   return async (req: Request, _res: Response, next: NextFunction) => {
+    // An API key already resolved its workspace, from the key itself. There
+    // is no membership to look up: a key belongs to one workspace and has no
+    // user behind it whose role could have changed.
+    if (tryGetApiKeyPrincipal() !== undefined) {
+      next();
+      return;
+    }
+
     const principal = tryGetPrincipal();
     if (principal === undefined) {
       next(new AppError('unauthenticated', 'Authentication required', 401));
@@ -130,6 +157,27 @@ export function requireWorkspace(options: WorkspaceMiddlewareOptions): RequestHa
  */
 export function requirePermission(permission: Permission): RequestHandler {
   return (_req: Request, _res: Response, next: NextFunction) => {
+    const apiKey = tryGetApiKeyPrincipal();
+
+    if (apiKey !== undefined) {
+      // A key is checked against its scopes, never against a role. It has no
+      // role, and the floor one it is given for the sake of the context type
+      // must never be what authorises anything.
+      if (!apiKey.scopes.includes(permission)) {
+        next(
+          new AppError(
+            'insufficient_permission',
+            `This API key does not have ${permission}`,
+            403,
+          ),
+        );
+        return;
+      }
+
+      next();
+      return;
+    }
+
     const workspace = tryGetWorkspaceContext();
 
     if (workspace === undefined) {
