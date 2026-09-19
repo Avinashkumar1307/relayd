@@ -190,3 +190,34 @@ export type {
   EnforcementSweepResult,
   EnforcementSweepOptions,
 } from './abuse/sweep.js';
+
+export {
+  lintCampaign,
+  extractLinks,
+  linkTextMismatch,
+  looksLikeBrand,
+  domainOf,
+  baseDomain,
+  hostOf,
+  editDistance,
+  SIGNAL_WEIGHT,
+  BLOCK_SCORE,
+  PROTECTED_BRANDS,
+  SHORTENER_DOMAINS,
+  EXECUTABLE_EXTENSIONS,
+} from './abuse/phishing.js';
+export type { LintFinding, LintCode, LintSeverity, LintInput, LintResult } from './abuse/phishing.js';
+
+export {
+  checkLinkReputation,
+  cachedReputation,
+  REPUTATION_TTL_MS,
+  REPUTATION_TIMEOUT_MS,
+} from './abuse/link-reputation.js';
+export type {
+  ReputationPort,
+  ReputationVerdict,
+  DomainReputation,
+  ReputationOutcome,
+} from './abuse/link-reputation.js';
+export { severityOf } from './abuse/phishing.js';

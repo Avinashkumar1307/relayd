@@ -111,6 +111,11 @@ const LAUNCH_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // place entirely.
   enforcement_paused: 403,
   enforcement_review_required: 403,
+  // 422: something in the campaign itself has to change, and the sender can
+  // change it right now. Unlike the enforcement refusals above, this is not
+  // about the account.
+  content_blocked: 422,
+  blocked_link_domain: 422,
   unresolvable_merge_tags: 422,
 };
 

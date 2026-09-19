@@ -30,6 +30,7 @@
 
 import { attestationAuthorises, type Attestation } from '../abuse/consent.js';
 import { mayLaunch, needsReview, type EnforcementStage } from '../abuse/enforcement.js';
+import type { LintFinding } from '../abuse/phishing.js';
 
 export type LaunchFailure =
   | 'not_launchable'
@@ -45,6 +46,8 @@ export type LaunchFailure =
   | 'consent_audience_changed'
   | 'enforcement_paused'
   | 'enforcement_review_required'
+  | 'content_blocked'
+  | 'blocked_link_domain'
   | 'unresolvable_merge_tags';
 
 export interface LaunchPort {
@@ -117,6 +120,26 @@ export interface LaunchPort {
    * which is the same as not being in review at all.
    */
   launchIsApproved(campaignId: string): Promise<boolean>;
+
+  /**
+   * The phishing lint and the link-reputation check, run together
+   * (docs/06 "Content scanning" and "Link reputation").
+   *
+   * One port rather than two because both need the rendered message, and
+   * rendering it twice inside a launch transaction to ask two questions
+   * would double the most expensive part of the check.
+   *
+   * Returning `blocked: false` with findings is the normal case: most
+   * campaigns have something worth saying and nothing worth stopping.
+   */
+  scanContent(campaignId: string): Promise<{
+    blocked: boolean;
+    findings: readonly LintFinding[];
+    /** Domains a reputation feed called malicious. Any entry blocks. */
+    blockedDomains: readonly string[];
+    /** True when the feed could not be reached. Recorded, never fatal. */
+    reputationUnavailable: boolean;
+  }>;
 
   /**
    * The newest consent attestation for this campaign, or null.
@@ -278,7 +301,51 @@ export async function launchCampaign(
     );
   }
 
-  // 6. Consent. docs/06: "every launch re-confirms it."
+  // 6. Content. docs/06: launch-time phishing lint and link reputation.
+  //
+  //    After the cheap refusals and before the snapshot, because rendering
+  //    the message is the expensive part of this check and there is no point
+  //    paying for it on a campaign that was going to be refused anyway.
+  const scan = await port.scanContent(campaignId);
+
+  if (scan.blockedDomains.length > 0) {
+    // docs/06: "known-bad domains block the launch." Unlike the lint, this
+    // is somebody else's verdict about a domain rather than a heuristic
+    // about wording, so it blocks on its own.
+    return fail(
+      'blocked_link_domain',
+      `This campaign links to ${scan.blockedDomains.join(', ')}, which a security feed has flagged. Remove the link or contact support.`,
+    );
+  }
+
+  if (scan.blocked) {
+    return fail(
+      'content_blocked',
+      'This campaign was held by our content checks. Review the warnings on this page, or contact support if you believe this is wrong.',
+    );
+  }
+
+  // Findings that did not block are recorded rather than discarded. An
+  // honest sender fixes a mismatched link; a dishonest one has a trail.
+  if (scan.findings.length > 0) {
+    await port.recordEvent({
+      campaignId,
+      eventType: 'launch.content_warnings',
+      detail: { codes: scan.findings.map((finding) => finding.code) },
+    });
+  }
+
+  if (scan.reputationUnavailable) {
+    // The feed failed open (see link-reputation.ts). That decision has to be
+    // visible afterwards, or "was this campaign checked" has no answer.
+    await port.recordEvent({
+      campaignId,
+      eventType: 'launch.reputation_unavailable',
+      detail: {},
+    });
+  }
+
+  // 7. Consent. docs/06: "every launch re-confirms it."
   //
   //    Before the snapshot, because a launch that is going to be refused
   //    should not first write a recipient row per contact — and because the
@@ -301,7 +368,7 @@ export async function launchCampaign(
     return fail('consent_not_attested', 'Confirm where this audience gave consent before sending');
   }
 
-  // 7. The entitlement row, FOR SHARE (R28). Read before the snapshot, held
+  // 8. The entitlement row, FOR SHARE (R28). Read before the snapshot, held
   //    until this transaction ends, so a downgrade cannot commit in the gap.
   const entitlement = await port.readEntitlementForShare(campaign.workspaceId);
 
@@ -314,7 +381,7 @@ export async function launchCampaign(
     );
   }
 
-  // 8. Snapshot. Deduplicated by the unique index, so running twice inserts
+  // 9. Snapshot. Deduplicated by the unique index, so running twice inserts
   //    nothing the second time.
   const snapshot = await port.snapshotAudience({
     campaignId,
@@ -330,7 +397,7 @@ export async function launchCampaign(
     );
   }
 
-  // 9. The limit, against the snapshot that was just taken — not against an
+  // 10. The limit, against the snapshot that was just taken — not against an
   //    estimate made before it.
   if (entitlement.monthlySendLimit !== null) {
     const remaining = entitlement.monthlySendLimit - entitlement.used;

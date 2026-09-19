@@ -45,6 +45,14 @@ const NON_TENANT_TABLES = new Map<string, string>([
     'billing_reconciliation_runs',
     'a record of what the nightly reconciler did across every workspace; it has no single workspace to be scoped to (R19)',
   ],
+  [
+    'global_blocked_addresses',
+    'the cross-workspace block list (docs/06 "Shared signals"); a workspace_id would defeat the entire feature, which is that an address complaining in one workspace is blocked in every other. Addresses are stored only as peppered hashes, so a reader learns nothing but the answer to "is this one blocked"',
+  ],
+  [
+    'blocked_link_domains',
+    'domains a reputation feed called malicious; public information about the internet, identical for every workspace, so a policy would have nothing to compare',
+  ],
 ]);
 
 /**

@@ -108,3 +108,4 @@ export type { AttestationRow } from './consent.js';
 export { EnforcementRepository } from './enforcement.js';
 export type { EnforcementRow, EnforcementStage } from './enforcement.js';
 export { GlobalEnforcementRepository } from './global/enforcement.js';
+export { GlobalBlockListRepository, hashAddress } from './global/block-list.js';

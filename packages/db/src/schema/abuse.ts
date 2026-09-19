@@ -11,6 +11,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { bytea } from './column-types.js';
 import { workspaces } from './identity.js';
 
 /**
@@ -181,5 +182,70 @@ export const workspaceEnforcement = pgTable(
     byStage: index('ix_we_stage')
       .on(table.stage, table.enteredAt)
       .where(sql`${table.stage} <> 'none'`),
+  }),
+);
+
+/**
+ * The cross-workspace block list (migration 0018; docs/06 "Shared signals").
+ *
+ * The one table with no `workspace_id`, and that is the feature: an address
+ * that complained in workspace A must not be mailed by workspace B.
+ *
+ * Addresses are stored only as peppered SHA-256 hashes. In plaintext this
+ * would be a list of everyone who has ever complained, across every
+ * customer — the most sensitive table in the database and a standing
+ * temptation. Hashed, it answers "is this one blocked" and nothing else.
+ */
+export const globalBlockedAddresses = pgTable(
+  'global_blocked_addresses',
+  {
+    addressHash: bytea('address_hash').primaryKey(),
+    reason: text('reason').notNull(),
+    /** Distinct workspaces that have seen this address complain. */
+    workspaceCount: integer('workspace_count').notNull().default(1),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => ({
+    byLastSeen: index('ix_gba_last_seen').on(table.lastSeenAt),
+  }),
+);
+
+/**
+ * Domains a reputation feed called malicious (migration 0018).
+ *
+ * Cached here so a launch does not depend on a third party being up — the
+ * checker fails open, and this is what it falls back to. Also where an
+ * operator adds a domain by hand, which is the faster path when a campaign
+ * is going out now and the feed has not caught up.
+ */
+export const blockedLinkDomains = pgTable(
+  'blocked_link_domains',
+  {
+    domain: text('domain').primaryKey(),
+    verdict: text('verdict').notNull(),
+    /** The feed that said so, or 'operator'. An appeal starts with "who says". */
+    source: text('source').notNull(),
+    note: text('note'),
+    /**
+     * When to re-check. Domains get cleaned up, resold and reused, and a
+     * permanent block list slowly fills with entries nobody can justify.
+     */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => ({
+    byExpiry: index('ix_bld_expires')
+      .on(table.expiresAt)
+      .where(sql`${table.expiresAt} is not null`),
   }),
 );

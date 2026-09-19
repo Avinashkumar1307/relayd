@@ -1958,6 +1958,82 @@ Three entries: `partition-maintenance`, `billing-reconcile` and the new
 its convenience - a job that processes many workspaces one at a time should
 open a scoped transaction per workspace instead.
 
+### 2026-09-19 - the phishing lint scores, and only three signals block alone
+
+docs/06 lists the signals to lint for but not what to do with them. The
+answer here is a weighted score with a threshold, and the shape is
+deliberately lopsided.
+
+The thing that ruins a lint like this is false positives. Every legitimate
+SaaS sends "verify your account" emails with a button reading "Reset your
+password". If those are blocked, the first thing every customer learns is
+which words to avoid, and the lint then catches nobody except the honest.
+
+So one signal never blocks. Credential language on its own is a normal
+transactional email; a lookalike domain on its own might be a typo. Blocking
+needs signals that combine, or one that has no innocent reading at all -
+there are three of those: an executable attachment, a link to a raw IP, and a
+protected brand name in the From line of a campaign sending from an
+unrelated domain.
+
+Severity is derived from the weight rather than written alongside it. Set
+independently the two drift, and a finding labelled `blocking` whose weight
+is under the threshold reads as blocking everywhere it is displayed while
+blocking nothing.
+
+Campaigns that score below the threshold still show their findings and record
+them against the campaign. That is where most of the value is: an honest
+sender fixes a mismatched link, and a dishonest one learns we are looking.
+
+### 2026-09-19 - link reputation fails open, unlike the rate limiter
+
+CLAUDE.md section 9 says the rate limiter fails closed: Redis unreachable
+means do not send. The reputation feed does the opposite, and the difference
+is the direction of the harm.
+
+An unchecked link is a risk we accept for one campaign. Every customer unable
+to launch because a third party is having an incident is an outage we caused,
+and it lasts as long as their incident does. The unchecked launch is recorded
+on the campaign (`launch.reputation_unavailable`), so "was this campaign
+checked" has an answer afterwards.
+
+The lookup is also bounded at three seconds, because a launch transaction
+holds a `FOR SHARE` on the entitlement row and a feed that hangs would hold
+it for as long as it liked.
+
+Only `malicious` blocks. `suspicious` is reported and allowed: feeds disagree
+about what suspicious means, and a category that blocks on a maybe is one
+that gets switched off within a month of launch - taking the useful category
+with it.
+
+### 2026-09-19 - the global block list stores hashes, not addresses
+
+docs/06: "Addresses that complained in any workspace go on a global block
+list applied everywhere." It does not say how to store them.
+
+In plaintext this is a list of everyone who has ever complained, assembled
+across every customer we have. It would be the most sensitive table in the
+database and a standing temptation: it would let anybody with read access
+test whether a given person is on it, which is a cross-tenant information
+leak dressed as a safety feature.
+
+Stored as a peppered SHA-256 of the normalised address, it answers the only
+question we need - "is this one blocked" - and nothing else. The pepper is
+what makes it worth anything: the space of real email addresses is small
+enough to enumerate, so an unpeppered hash of a stolen table is brute-forced
+in an afternoon.
+
+The trade-off, stated plainly: an operator cannot read the table to see who
+is on it, and a person exercising a deletion right has to be found by hashing
+their address rather than by searching. Both are acceptable. Holding every
+complainer's address in plaintext forever is not.
+
+This is also the one table in the schema with no `workspace_id` and no RLS
+policy, because a workspace column would defeat the entire feature. The
+migration says so in a comment, and
+`packages/testing/test/rls-coverage.isolation.test.ts` requires the exemption
+to be written down rather than inferred from the absence of a policy.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

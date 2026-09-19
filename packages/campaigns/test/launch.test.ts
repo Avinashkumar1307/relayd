@@ -61,6 +61,10 @@ function port(overrides: Partial<LaunchPort> = {}) {
       calls.push('approved');
       return true;
     },
+    async scanContent() {
+      calls.push('scan');
+      return { blocked: false, findings: [], blockedDomains: [], reputationUnavailable: false };
+    },
     async readConsentAttestation() {
       calls.push('consent');
       return {
@@ -675,5 +679,132 @@ describe('the enforcement ladder stops a launch (docs/06)', () => {
     const result = await launchCampaign('c1', p);
 
     expect(result.failure).toBe('enforcement_paused');
+  });
+});
+
+describe('content scanning stops a launch (docs/06)', () => {
+  it('refuses a campaign the lint blocked', async () => {
+    const { port: p } = port({
+      async scanContent() {
+        return {
+          blocked: true,
+          findings: [
+            {
+              code: 'brand_impersonation' as const,
+              severity: 'blocking' as const,
+              message: 'x',
+            },
+          ],
+          blockedDomains: [],
+          reputationUnavailable: false,
+        };
+      },
+    });
+
+    expect((await launchCampaign('c1', p)).failure).toBe('content_blocked');
+  });
+
+  it('refuses a campaign linking to a flagged domain', async () => {
+    const { port: p } = port({
+      async scanContent() {
+        return {
+          blocked: false,
+          findings: [],
+          blockedDomains: ['evil.test'],
+          reputationUnavailable: false,
+        };
+      },
+    });
+
+    expect((await launchCampaign('c1', p)).failure).toBe('blocked_link_domain');
+  });
+
+  it('reports a flagged domain rather than a generic refusal', async () => {
+    // The sender has to know which link to remove. "Content blocked" leaves
+    // them staring at a campaign with fifteen links.
+    const { port: p } = port({
+      async scanContent() {
+        return {
+          blocked: false,
+          findings: [],
+          blockedDomains: ['evil.test'],
+          reputationUnavailable: false,
+        };
+      },
+    });
+
+    expect((await launchCampaign('c1', p)).message).toContain('evil.test');
+  });
+
+  it('launches with warnings, and records them', async () => {
+    // Most campaigns have something worth saying and nothing worth stopping.
+    // A lint that only spoke when it blocked would throw away most of its
+    // value: an honest sender fixes a mismatched link, a dishonest one
+    // learns we are looking.
+    const { port: p, events } = port({
+      async scanContent() {
+        return {
+          blocked: false,
+          findings: [
+            { code: 'url_shortener' as const, severity: 'warning' as const, message: 'x' },
+          ],
+          blockedDomains: [],
+          reputationUnavailable: false,
+        };
+      },
+    });
+
+    expect((await launchCampaign('c1', p)).ok).toBe(true);
+    expect(events).toContain('launch.content_warnings');
+  });
+
+  it('records that the reputation feed was unreachable', async () => {
+    // The check fails open. That decision has to be visible afterwards, or
+    // "was this campaign checked" has no answer.
+    const { port: p, events } = port({
+      async scanContent() {
+        return {
+          blocked: false,
+          findings: [],
+          blockedDomains: [],
+          reputationUnavailable: true,
+        };
+      },
+    });
+
+    expect((await launchCampaign('c1', p)).ok).toBe(true);
+    expect(events).toContain('launch.reputation_unavailable');
+  });
+
+  it('scans before taking a snapshot', async () => {
+    const { port: p, calls } = port({
+      async scanContent() {
+        return {
+          blocked: true,
+          findings: [],
+          blockedDomains: [],
+          reputationUnavailable: false,
+        };
+      },
+    });
+
+    await launchCampaign('c1', p);
+
+    expect(calls).not.toContain('snapshot');
+    expect(calls).toContain('release');
+  });
+
+  it('does not scan a campaign already refused for enforcement', async () => {
+    // Rendering the message is the expensive part of the scan, and there is
+    // no point paying for it on a launch that was going to be refused.
+    const { port: p, calls } = port({
+      async readEnforcementStage() {
+        return 'paused' as const;
+      },
+    });
+
+    await launchCampaign('c1', p);
+
+    expect(calls).not.toContain('scan');
   });
 });

@@ -208,6 +208,14 @@ function service(over: {
           async launchIsApproved() {
             return failure !== 'enforcement_review_required';
           },
+          async scanContent() {
+            return {
+              blocked: failure === 'content_blocked',
+              findings: [],
+              blockedDomains: failure === 'blocked_link_domain' ? ['evil.test'] : [],
+              reputationUnavailable: false,
+            };
+          },
           async readConsentAttestation() {
             if (failure === 'consent_not_attested') return null;
             return {
