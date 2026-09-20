@@ -191,3 +191,9 @@ These are the owner's open decisions (`docs/16-self-review-and-decisions.md`). U
 ## 14. Definition of done for the whole MVP
 
 All Phase 0–12 gates in `BUILD-PLAN.md` ticked; every row of `INVARIANTS.md` has a passing test referenced by file path; a 50,000-recipient campaign completes under a chaos run with zero duplicate provider accepts; the full billing matrix passes against Stripe test mode including duplicated and reordered webhooks; a timed restore drill completes inside the one-hour RTO; the tenant-isolation suite is a required CI check on `main`.
+
+## 15. Design
+
+The finished UI lives in the Claude Design project and in `design/`. Every page built in `apps/web` must match its frame. `relayd-ui.js` is the single source of truth for tokens, state names, labels and tones — mirror it in the Tailwind config and in `packages/ui`; do not invent colours, type sizes, spacing or radii. Build the shell and the components on the design-system sheet once, as `packages/ui`, and reuse them on every page. Any element that cannot be reproduced with Tailwind core utilities: list it and ask, never approximate silently. Implement each page's UI in the phase that builds its backend, per `BUILD-PLAN.md` — never all pages at once.
+
+Frames are named *section letter + route*, e.g. `B4 Reset password /reset-password/:token`. `Relayd Index.dc.html` maps every section file to the routes it covers. `sample-data.js` is the fixture set (workspace "Northwind Voyages"); `support.js` is the export's runtime and is ignored by lint and by everything else.
