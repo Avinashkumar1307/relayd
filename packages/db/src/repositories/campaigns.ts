@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { CampaignId, RecipientId, UserId, WorkspaceId } from '@relayd/types';
 import { campaignCounters, campaignEvents, campaignRecipients, campaigns } from '../schema/campaigns.js';
+import { users } from '../schema/identity.js';
 import type { WorkspaceScope } from '../scope.js';
 import type { Executor } from './executor.js';
 
@@ -44,6 +45,32 @@ export interface CampaignRow {
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * G1's Archive action (migration 0021).
+   *
+   * The timestamp rather than a boolean, unlike `TemplateRow.archived`: a
+   * campaign report is a record of what happened and when, and "filed away
+   * on 3 October" belongs in it. A template has no report.
+   */
+  archivedAt: Date | null;
+}
+
+/**
+ * One row of G3's event timeline, as `campaign_events` stores it plus the
+ * name of whoever caused it.
+ *
+ * `actorName` is resolved by a join here rather than by a second query in
+ * the service, because a timeline of forty entries would otherwise be forty
+ * round trips to `users` to render forty names.
+ */
+export interface CampaignEventRow {
+  id: string;
+  eventType: string;
+  actorType: 'user' | 'api_key' | 'system' | 'provider';
+  actorId: string | null;
+  actorName: string | null;
+  detail: unknown;
+  createdAt: Date;
 }
 
 export interface CampaignCountersRow {
@@ -74,17 +101,48 @@ export interface RecipientRow {
 /** Campaign statuses a draft edit or a delete is still allowed from. */
 const EDITABLE_STATUSES = ['draft', 'scheduled'];
 
+/**
+ * Campaign statuses that can be archived: the terminal ones, all of them.
+ *
+ * The design's row menu offers Archive on `completed`, `cancelled` and
+ * `failed` and not on `completed_with_errors`, whose menu is full with
+ * "Retry failed". That is a menu decision, not a rule — a campaign that
+ * finished with some bounces is as over as one that did not, and a server
+ * that refused it would leave the customer with one campaign they can never
+ * get off the list. So the server allows the whole terminal set and the UI
+ * offers what the frame draws.
+ */
+const ARCHIVABLE_STATUSES = [
+  'completed',
+  'completed_with_errors',
+  'cancelled',
+  'failed',
+];
+
 export class CampaignRepository {
   constructor(private readonly db: Executor) {}
 
   async list(
     scope: WorkspaceScope,
-    query: { state?: string | undefined; search?: string | undefined; limit: number; cursor?: string | undefined },
+    query: {
+      state?: string | undefined;
+      search?: string | undefined;
+      /** Default `active`: archiving is how G1 gets a campaign off the list. */
+      archived?: 'active' | 'archived' | 'all' | undefined;
+      limit: number;
+      cursor?: string | undefined;
+    },
   ): Promise<{ items: CampaignRow[]; nextCursor: string | null }> {
     const conditions = [
       eq(campaigns.workspaceId, scope.workspaceId),
       isNull(campaigns.deletedAt),
     ];
+
+    // Archived campaigns are hidden unless asked for. A row the customer
+    // filed away reappearing at the top of Completed next week is the whole
+    // reason the action exists.
+    if (query.archived === 'archived') conditions.push(isNotNull(campaigns.archivedAt));
+    else if (query.archived !== 'all') conditions.push(isNull(campaigns.archivedAt));
 
     if (query.state !== undefined) conditions.push(eq(campaigns.status, query.state as never));
     if (query.search !== undefined) conditions.push(ilike(campaigns.name, `%${query.search}%`));
@@ -363,6 +421,111 @@ export class CampaignRepository {
   }
 
   /**
+   * Files a terminal campaign away (G1's Archive action).
+   *
+   * Guarded on the status rather than checked first, for the same reason
+   * `update` is: a campaign can complete between a read and a write, and —
+   * more to the point — a *sending* campaign must never be archivable. An
+   * archived campaign is hidden from the list, and hiding one that is still
+   * handing messages to a provider would take the only progress view of a
+   * live send off the screen.
+   *
+   * Also guarded on `archived_at IS NULL`, so a second archive returns zero
+   * rows and the service can say so instead of silently moving the
+   * timestamp.
+   */
+  async archive(scope: WorkspaceScope, id: CampaignId): Promise<CampaignRow | null> {
+    const [row] = await this.db
+      .update(campaigns)
+      .set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(campaigns.id, id),
+          eq(campaigns.workspaceId, scope.workspaceId),
+          isNull(campaigns.deletedAt),
+          isNull(campaigns.archivedAt),
+          inArray(campaigns.status, ARCHIVABLE_STATUSES as never[]),
+        ),
+      )
+      .returning();
+
+    return row === undefined ? null : toCampaign(row);
+  }
+
+  /**
+   * The inverse.
+   *
+   * Not in the design's row menu — an archived campaign has no frame that
+   * lists it yet — but archiving without it is a one-way door, and a
+   * one-way door reached from a menu two clicks from "Duplicate" is a
+   * support ticket. No status guard: whatever state the campaign was
+   * archived in is the state it comes back to.
+   */
+  async unarchive(scope: WorkspaceScope, id: CampaignId): Promise<CampaignRow | null> {
+    const [row] = await this.db
+      .update(campaigns)
+      .set({ archivedAt: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(campaigns.id, id),
+          eq(campaigns.workspaceId, scope.workspaceId),
+          isNull(campaigns.deletedAt),
+          isNotNull(campaigns.archivedAt),
+        ),
+      )
+      .returning();
+
+    return row === undefined ? null : toCampaign(row);
+  }
+
+  /**
+   * G3's event timeline: `campaign_events`, newest first, with the actor's
+   * name resolved.
+   *
+   * Reads `campaign_events` and nothing else. It is emphatically not an
+   * aggregate over `campaign_recipients` (R13) — the numbers a timeline
+   * entry quotes were written into its `detail` blob by whoever recorded it,
+   * at the moment it was true, which is also the only way "31,618 of 48,213
+   * handed to providers" can still be right when the page is reopened
+   * tomorrow.
+   *
+   * Bounded. A long campaign accumulates dispatch and dunning entries, and
+   * an unbounded read of a table indexed `(campaign_id, created_at DESC)`
+   * is a fine query right up to the campaign that has forty thousand of
+   * them.
+   */
+  async listEvents(
+    scope: WorkspaceScope,
+    id: CampaignId,
+    options: { limit?: number } = {},
+  ): Promise<CampaignEventRow[]> {
+    const rows = await this.db
+      .select({
+        id: campaignEvents.id,
+        eventType: campaignEvents.eventType,
+        actorType: campaignEvents.actorType,
+        actorId: campaignEvents.actorId,
+        actorName: users.name,
+        detail: campaignEvents.detail,
+        createdAt: campaignEvents.createdAt,
+      })
+      .from(campaignEvents)
+      // Left, not inner: most entries are the system's and have no user, and
+      // an inner join would silently drop every one of them.
+      .leftJoin(users, eq(users.id, campaignEvents.actorId))
+      .where(
+        and(
+          eq(campaignEvents.workspaceId, scope.workspaceId),
+          eq(campaignEvents.campaignId, id),
+        ),
+      )
+      .orderBy(desc(campaignEvents.createdAt), desc(campaignEvents.id))
+      .limit(Math.min(Math.max(options.limit ?? 100, 1), 200));
+
+    return rows.map(toEvent);
+  }
+
+  /**
    * The Idempotency-Key claim (F29).
    *
    * No separate key table: `campaigns.idempotency_key` and the unique index
@@ -518,4 +681,29 @@ function toCounters(row: Record<string, unknown>): CampaignCountersRow {
 
 function toRecipient(row: Record<string, unknown>): RecipientRow {
   return row as unknown as RecipientRow;
+}
+
+/**
+ * `campaign_events.id` is a BIGSERIAL, and a bigint does not survive
+ * `JSON.stringify` — it throws. Rendered as a string at the boundary, which
+ * is also what the client declares it as.
+ */
+function toEvent(row: {
+  id: bigint | number | string;
+  eventType: string;
+  actorType: string;
+  actorId: string | null;
+  actorName: string | null;
+  detail: unknown;
+  createdAt: Date;
+}): CampaignEventRow {
+  return {
+    id: String(row.id),
+    eventType: row.eventType,
+    actorType: row.actorType as CampaignEventRow['actorType'],
+    actorId: row.actorId,
+    actorName: row.actorName,
+    detail: row.detail,
+    createdAt: row.createdAt,
+  };
 }

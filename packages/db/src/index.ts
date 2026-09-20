@@ -13,4 +13,9 @@ export type {
   RunMigrationsOptions,
 } from './migrate.js';
 export * from './repositories/index.js';
-export { suppressionHash, bindPlaceholders, escapeCopyValue } from './helpers.js';
+export {
+  suppressionHash,
+  bindPlaceholders,
+  escapeCopyValue,
+  contactSearchPredicate,
+} from './helpers.js';

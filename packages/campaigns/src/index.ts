@@ -13,8 +13,19 @@ export type { MergeTag, RenderContext, EscapeMode } from './templates/merge-tags
 export { compileTemplate, renderTemplate, htmlToText } from './templates/render.js';
 export type { CompileInput, CompiledTemplate, RenderedMessage } from './templates/render.js';
 
-export { launchCampaign, LAUNCHABLE_STATES } from './engine/launch.js';
-export type { LaunchPort, LaunchableCampaign, LaunchResult, LaunchFailure } from './engine/launch.js';
+export { launchCampaign, runLaunchPreflight, LAUNCHABLE_STATES, PREFLIGHT_KEYS } from './engine/launch.js';
+export type {
+  LaunchPort,
+  LaunchableCampaign,
+  LaunchResult,
+  LaunchFailure,
+  PreflightPort,
+  PreflightResult,
+  PreflightOptions,
+  PreflightCheck,
+  PreflightKey,
+  PreflightOutcome,
+} from './engine/launch.js';
 export { sendOne, classifyForSend, messageIdFor } from './engine/send.js';
 export type {
   SendPort,

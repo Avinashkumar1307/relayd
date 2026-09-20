@@ -2,7 +2,8 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { z } from 'zod';
 import type { GlobalMembershipRepository } from '@relayd/db';
 import { AppError } from '@relayd/types';
-import { requireScope } from '../context.js';
+import { billingDetailsSchema } from '@relayd/validation';
+import { requirePrincipal, requireScope } from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
 import { refuseApiKey, type ApiKeyAuthOptions } from '../middleware/api-key-auth.js';
 import { idempotent, type IdempotencyPort } from '../middleware/idempotency.js';
@@ -225,6 +226,58 @@ export function billingRoutes(options: BillingRouterOptions): Router {
       res.json({ data: await billing.changePlan(requireScope(), parsed.data) });
     },
   );
+
+  /**
+   * I8's invoice details.
+   *
+   * `billing:write`, which is owner-only and ungrantable to an API key. A
+   * billing address and a VAT id are what a company's invoices are issued
+   * against, and an admin who can invite members has no business changing
+   * them.
+   */
+  router.patch('/billing/details', ...write, async (req: Request, res: Response) => {
+    const parsed = billingDetailsSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new AppError('validation_failed', 'Invalid billing details', 400, details(parsed.error));
+    }
+
+    res.json({ data: await billing.updateDetails(requireScope(), parsed.data) });
+  });
+
+  /**
+   * I9's "Export everything".
+   *
+   * 202: the export has been asked for and is not ready. 200 would say the
+   * data was in the response.
+   */
+  router.post('/billing/export', ...write, async (_req: Request, res: Response) => {
+    const result = await billing.requestExport(requireScope(), {
+      requestedBy: requirePrincipal().userId,
+    });
+
+    res.status(202).json({ data: result });
+  });
+
+  /**
+   * I9b's "Reactivate".
+   *
+   * Writes nothing locally: it clears the scheduled cancellation at Stripe
+   * and the `customer.subscription.updated` webhook writes the flag. The
+   * browser invalidates and re-reads rather than trusting this response.
+   */
+  router.post('/billing/reactivate', ...write, async (_req: Request, res: Response) => {
+    res.json({ data: await billing.reactivate(requireScope()) });
+  });
+
+  /**
+   * I1b's "Retry now".
+   *
+   * The invoice is chosen server-side. A client that could name one could
+   * ask us to charge somebody else's.
+   */
+  router.post('/billing/retry-payment', ...write, async (_req: Request, res: Response) => {
+    res.json({ data: await billing.retryPayment(requireScope()) });
+  });
 
   router.post('/billing/cancel', ...write, async (req: Request, res: Response) => {
     const parsed = cancelSchema.safeParse(req.body ?? {});

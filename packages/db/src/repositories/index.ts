@@ -65,6 +65,27 @@ export type {
 export { ContactListRepository, TagRepository } from './contact-lists.js';
 export type { ListRow, TagRow } from './contact-lists.js';
 
+// The aggregates and set operations section D needs beyond CRUD.
+export {
+  SavedViewRepository,
+  ExportJobRepository,
+  AudienceStatsRepository,
+  TagMergeRepository,
+} from './audience-extras.js';
+export type {
+  SavedViewRow,
+  SavedViewFilterValues,
+  ExportJobRow,
+  ExportResource,
+  ExportStatus,
+  AudienceStatsRow,
+  TagStatsRow,
+  TagMergePreviewRow,
+  TagMergeResult,
+  SuppressionSummaryRow,
+  SuppressionSourceRow,
+} from './audience-extras.js';
+
 export { SegmentRepository } from './segments.js';
 export type { SegmentRow, CompiledPreview } from './segments.js';
 
@@ -92,15 +113,29 @@ export type { DeadLetterRow } from './global/dead-letters.js';
 export { GlobalScheduledJobRepository } from './global/scheduled-jobs.js';
 export type { ScheduledJobRow } from './global/scheduled-jobs.js';
 export { CampaignRepository } from './campaigns.js';
-export type { CampaignRow, CampaignCountersRow, RecipientRow } from './campaigns.js';
+export type {
+  CampaignRow,
+  CampaignCountersRow,
+  CampaignEventRow,
+  RecipientRow,
+} from './campaigns.js';
 export { CampaignEngineRepository } from './campaign-engine.js';
 export type { LaunchSnapshotResult } from './campaign-engine.js';
 export { SendingPoolRepository } from './pools.js';
-export type { SendingPoolRow, PoolMemberRow } from './pools.js';
+export type { SendingPoolRow, PoolMemberRow, EligibleSenderRow } from './pools.js';
 export { AnalyticsRepository } from './analytics.js';
-export type { CampaignStatsRow, DailyStatsRow, LinkStatsRow } from './analytics.js';
+export type {
+  CampaignStatsRow,
+  DailyStatsRow,
+  LinkStatsRow,
+  CampaignProviderTotalsRow,
+  BounceSplitRow,
+  DashboardCampaignRow,
+} from './analytics.js';
 export { MeteringRepository } from './metering.js';
 export type { UsageAggregateRow, UsageLedgerRow, AggregateKeyInput } from './metering.js';
+export { BillingCustomerRepository, DEFAULT_BILLING_PROVIDER } from './billing.js';
+export type { BillingCustomerRow, BillingDetailsPatch } from './billing.js';
 export { EntitlementsRepository } from './entitlements.js';
 export type { EntitlementRecord, WorkspaceBillingStateRow } from './entitlements.js';
 export { ApiKeyRepository } from './api-keys.js';

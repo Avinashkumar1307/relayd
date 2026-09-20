@@ -103,6 +103,19 @@ export function campaignRoutes(options: CampaignRouterOptions): Router {
     res.json({ data: await campaigns.progress(requireScope(), id(req)) });
   });
 
+  /**
+   * G3's event timeline.
+   *
+   * `workspace:read`, like the rest of the campaign's report: a viewer who
+   * can see that a campaign was paused should be able to see who paused it.
+   * The audit log, which is the owner-and-admin record of everything anybody
+   * did across the whole workspace, is a different thing behind a different
+   * permission.
+   */
+  router.get('/campaigns/:id/timeline', ...chain, read, async (req: Request, res: Response) => {
+    res.json({ data: await campaigns.timeline(requireScope(), id(req)) });
+  });
+
   router.get('/campaigns/:id/recipients', ...chain, read, async (req: Request, res: Response) => {
     const query = listRecipientsSchema.parse(req.query);
     res.json({ data: await campaigns.listRecipients(requireScope(), id(req), query) });
@@ -263,6 +276,50 @@ export function campaignRoutes(options: CampaignRouterOptions): Router {
       res.status(201).json({ data: result });
     },
   );
+
+  /**
+   * Archive and unarchive (G1's row menu).
+   *
+   * `campaign:write`, not `campaign:launch`. Archiving a finished campaign
+   * changes nothing about sending, and an editor tidying the list is not
+   * making a sending decision. The repository's status guard is what stops
+   * a live campaign being hidden mid-send.
+   *
+   * Unarchive is not in the design's menu — there is no frame that lists
+   * archived campaigns yet — but archiving is otherwise a one-way door
+   * reached from a menu two items below "Duplicate". `GET /campaigns` takes
+   * `?archived=archived` to find them again.
+   */
+  router.post('/campaigns/:id/archive', ...chain, write, async (req: Request, res: Response) => {
+    res.json({ data: await campaigns.archive(requireScope(), id(req)) });
+  });
+
+  router.post('/campaigns/:id/unarchive', ...chain, write, async (req: Request, res: Response) => {
+    res.json({ data: await campaigns.unarchive(requireScope(), id(req)) });
+  });
+
+  /**
+   * The pre-flight (G2 step 7).
+   *
+   * Runs the launch checks and launches nothing: no claim, no snapshot, no
+   * event. It is the same `runLaunchPreflight` the launch path calls, so the
+   * two cannot disagree — a pre-flight that says "7 pass" and is then
+   * refused by the launch it was meant to predict teaches the customer that
+   * the page is wrong and the error is noise.
+   *
+   * `campaign:write`, not `campaign:launch`: an editor who may build a
+   * campaign but not send it still has to be told why it will not send, or
+   * they cannot fix it and the person who can launch gets handed a broken
+   * draft.
+   *
+   * POST rather than GET despite reading nothing, because it is not free:
+   * it renders the message and calls a reputation feed. A GET invites
+   * caching and prefetching, and a link-reputation lookup fired by a
+   * browser's preconnect is a lookup nobody asked for.
+   */
+  router.post('/campaigns/:id/preflight', ...chain, write, async (req: Request, res: Response) => {
+    res.json({ data: await campaigns.preflight(requireScope(), id(req)) });
+  });
 
   router.post(
     '/campaigns/:id/test-send',

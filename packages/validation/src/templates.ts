@@ -53,5 +53,29 @@ export const previewTemplateSchema = z
   })
   .strict();
 
+/**
+ * F2a's "Send test".
+ *
+ * One address, not five. The provider-level test send at
+ * `POST /senders/:id/test` takes up to five because it exists to prove a
+ * connection works; this one exists to let an author look at their own
+ * email, and an author who needs it in five inboxes can press the button
+ * five times. A cap of one is also the cheapest possible answer to "can this
+ * endpoint be used to send mail outside campaigns, suppression and
+ * metering".
+ *
+ * `senderId` is optional: F2a offers no sender picker, and the test-send
+ * port resolves the workspace's usable sender when none is named. It is
+ * accepted so an author with several verified senders can say which one,
+ * without a second endpoint.
+ */
+export const sendTemplateTestSchema = z
+  .object({
+    to: z.string().email().max(320),
+    senderId: z.string().uuid().optional(),
+  })
+  .strict();
+
 export type CreateTemplateRequest = z.infer<typeof createTemplateSchema>;
+export type SendTemplateTestRequest = z.infer<typeof sendTemplateTestSchema>;
 export type SaveTemplateVersionRequest = z.infer<typeof saveTemplateVersionSchema>;

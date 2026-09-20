@@ -206,6 +206,12 @@ export const campaigns = pgTable(
     createdAt,
     updatedAt,
     deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * G1's Archive action (migration 0021). Orthogonal to `status`: an
+     * archived campaign keeps the status it finished in, so its report still
+     * says what happened.
+     */
+    archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'date' }),
   },
   (table) => [
     uniqueIndex('uq_campaign_ws').on(table.id, table.workspaceId),

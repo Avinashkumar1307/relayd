@@ -111,9 +111,11 @@ export const poolsApi = {
    * The verified senders a pool may contain, with their connection's current
    * headroom — everything H1b's member list draws.
    *
-   * BACKEND PENDING: GET /pools/senders. `GET /senders` exists but answers
-   * with sender rows alone: no connection label, no rate and no remaining
-   * quota, and the combined-headroom panel is those three numbers.
+   * `GET /senders` answers with sender rows alone — no connection label, no
+   * rate, no remaining quota — and the combined-headroom panel is those
+   * three numbers. Each is the *connection's*, repeated unchanged on every
+   * sender that draws on it, which is what lets `combineHeadroom` below
+   * count each connection once.
    */
   eligibleSenders: () => api.get<EligibleSender[]>('/pools/senders'),
 

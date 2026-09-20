@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { ContactListId, TagId, UserId, WorkspaceId } from '@relayd/types';
 import { contactListMembers, contactLists, contactTags, tags } from '../schema/audience.js';
 import type { WorkspaceScope } from '../scope.js';
@@ -11,6 +11,8 @@ export interface ListRow {
   description: string | null;
   memberCount: number;
   createdAt: Date;
+  /** Set when the list was archived (migration 0020); null while active. */
+  archivedAt: Date | null;
 }
 
 export class ContactListRepository {
@@ -75,6 +77,38 @@ export class ContactListRepository {
       .returning({ id: contactLists.id });
 
     return rows.length > 0;
+  }
+
+  /**
+   * Archives a list, once.
+   *
+   * Guarded on `archived_at IS NULL` and returning the row, so a second
+   * archive of the same list reports zero rows rather than silently moving
+   * the date forward. D3 prints that date on the card; an idempotent call
+   * that rewrote it would change what the card says for no reason.
+   *
+   * Archiving is deliberately not deleting: the list stays visible and
+   * read-only, and anything that referenced it — a campaign's audience, an
+   * import's target — still resolves.
+   */
+  async archive(
+    scope: WorkspaceScope,
+    id: ContactListId,
+    at: Date,
+  ): Promise<ListRow | null> {
+    const [row] = await this.db
+      .update(contactLists)
+      .set({ archivedAt: at, updatedAt: at })
+      .where(
+        and(
+          eq(contactLists.id, id),
+          eq(contactLists.workspaceId, scope.workspaceId),
+          isNull(contactLists.archivedAt),
+        ),
+      )
+      .returning();
+
+    return row === undefined ? null : toListRow(row);
   }
 
   /**
@@ -147,6 +181,33 @@ export class TagRepository {
     return row === undefined ? null : toTagRow(row);
   }
 
+  /**
+   * Renames or recolours a tag.
+   *
+   * Returns null when the tag is not this workspace's, which the service
+   * turns into a 404 — the same answer a non-existent tag gets, so the
+   * endpoint cannot be used to discover that another workspace owns an id
+   * (docs/06: cross-tenant reads are 404, never 403).
+   *
+   * A name that collides with another tag in the workspace raises the
+   * `uq_tag_name` unique violation rather than being silently ignored; the
+   * service maps it to a 409. Silently keeping the old name would leave the
+   * dialog showing a rename that did not happen.
+   */
+  async update(
+    scope: WorkspaceScope,
+    id: TagId,
+    patch: { name?: string; color?: string },
+  ): Promise<TagRow | null> {
+    const [row] = await this.db
+      .update(tags)
+      .set(patch)
+      .where(and(eq(tags.id, id), eq(tags.workspaceId, scope.workspaceId)))
+      .returning();
+
+    return row === undefined ? null : toTagRow(row);
+  }
+
   /** Deleting a tag removes its assignments, by cascade. */
   async remove(scope: WorkspaceScope, id: TagId): Promise<boolean> {
     const rows = await this.db
@@ -175,6 +236,7 @@ function toListRow(row: typeof contactLists.$inferSelect): ListRow {
     description: row.description,
     memberCount: row.memberCount,
     createdAt: row.createdAt,
+    archivedAt: row.archivedAt,
   };
 }
 

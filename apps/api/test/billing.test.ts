@@ -94,6 +94,18 @@ function service(
     async billingEmail() {
       return 'owner@example.com';
     },
+    async billingDetails() {
+      return null;
+    },
+    async saveBillingDetails(_scope, input) {
+      calls.push('save-details');
+      return {
+        email: input.email,
+        company: input.company,
+        address: input.address,
+        taxId: input.taxId,
+      };
+    },
     ...over.repo,
   };
 

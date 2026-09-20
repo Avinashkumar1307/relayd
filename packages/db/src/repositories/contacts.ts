@@ -3,6 +3,7 @@ import type { ContactId, ContactListId, TagId, WorkspaceId } from '@relayd/types
 import { contactListMembers, contactTags, contacts } from '../schema/audience.js';
 import type { WorkspaceScope } from '../scope.js';
 import type { Executor } from './executor.js';
+import { contactSearchPredicate } from '../helpers.js';
 
 export type ContactStatus =
   | 'subscribed'
@@ -174,6 +175,8 @@ export class ContactRepository {
       limit?: number | undefined;
       cursor?: string | undefined;
       status?: ContactStatus | undefined;
+      /** D1's search box. Matches email or either name, case-insensitively. */
+      search?: string | undefined;
     } = {},
   ): Promise<ContactPage> {
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
@@ -183,6 +186,11 @@ export class ContactRepository {
       eq(contacts.workspaceId, scope.workspaceId),
       isNull(contacts.deletedAt),
       ...(options.status === undefined ? [] : [eq(contacts.status, options.status)]),
+      // The same predicate the header's `matching` count uses, so the footer
+      // and the rows cannot disagree.
+      ...(options.search === undefined || options.search === ''
+        ? []
+        : [contactSearchPredicate(options.search)]),
       ...(cursor === null
         ? []
         : [

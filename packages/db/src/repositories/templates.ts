@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { TemplateId, TemplateVersionId, UserId, WorkspaceId } from '@relayd/types';
 import { templates, templateVersions } from '../schema/templates.js';
 import type { WorkspaceScope } from '../scope.js';
@@ -22,6 +22,16 @@ export interface TemplateRow {
   currentVersionId: TemplateVersionId | null;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * F1's Active / Archived tabs.
+   *
+   * Exposed as a boolean rather than the timestamp: nothing above this layer
+   * has a use for *when* a template was archived, and a nullable date read as
+   * a flag is how `if (template.archivedAt)` eventually becomes
+   * `if (template.archivedAt !== undefined)` against a row that always has
+   * the key.
+   */
+  archived: boolean;
 }
 
 export interface TemplateVersionRow {
@@ -77,6 +87,13 @@ export class TemplateRepository {
     return row === undefined ? null : toTemplate(row);
   }
 
+  /**
+   * Every template in the workspace, archived ones included.
+   *
+   * F1 draws Active and Archived as two tabs over one list and filters in
+   * the browser, so filtering here would empty the second tab. The `archived`
+   * flag on each row is what the tabs split on.
+   */
   async list(scope: WorkspaceScope, options: { limit?: number } = {}): Promise<TemplateRow[]> {
     const rows = await this.db
       .select()
@@ -86,6 +103,79 @@ export class TemplateRepository {
       .limit(Math.min(Math.max(options.limit ?? 50, 1), 200));
 
     return rows.map(toTemplate);
+  }
+
+  /**
+   * The names already in use that begin with `prefix`, for picking a free
+   * name for a duplicate.
+   *
+   * `uq_template_name` is unique per workspace on non-deleted rows, so
+   * "Autumn escapes (copy)" fails with a 23505 the second time somebody
+   * duplicates the same template. One read of the neighbourhood is cheaper
+   * and far more legible than catching a constraint violation inside a
+   * transaction that would then have to be rolled back to a savepoint.
+   *
+   * The read is advisory, not a guarantee: two duplicates racing can still
+   * both pick the same name, and the unique index is what actually decides.
+   * The service turns that loss into a 409 rather than a 500.
+   */
+  async listNamesLike(scope: WorkspaceScope, prefix: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ name: templates.name })
+      .from(templates)
+      .where(
+        and(
+          eq(templates.workspaceId, scope.workspaceId),
+          isNull(templates.deletedAt),
+          // `like` with an escaped prefix: a template named "50% off" must
+          // not turn its own name into a wildcard.
+          sql`${templates.name} LIKE ${`${escapeLike(prefix)}%`} ESCAPE '\\'`,
+        ),
+      )
+      .limit(200);
+
+    return rows.map((row) => row.name);
+  }
+
+  /**
+   * Archives a template. Guarded, so archiving twice reports honestly.
+   *
+   * Not a delete: the row stays readable, `uq_template_name` keeps its name
+   * reserved, and a campaign that pinned one of its versions still renders.
+   */
+  async archive(scope: WorkspaceScope, id: TemplateId): Promise<TemplateRow | null> {
+    const [row] = await this.db
+      .update(templates)
+      .set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(templates.id, id),
+          eq(templates.workspaceId, scope.workspaceId),
+          isNull(templates.deletedAt),
+          isNull(templates.archivedAt),
+        ),
+      )
+      .returning();
+
+    return row === undefined ? null : toTemplate(row);
+  }
+
+  /** The inverse, guarded the same way. */
+  async unarchive(scope: WorkspaceScope, id: TemplateId): Promise<TemplateRow | null> {
+    const [row] = await this.db
+      .update(templates)
+      .set({ archivedAt: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(templates.id, id),
+          eq(templates.workspaceId, scope.workspaceId),
+          isNull(templates.deletedAt),
+          isNotNull(templates.archivedAt),
+        ),
+      )
+      .returning();
+
+    return row === undefined ? null : toTemplate(row);
   }
 
   async rename(
@@ -288,6 +378,11 @@ export class TemplateRepository {
   }
 }
 
+/** `LIKE` metacharacters, so a template named "50% off" matches itself only. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/gu, (character) => `\\${character}`);
+}
+
 function toTemplate(row: typeof templates.$inferSelect): TemplateRow {
   return {
     id: row.id,
@@ -297,6 +392,7 @@ function toTemplate(row: typeof templates.$inferSelect): TemplateRow {
     currentVersionId: row.currentVersionId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    archived: row.archivedAt !== null,
   };
 }
 

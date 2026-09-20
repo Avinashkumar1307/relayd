@@ -113,6 +113,15 @@ export const cloneCampaignSchema = z.object({
 export const listCampaignsSchema = z.object({
   state: z.string().trim().max(40).optional(),
   search: z.string().trim().max(200).optional(),
+  /**
+   * Whether archived campaigns are included.
+   *
+   * Defaults to `active`, so archiving actually removes a campaign from G1 —
+   * a row the customer filed away reappearing at the top of Completed next
+   * week is the whole reason the action exists. `archived` is how they find
+   * it again; `all` is for an export that must not silently omit rows.
+   */
+  archived: z.enum(['active', 'archived', 'all']).default('active'),
   limit: z.coerce.number().int().min(1).max(100).default(25),
   cursor: z.string().trim().max(500).optional(),
 });

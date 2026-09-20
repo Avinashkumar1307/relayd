@@ -60,6 +60,29 @@ export const updateContactSchema = z
   })
   .strict();
 
+/**
+ * A saved view's slug, and the value `?view=` carries.
+ *
+ * Lowercase kebab so it is safe in a URL without escaping, and so two views
+ * cannot differ only by case and produce two tabs that look identical.
+ */
+export const savedViewKeySchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u, 'Use lowercase letters, numbers and hyphens');
+
+/**
+ * The keys D1 draws itself, before any saved view.
+ *
+ * Reserved at creation: a saved view called `all` would render a second tab
+ * that looks exactly like the first one and filters differently.
+ */
+export const BASE_VIEW_KEYS = ['all', 'subscribed'] as const;
+
+/** D1's search box. Trimmed, because " " is not a search. */
+const contactSearchSchema = z.string().trim().max(200);
+
 export const listContactsQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -67,6 +90,115 @@ export const listContactsQuerySchema = z
     status: z
       .enum(['subscribed', 'unsubscribed', 'bounced', 'complained', 'cleaned'])
       .optional(),
+    /**
+     * A saved view's key. Resolved server-side to the filter it stores, so a
+     * view cannot be a way to send a predicate the list endpoint would not
+     * otherwise accept.
+     */
+    view: savedViewKeySchema.optional(),
+    q: contactSearchSchema.optional(),
+  })
+  .strict();
+
+/**
+ * The filter a saved view stores.
+ *
+ * Deliberately the subset of `listContactsQuerySchema` that describes *what*
+ * rather than *where in the page*: a stored cursor would be a position in a
+ * result set that no longer exists, and a stored limit would override the
+ * reader's own choice every time they opened the tab.
+ */
+export const savedViewFiltersSchema = z
+  .object({
+    status: z
+      .enum(['subscribed', 'unsubscribed', 'bounced', 'complained', 'cleaned'])
+      .optional(),
+    q: contactSearchSchema.optional(),
+  })
+  .strict();
+
+export const createSavedViewSchema = z
+  .object({
+    label: z.string().min(1).max(60).trim(),
+    filters: savedViewFiltersSchema.default({}),
+  })
+  .strict();
+
+/** PATCH bodies. `.strict()`, so an unknown field is a 400 rather than a no-op. */
+export const renameListSchema = z
+  .object({
+    name: z.string().min(1).max(120).trim(),
+    description: z.string().max(500).trim().optional(),
+  })
+  .strict();
+
+export const renameTagSchema = z
+  .object({
+    name: z.string().min(1).max(60).trim().optional(),
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/u, 'Use a hex colour like #3b82f6')
+      .optional(),
+  })
+  .strict()
+  .refine((value) => value.name !== undefined || value.color !== undefined, {
+    message: 'Give a name or a colour to change',
+  });
+
+/**
+ * Merging tags.
+ *
+ * Capped at 50 losers: the merge is one transaction over `contact_tags`, and
+ * an unbounded list is how one request locks an entire audience's tag rows.
+ * `keepId` may not appear in `mergeIds` — merging a tag into itself would
+ * delete the survivor at step four.
+ */
+export const mergeTagsSchema = z
+  .object({
+    keepId: z.string().min(1).max(64),
+    mergeIds: z.array(z.string().min(1).max(64)).min(1).max(50),
+  })
+  .strict()
+  .refine((value) => !value.mergeIds.includes(value.keepId), {
+    path: ['mergeIds'],
+    message: 'The tag being kept cannot also be merged away',
+  });
+
+/** `?ids=a,b,c` — what the merge dialog polls the preview with. */
+export const mergePreviewQuerySchema = z
+  .object({
+    ids: z
+      .string()
+      .min(1)
+      .max(3000)
+      .transform((value) => value.split(',').map((id) => id.trim()).filter((id) => id !== ''))
+      .pipe(z.array(z.string().min(1).max(64)).min(2).max(50)),
+  })
+  .strict();
+
+/**
+ * Starting an export.
+ *
+ * `ids` is the "Export selected" case and is capped at the same 1,000 as
+ * every other bulk operation. Beyond that the user wants a filtered export,
+ * which is what `filters` is for.
+ */
+export const createExportSchema = z
+  .object({
+    resource: z.enum(['contacts', 'suppressions', 'lists', 'tags', 'segments']),
+    ids: z.array(z.string().min(1).max(64)).max(1000).optional(),
+    filters: z.record(z.string().max(40), z.string().max(200)).optional(),
+  })
+  .strict();
+
+export const listSuppressionsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(500).default(100),
+    reason: z
+      .enum(['unsubscribe', 'hard_bounce', 'complaint', 'manual', 'global_block', 'invalid'])
+      .optional(),
+    source: z.string().min(1).max(64).optional(),
+    q: z.string().trim().max(200).optional(),
   })
   .strict();
 
@@ -185,3 +317,32 @@ export type CreateContactRequest = z.infer<typeof createContactSchema>;
 export type UpdateContactRequest = z.infer<typeof updateContactSchema>;
 export type CreateImportRequest = z.infer<typeof createImportSchema>;
 export type ImportMappingRequest = z.infer<typeof importMappingSchema>;
+export type ListContactsQuery = z.infer<typeof listContactsQuerySchema>;
+export type SavedViewFilters = z.infer<typeof savedViewFiltersSchema>;
+export type CreateSavedViewRequest = z.infer<typeof createSavedViewSchema>;
+export type MergeTagsRequest = z.infer<typeof mergeTagsSchema>;
+export type CreateExportRequest = z.infer<typeof createExportSchema>;
+export type ListSuppressionsQuery = z.infer<typeof listSuppressionsQuerySchema>;
+
+/**
+ * Turns a label into a view key: "Recently bounced" → "recently-bounced".
+ *
+ * Shared rather than done in the browser, so a view created through the API
+ * and one created from the "+ Save view" button get the same key for the
+ * same words. The trailing counter is the caller's job: this function is
+ * pure and has no idea what is already taken.
+ */
+export function savedViewKeyFor(label: string): string {
+  const key = label
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, '-')
+    .replace(/^-+|-+$/gu, '')
+    .slice(0, 64)
+    .replace(/-+$/u, '');
+
+  // A label of nothing but punctuation still needs a key, and "view" is
+  // better than an empty string that would fail the pattern.
+  return key === '' ? 'view' : key;
+}

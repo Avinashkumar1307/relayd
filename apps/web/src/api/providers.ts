@@ -144,7 +144,11 @@ export const providerApi = {
   /**
    * E1d's "Send test event".
    *
-   * BACKEND PENDING: POST /providers/:id/ingest/test
+   * The server queues a job that posts a signed synthetic event at this
+   * connection's own ingest URL, so what is proved is the whole inbound
+   * path — the URL resolves, the signature verifies against this
+   * connection's secret, and the event lands. 422 for a provider with no
+   * inbound webhooks at all, which is SMTP (D4).
    */
   sendTestEvent: (id: string) => api.post<{ sent: boolean }>(`/providers/${id}/ingest/test`),
 
@@ -178,14 +182,20 @@ export const providerApi = {
   /**
    * The SPF / DKIM / DMARC records behind a sender (E2b).
    *
-   * BACKEND PENDING: GET /senders/:id/dns
+   * The server reports what the last identity sync stored; it runs no
+   * resolver of its own. A record the provider has told us nothing about
+   * comes back with an empty `value` and a `found` line saying so, rather
+   * than a guess — a DKIM host in particular carries a provider-chosen
+   * selector, and a made-up one would never verify.
    */
   senderDns: (id: string) => api.get<SenderDns>(`/senders/${id}/dns`),
 
   /**
    * E2b's "Check DNS now".
    *
-   * BACKEND PENDING: POST /senders/:id/dns/check
+   * Queues the re-check and answers with the state as it stands — the check
+   * itself calls the provider, which needs the credential, which the API
+   * process cannot read. `nextCheckInMinutes` says when the answer moves.
    */
   checkSenderDns: (id: string) => api.post<SenderDns>(`/senders/${id}/dns/check`),
 };

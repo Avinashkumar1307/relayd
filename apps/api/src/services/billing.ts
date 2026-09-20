@@ -121,21 +121,121 @@ export interface BillingRepositoryLike {
    * the right answer and the only caller.
    */
   billingEmail(scope: WorkspaceScope): Promise<string | null>;
+
+  /**
+   * The invoice identity a customer edits on I8, or null before they have
+   * ever saved one. Backed by `billing_customers` (migration 0022).
+   */
+  billingDetails(scope: WorkspaceScope): Promise<BillingDetails | null>;
+
+  /**
+   * Writes it, creating the billing customer row if there is not one yet.
+   *
+   * Creating it here is the R18 ordering seen from the other side: the row
+   * exists before Stripe knows anything about it, and a customer who enters
+   * their VAT id before they ever reach checkout is the ordinary case.
+   */
+  saveBillingDetails(
+    scope: WorkspaceScope,
+    input: BillingDetails & { newBillingCustomerId: string },
+  ): Promise<BillingDetails>;
+}
+
+/** What I8 shows and edits. No amounts: this is an address, not money. */
+export interface BillingDetails {
+  email: string;
+  company: string;
+  address: string;
+  taxId: string;
+}
+
+/**
+ * The two subscription-lifecycle calls I9 and I1b need, which
+ * `BillingProviderAdapter` does not declare.
+ *
+ * Optional, and narrowed here rather than added to the port in
+ * `@relayd/billing`, for one reason: that interface is implemented by a fake
+ * in every billing test in the repository, and a new required method breaks
+ * all of them at once. Adding them properly is an owner-reviewed change to
+ * `packages/billing/src/port.ts` and is raised in this batch's report.
+ *
+ * Until then a deployment whose adapter does not implement them answers 503
+ * from the routes below, which is true — the capability is not there — and
+ * is not the same as pretending the button worked.
+ */
+export interface SubscriptionLifecycleAdapter {
+  /** Clears a scheduled cancellation. Stripe: `cancel_at_period_end = false`. */
+  resumeSubscription?(input: { providerSubscriptionId: string }): Promise<void>;
+
+  /** Attempts payment on an open invoice. Stripe: `invoices.pay`. */
+  payInvoice?(input: { providerInvoiceId: string }): Promise<void>;
+}
+
+/**
+ * Where a request to export everything goes (I9's "Export everything").
+ *
+ * A job, not a response body. A workspace's contacts, campaigns, events and
+ * invoices are gigabytes and are assembled by the `io` worker; the HTTP
+ * request's whole job is to record that the customer asked and to answer
+ * quickly.
+ */
+export interface BillingExportQueue {
+  enqueue(input: { workspaceId: string; requestedBy: string }): Promise<{ jobId: string }>;
 }
 
 export type BillingUnitOfWork = <T>(fn: (repos: BillingRepositories) => Promise<T>) => Promise<T>;
 
 export interface BillingServiceOptions {
   unitOfWork: BillingUnitOfWork;
-  provider: BillingProviderAdapter;
+  provider: BillingProviderAdapter & SubscriptionLifecycleAdapter;
   checkoutPort: (scope: WorkspaceScope) => CheckoutPort;
   planChangePort: (scope: WorkspaceScope) => PlanChangePort;
   /** Supplied so the billing customer id is known before the row is written (R18). */
   newId: () => string;
   appUrl: string;
+  /** Absent until the io worker's export queue is wired; the route then 503s. */
+  exports?: BillingExportQueue;
+  /** Records who asked, for the audit row on a detail change and an export. */
+  audit?: BillingAuditPort;
+}
+
+/**
+ * Where a billing change is recorded so a person can see it later.
+ *
+ * A port rather than the audit repository directly, because this service
+ * already takes its database through `unitOfWork` and the billing
+ * repository interface above deliberately names only billing calls — an
+ * audit append reached through it would make every repository method
+ * reachable from a billing route.
+ */
+export interface BillingAuditPort {
+  record(
+    scope: WorkspaceScope,
+    entry: { action: string; resourceId: string; before?: unknown; after?: unknown },
+  ): Promise<void>;
 }
 
 const INVOICE_PAGE = 24;
+
+/**
+ * Invoice statuses a retry could act on.
+ *
+ * `draft` is excluded: a draft has not been finalised and there is nothing
+ * to charge. `uncollectible` is included because Stripe marks an invoice so
+ * after exhausting its own retries, and the customer fixing their card and
+ * pressing "Retry now" is exactly the case that gets it paid.
+ */
+const UNPAID_STATUSES: ReadonlySet<string> = new Set(['open', 'past_due', 'uncollectible']);
+
+/** The audited form of a detail change: never the tax id itself. */
+function redactDetails(details: BillingDetails): Record<string, unknown> {
+  return {
+    email: details.email,
+    company: details.company,
+    address: details.address,
+    hasTaxId: details.taxId !== '',
+  };
+}
 
 export class BillingService {
   constructor(private readonly options: BillingServiceOptions) {}
@@ -379,6 +479,194 @@ export class BillingService {
     }
 
     return { endsAt: result.endsAt ?? null };
+  }
+
+  /**
+   * I9b's "Reactivate": undo a cancellation that has not happened yet.
+   *
+   * **Nothing here writes subscription state.** It tells Stripe to clear the
+   * scheduled cancellation and stops. `customer.subscription.updated` then
+   * arrives carrying the authoritative `cancel_at_period_end`, and the
+   * webhook path writes it — exactly as `cancelSubscription` in
+   * `@relayd/billing` does, and for the same reason: a local guess is a
+   * second source of truth for a flag Stripe owns, and the two disagree the
+   * first time a call fails after the write.
+   *
+   * The browser knows this and polls; `billingApi.reactivate` invalidates the
+   * overview rather than trusting the response.
+   */
+  async reactivate(scope: WorkspaceScope): Promise<{ ok: true }> {
+    const resume = this.options.provider.resumeSubscription;
+    if (resume === undefined) {
+      throw new AppError(
+        'service_unavailable',
+        'Reactivating a subscription is not available on this deployment yet',
+        503,
+      );
+    }
+
+    const subscription = await this.options.unitOfWork((repos) =>
+      repos.billing.currentSubscription(scope),
+    );
+
+    if (subscription === null) {
+      throw new AppError('not_found', 'This workspace has no subscription', 404);
+    }
+
+    if (!subscription.cancelAtPeriodEnd) {
+      // Not an error the customer caused, and not something to retry. 409
+      // rather than 200: the button they pressed said "reactivate", and
+      // answering ok to a no-op teaches them it did something.
+      throw new AppError('conflict', 'This subscription is not scheduled to cancel', 409);
+    }
+
+    try {
+      await resume.call(this.options.provider, {
+        providerSubscriptionId: subscription.providerSubscriptionId,
+      });
+    } catch {
+      throw new AppError(
+        'provider_unavailable',
+        'The payment provider could not reactivate the subscription',
+        502,
+      );
+    }
+
+    await this.options.planChangePort(scope).recordEvent({
+      workspaceId: scope.workspaceId as string,
+      eventType: 'subscription.reactivated',
+      detail: { planCode: subscription.planCode },
+    });
+
+    return { ok: true };
+  }
+
+  /**
+   * I1b's "Retry now": ask Stripe to charge the past-due invoice again.
+   *
+   * The invoice is chosen server-side from what we mirror of Stripe rather
+   * than named by the client. A client that could name an invoice could ask
+   * us to charge a different workspace's, and the workspace scope on the
+   * read is the only thing standing between those two requests.
+   *
+   * Like `reactivate`, this writes nothing: `invoice.paid` or
+   * `invoice.payment_failed` follows, and the dunning ladder moves on that.
+   */
+  async retryPayment(scope: WorkspaceScope): Promise<{ ok: true }> {
+    const pay = this.options.provider.payInvoice;
+    if (pay === undefined) {
+      throw new AppError(
+        'service_unavailable',
+        'Retrying a payment is not available on this deployment yet',
+        503,
+      );
+    }
+
+    const invoice = await this.options.unitOfWork(async (repos) => {
+      const invoices = await repos.billing.listInvoices(scope, { limit: INVOICE_PAGE });
+      return invoices.find((row) => UNPAID_STATUSES.has(row.status)) ?? null;
+    });
+
+    if (invoice === null) {
+      throw new AppError('not_found', 'There is no unpaid invoice to retry', 404);
+    }
+
+    try {
+      await pay.call(this.options.provider, { providerInvoiceId: invoice.id });
+    } catch {
+      // 502, not 402. The card may well have been declined again, but we
+      // will not know that until the webhook: all this call reports is
+      // whether Stripe accepted the instruction.
+      throw new AppError(
+        'provider_unavailable',
+        'The payment provider could not retry the payment',
+        502,
+      );
+    }
+
+    return { ok: true };
+  }
+
+  /** I8's form, as it stands. Null fields render as empty inputs, not as "—". */
+  async details(scope: WorkspaceScope): Promise<BillingDetails> {
+    return this.options.unitOfWork(async (repos) => {
+      const [stored, ownerEmail] = await Promise.all([
+        repos.billing.billingDetails(scope),
+        repos.billing.billingEmail(scope),
+      ]);
+
+      // The owner's address is the fallback for where receipts go, which is
+      // the same answer `startCheckout` uses. A workspace that has never
+      // opened this form still has a sensible one.
+      return stored ?? { email: ownerEmail ?? '', company: '', address: '', taxId: '' };
+    });
+  }
+
+  /**
+   * I8's "Save details".
+   *
+   * Stored locally and audited. It is **not** pushed to Stripe here, because
+   * `BillingProviderAdapter` has no `updateCustomer` and adding one is an
+   * owner-reviewed change to `packages/billing` — raised in this batch's
+   * report. Until it exists, an invoice Stripe issues carries the address
+   * Stripe holds, which is the one taken at checkout. That divergence is
+   * real and is the reason this is flagged rather than quietly shipped.
+   */
+  async updateDetails(scope: WorkspaceScope, input: BillingDetails): Promise<BillingDetails> {
+    return this.options.unitOfWork(async (repos) => {
+      const before = await repos.billing.billingDetails(scope);
+
+      const after = await repos.billing.saveBillingDetails(scope, {
+        ...input,
+        newBillingCustomerId: this.options.newId(),
+      });
+
+      await this.options.audit?.record(scope, {
+        action: 'billing.details_updated',
+        resourceId: scope.workspaceId as string,
+        // The address and the company. The tax id is recorded as present or
+        // absent rather than by value: an audit log is read by more people
+        // than the billing page is, and a VAT number identifies a business.
+        before: before === null ? null : redactDetails(before),
+        after: redactDetails(after),
+      });
+
+      return after;
+    });
+  }
+
+  /**
+   * I9's "Export everything".
+   *
+   * Enqueued, never assembled here: a workspace's contacts, campaigns,
+   * events and invoices are gigabytes, and a request that streamed them
+   * would hold an API worker for the length of the export.
+   *
+   * Idempotence is the queue's, not this method's. Asking twice is what a
+   * customer does when the first email has not arrived, and the `io` worker
+   * dedupes on the workspace and the open request.
+   */
+  async requestExport(
+    scope: WorkspaceScope,
+    input: { requestedBy: string },
+  ): Promise<{ ok: true }> {
+    const queue = this.options.exports;
+    if (queue === undefined) {
+      throw new AppError(
+        'service_unavailable',
+        'Exports are not available on this deployment yet',
+        503,
+      );
+    }
+
+    await queue.enqueue({ workspaceId: scope.workspaceId as string, requestedBy: input.requestedBy });
+
+    await this.options.audit?.record(scope, {
+      action: 'billing.export_requested',
+      resourceId: scope.workspaceId as string,
+    });
+
+    return { ok: true };
   }
 
   async invoices(scope: WorkspaceScope, input: { limit?: number; before?: Date }) {

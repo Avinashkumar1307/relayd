@@ -1,5 +1,10 @@
 import { MIN_HEALTH, eligibleMembers, sharedConnections, type PoolMember } from '@relayd/campaigns';
-import type { AuditLogRepository, SendingPoolRepository, WorkspaceScope } from '@relayd/db';
+import type {
+  AuditLogRepository,
+  EligibleSenderRow,
+  SendingPoolRepository,
+  WorkspaceScope,
+} from '@relayd/db';
 import { AppError } from '@relayd/types';
 import type { SendingPoolId } from '@relayd/types';
 import { buildAuditEntry, type Actor } from './audit.js';
@@ -122,6 +127,48 @@ export class PoolService {
          */
         wouldHold: usable.length === 0,
       };
+    });
+  }
+
+  /**
+   * The senders a pool may contain, with their connection's headroom (H1b).
+   *
+   * `GET /senders` already lists sender rows; this exists because the
+   * drawer's combined-headroom panel is three numbers that are **not** on a
+   * sender row — the connection's label, its rate and what it has left
+   * today — and a browser that fetched senders and connections separately
+   * would have to join them itself and would get the shared-quota
+   * arithmetic wrong.
+   *
+   * Every connection figure is repeated on every sender that draws on it,
+   * unchanged. That is what lets `combineHeadroom` in the browser group by
+   * `providerConnectionId` and count each connection once, which is the
+   * whole rule docs/07 spends a page on: a pool is not a way to exceed a
+   * provider account's quota.
+   */
+  async eligibleSenders(scope: WorkspaceScope): Promise<EligibleSenderView[]> {
+    const now = (this.options.now ?? (() => new Date()))();
+    const day = now.toISOString().slice(0, 10);
+
+    return this.options.unitOfWork(async (repos) => {
+      const rows = await repos.pools.listEligibleSenders(scope, { day });
+
+      return rows.map((row) => {
+        const blockedReason = blockedReasonFor(row);
+
+        return {
+          id: row.senderAccountId,
+          email: row.fromEmail,
+          monogram: MONOGRAM[row.providerType] ?? row.providerType.slice(0, 4).toUpperCase(),
+          providerConnectionId: row.providerConnectionId,
+          connectionLabel: connectionLabel(row),
+          perSecond: perSecondOf(row.quotaSnapshot),
+          remainingToday: remainingTodayOf(row.quotaSnapshot, row.sentToday),
+          // Null rather than absent: the browser's type is
+          // `blockedReason?: string | null`, and a row that is fine says so.
+          blockedReason,
+        };
+      });
     });
   }
 
@@ -250,4 +297,106 @@ export class PoolService {
       }),
     );
   }
+}
+
+/** One row of H1b's member list, as the browser's `EligibleSender` is shaped. */
+export interface EligibleSenderView {
+  id: string;
+  email: string;
+  monogram: string;
+  providerConnectionId: string;
+  connectionLabel: string;
+  perSecond: number;
+  remainingToday: number;
+  blockedReason: string | null;
+}
+
+/**
+ * The letters in the 16px tile.
+ *
+ * Here rather than shared with the browser's `PROVIDER_INFO` because that
+ * table is a marketing catalogue — blurbs, pitches, what a customer gives
+ * up — and none of it belongs in a server response. Only the monogram does,
+ * and it is four short strings.
+ */
+const MONOGRAM: Readonly<Record<string, string>> = {
+  ses: 'SES',
+  sendgrid: 'SG',
+  mailgun: 'MG',
+  brevo: 'BR',
+  smtp: 'SMTP',
+  google: 'GW',
+};
+
+/** "Amazon SES · eu-west-1", built from the connection's own non-secret config. */
+function connectionLabel(row: EligibleSenderRow): string {
+  const detail = configDetail(row.config);
+  return detail === null ? row.connectionName : `${row.connectionName} · ${detail}`;
+}
+
+/**
+ * The one identifying thing in a connection's config.
+ *
+ * Allow-listed rather than "print whatever is there": `config` is documented
+ * as non-secret by review and not by the database (0006), so a label built
+ * from every key is one bad write away from putting a password on screen.
+ */
+function configDetail(config: Record<string, unknown>): string | null {
+  for (const key of ['region', 'domain', 'host'] as const) {
+    const value = config[key];
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+  }
+
+  return null;
+}
+
+/**
+ * The connection's send rate, as the provider last reported it.
+ *
+ * Zero when unknown, which the drawer renders as an em dash. Inventing a
+ * default here would put a number on the combined-rate panel that the rate
+ * limiter does not agree with.
+ */
+function perSecondOf(quota: Record<string, unknown> | null): number {
+  const raw = quota?.['maxSendRate'];
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
+/**
+ * What the connection can still accept today.
+ *
+ * `max24Hour` minus what `provider_stats` recorded for the UTC day, floored
+ * at zero. Preferred over the provider's own `sentLast24Hours` because that
+ * figure is a rolling window snapshotted at verification time and can be
+ * hours stale, whereas the rollup is ours and is written as we send.
+ */
+function remainingTodayOf(quota: Record<string, unknown> | null, sentToday: number): number {
+  const limit = quota?.['max24Hour'];
+  if (typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0) return 0;
+
+  return Math.max(0, Math.trunc(limit) - Math.max(0, Math.trunc(sentToday)));
+}
+
+/**
+ * Why this sender cannot be pooled, in the order a customer would fix them.
+ *
+ * An unverified identity first, because it is both the commonest and the one
+ * that produces the most confusing failure later: the pool accepts the
+ * sender, the campaign launches, and every message is rejected by the
+ * provider.
+ */
+function blockedReasonFor(row: EligibleSenderRow): string | null {
+  if (row.identityStatus !== 'verified') {
+    return row.identityStatus === 'pending' ? 'Pending DNS' : `Identity ${row.identityStatus}`;
+  }
+
+  if (row.connectionStatus === 'revoked' || row.connectionStatus === 'disabled') {
+    return `Connection ${row.connectionStatus}`;
+  }
+
+  if (row.connectionStatus === 'error') return 'Connection needs attention';
+
+  if (row.senderStatus !== 'active') return `Sender ${row.senderStatus.replace(/_/gu, ' ')}`;
+
+  return null;
 }

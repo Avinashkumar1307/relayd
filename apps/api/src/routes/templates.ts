@@ -6,6 +6,7 @@ import {
   previewTemplateSchema,
   renameTemplateSchema,
   saveTemplateVersionSchema,
+  sendTemplateTestSchema,
 } from '@relayd/validation';
 import { requireScope } from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
@@ -94,6 +95,40 @@ export function templateRoutes(options: TemplateRouterOptions): Router {
     res.status(204).send();
   });
 
+  /**
+   * Archive and unarchive (F1's Active / Archived tabs).
+   *
+   * `template:write` rather than `workspace:delete`: archiving destroys
+   * nothing. The row stays, every campaign that pinned one of its versions
+   * still renders, and the author can bring it back — which is exactly why
+   * it is a separate action from DELETE above.
+   *
+   * POST rather than PATCH on `/templates/:id`. Archiving is a transition
+   * with its own guard, its own conflict ("already archived") and its own
+   * audit row; folding it into the general patch would mean the rename
+   * handler had to grow a branch that can refuse.
+   */
+  router.post('/templates/:id/archive', ...chain, write, async (req: Request, res: Response) => {
+    const result = await templates.archive(requireScope(), req.params['id'] as TemplateId);
+    res.json({ data: result });
+  });
+
+  router.post('/templates/:id/unarchive', ...chain, write, async (req: Request, res: Response) => {
+    const result = await templates.unarchive(requireScope(), req.params['id'] as TemplateId);
+    res.json({ data: result });
+  });
+
+  /**
+   * Duplicate.
+   *
+   * 201 with the new template: the caller made a thing, and the id of the
+   * thing they made is the only useful answer — F1 navigates straight to it.
+   */
+  router.post('/templates/:id/duplicate', ...chain, write, async (req: Request, res: Response) => {
+    const result = await templates.duplicate(requireScope(), req.params['id'] as TemplateId);
+    res.status(201).json({ data: result });
+  });
+
   router.post(
     '/templates/:id/versions',
     ...chain,
@@ -127,6 +162,37 @@ export function templateRoutes(options: TemplateRouterOptions): Router {
         req.params['versionId'] as TemplateVersionId,
       );
       res.json({ data: version });
+    },
+  );
+
+  /**
+   * "Send test" (F2a).
+   *
+   * `template:write` rather than `workspace:read`. This is the one endpoint
+   * in this router that causes real mail to leave the building — outside
+   * campaigns, outside suppression and outside metering — and a viewer who
+   * can read a template should not be able to make it send.
+   *
+   * Capped at one recipient by the schema, and audited in the service.
+   */
+  router.post(
+    '/templates/versions/:versionId/test',
+    ...chain,
+    write,
+    validateBody(sendTemplateTestSchema),
+    async (req: Request, res: Response) => {
+      const body = req.body as { to: string; senderId?: string };
+
+      const result = await templates.sendTest(
+        requireScope(),
+        req.params['versionId'] as TemplateVersionId,
+        body,
+      );
+
+      // 202: the message is queued, not delivered. A 200 here would be the
+      // "provider accepted means delivered" mistake one layer earlier
+      // (CLAUDE.md section 12).
+      res.status(202).json({ data: result });
     },
   );
 

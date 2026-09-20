@@ -178,9 +178,22 @@ export const webhookEndpointsApi = {
     return Array.isArray(body) ? { deliveries: body, total: null } : body;
   },
 
-  // BACKEND PENDING: POST /webhook-endpoints/:id/test — J4b and J4c's "Send test event".
+  /**
+   * J4b and J4c's "Send test event".
+   *
+   * Queued as a real delivery, so it exercises the signing, the retry policy
+   * and the delivery log a real event goes through. 409 on a disabled
+   * endpoint.
+   */
   sendTest: (id: string) => api.post<{ sent: boolean }>(`/webhook-endpoints/${id}/test`, {}),
 
-  // BACKEND PENDING: POST /webhook-endpoints/:id/replay — J4c's re-enable and replay.
+  /**
+   * J4c's replay.
+   *
+   * Idempotent by construction: the server only re-queues deliveries that
+   * are `failed` or `abandoned`, so nothing that arrived is sent twice and
+   * nothing already in flight is queued again. Pressing it twice replays
+   * once, and the second call answers zero. Bounded to the last seven days.
+   */
   replay: (id: string) => api.post<{ replaying: number }>(`/webhook-endpoints/${id}/replay`, {}),
 };

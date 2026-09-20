@@ -115,7 +115,12 @@ export interface DeviceBreakdown {
  * here rather than five from the browser because the page is one screen and
  * five round trips would each need their own loading, empty and error state.
  *
- * BACKEND PENDING (docs/16): `GET /analytics/dashboard`.
+ * Served by `GET /analytics/dashboard`, composed server-side from rollups
+ * only — `campaign_counters`, `campaign_stats`, `campaign_daily_stats`,
+ * `provider_stats`, `usage_aggregates`. Every label it prints
+ * (`renewsLabel`, `when`, the attention copy) is the server's, rendered in
+ * the workspace's timezone, so the same sentence is not assembled three
+ * slightly different ways in three components.
  */
 export interface DashboardProvider {
   connectionId: string;
@@ -199,7 +204,9 @@ export interface DashboardSummary {
 /**
  * Per-connection delivery for one campaign (G4a, "Provider breakdown").
  *
- * BACKEND PENDING: `GET /analytics/campaigns/{id}/providers`.
+ * `clickRate` is always null today. Clicks are recorded per recipient and
+ * no rollup attributes them to a connection, so the honest answer is "not
+ * measured" rather than a zero that reads as "nobody clicked".
  */
 export interface CampaignProviderRow {
   connectionId: string;
@@ -266,11 +273,11 @@ export const analyticsApi = {
       range,
     ),
 
-  /** BACKEND PENDING: `GET /analytics/campaigns/{id}/providers`. */
+  /** G4a's provider breakdown, including the delivery-uncertain count. */
   campaignProviders: (id: string) =>
     api.get<CampaignProviderBreakdown>(`/analytics/campaigns/${id}/providers`),
 
-  /** BACKEND PENDING: `GET /analytics/dashboard`. */
+  /** C1's whole composition, in one call. */
   dashboard: () => api.get<DashboardSummary>('/analytics/dashboard'),
 
   links: (id: string) => api.get<{ links: LinkRow[] }>(`/analytics/campaigns/${id}/links`),

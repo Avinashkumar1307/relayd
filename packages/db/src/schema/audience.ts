@@ -105,8 +105,42 @@ export const contactLists = pgTable(
       .$type<UserId>(),
     createdAt,
     updatedAt,
+    /**
+     * Set when the list is archived (0020). A timestamp rather than a flag:
+     * D3's card footnote is "Archived 1 Sep 2026", which a boolean cannot
+     * say.
+     */
+    archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'date' }),
   },
   (table) => [uniqueIndex('uq_list_name').on(table.workspaceId, table.name)],
+);
+
+/**
+ * A named filter, drawn as a tab on D1 (0020).
+ *
+ * Workspace state rather than per-user: the frame shows one strip of tabs to
+ * everybody in the workspace.
+ */
+export const contactSavedViews = pgTable(
+  'contact_saved_views',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' })
+      .$type<WorkspaceId>(),
+    /** The slug the tab strip sends back as `?view=`. */
+    key: text('key').notNull(),
+    label: text('label').notNull(),
+    /** `{ status?, q? }` — the subset the contacts list can serve. */
+    filters: jsonb('filters').notNull().default({}),
+    createdBy: uuid('created_by')
+      .references(() => users.id)
+      .$type<UserId>(),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [uniqueIndex('uq_saved_view_key').on(table.workspaceId, table.key)],
 );
 
 export const contactListMembers = pgTable(
@@ -211,10 +245,57 @@ export const suppressions = pgTable(
     scope: text('scope').notNull().default('workspace').$type<'workspace' | 'campaign' | 'list'>(),
     scopeRefId: uuid('scope_ref_id'),
     sourceEventId: uuid('source_event_id'),
+    /**
+     * The campaign that caused it, for D7's Source column and filter (0020).
+     *
+     * Null for a manual, imported or globally blocked address. The migration
+     * carries a composite foreign key to `campaigns (id, workspace_id)` with
+     * `ON DELETE SET NULL (source_campaign_id)`; Drizzle cannot express the
+     * column list on SET NULL, so the reference is declared there and not
+     * here. The migration is the authority (CLAUDE.md section 8).
+     */
+    sourceCampaignId: uuid('source_campaign_id'),
     notes: text('notes'),
     createdAt,
   },
   (table) => [index('ix_suppressions_hash').on(table.workspaceId, table.emailHash)],
+);
+
+/**
+ * A requested export (0020).
+ *
+ * The row is the intent; a worker turns it into a file. Redis is transport
+ * and never the only copy of something somebody asked for (CLAUDE.md
+ * section 9).
+ */
+export const exportJobs = pgTable(
+  'export_jobs',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' })
+      .$type<WorkspaceId>(),
+    resource: text('resource')
+      .notNull()
+      .$type<'contacts' | 'suppressions' | 'lists' | 'tags' | 'segments'>(),
+    status: text('status')
+      .notNull()
+      .default('pending')
+      .$type<'pending' | 'running' | 'completed' | 'failed' | 'cancelled'>(),
+    /** What the page that asked for it was showing, including any selection. */
+    filters: jsonb('filters').notNull().default({}),
+    rowCount: integer('row_count'),
+    s3Key: text('s3_key'),
+    error: text('error'),
+    requestedBy: uuid('requested_by')
+      .references(() => users.id)
+      .$type<UserId>(),
+    createdAt,
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
+    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+  },
+  (table) => [index('ix_export_jobs_ws_created').on(table.workspaceId, table.createdAt.desc())],
 );
 
 export const importJobs = pgTable(

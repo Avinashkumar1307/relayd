@@ -36,12 +36,29 @@ export {
   bulkSuppressionSchema,
   createImportSchema,
   importMappingSchema,
+  savedViewKeySchema,
+  savedViewFiltersSchema,
+  createSavedViewSchema,
+  renameListSchema,
+  renameTagSchema,
+  mergeTagsSchema,
+  mergePreviewQuerySchema,
+  createExportSchema,
+  listSuppressionsQuerySchema,
+  savedViewKeyFor,
+  BASE_VIEW_KEYS,
 } from './audience.js';
 export type {
   CreateContactRequest,
   UpdateContactRequest,
   CreateImportRequest,
   ImportMappingRequest,
+  ListContactsQuery,
+  SavedViewFilters,
+  CreateSavedViewRequest,
+  MergeTagsRequest,
+  CreateExportRequest,
+  ListSuppressionsQuery,
 } from './audience.js';
 export {
   providerTypeSchema,
@@ -63,8 +80,13 @@ export {
   saveTemplateVersionSchema,
   renameTemplateSchema,
   previewTemplateSchema,
+  sendTemplateTestSchema,
 } from './templates.js';
-export type { CreateTemplateRequest, SaveTemplateVersionRequest } from './templates.js';
+export type {
+  CreateTemplateRequest,
+  SaveTemplateVersionRequest,
+  SendTemplateTestRequest,
+} from './templates.js';
 export {
   createCampaignSchema,
   updateCampaignSchema,
@@ -103,6 +125,8 @@ export {
   exportAuditLogsQuerySchema,
 } from './audit.js';
 export type { AuditRange, AuditLogFilters, ListAuditLogsQuery } from './audit.js';
+export { billingDetailsSchema } from './billing.js';
+export type { BillingDetailsRequest } from './billing.js';
 export {
   createWorkspaceSchema,
   registerViaInvitationSchema,

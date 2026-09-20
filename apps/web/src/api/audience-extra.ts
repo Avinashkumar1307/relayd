@@ -1,4 +1,4 @@
-import { api, apiRequestEnvelope } from './client.js';
+import { api, apiRequest, apiRequestEnvelope } from './client.js';
 import type { Contact, ContactList, ContactStatus, Suppression, Tag } from './audience.js';
 
 /**
@@ -10,10 +10,14 @@ import type { Contact, ContactList, ContactStatus, Suppression, Tag } from './au
  *
  * Several of the shapes here widen a type the API already returns: D1 draws
  * a Tags and a Lists column, D2 draws a consent block and an engagement
- * timeline, D3 draws a 30-day trend, D4 draws a contact count per tag. None
- * of those fields exists on the server yet, so each is optional-free but
- * documented, marked `// BACKEND PENDING` at every call site, and answered
- * by the preview server for now.
+ * timeline, D3 draws a 30-day trend. What is still missing from the server
+ * is marked `// BACKEND PENDING` at the call site and answered by the
+ * preview server for now; everything unmarked is served for real.
+ *
+ * Two fields the server deliberately does not compute, rather than having
+ * forgotten to: `ListCard.growth30d` and `ListCard.trend` arrive as null and
+ * empty. A list's daily membership history is not recorded anywhere, and a
+ * sparkline drawn from numbers nobody measured is worse than no sparkline.
  *
  * Nothing here formats a date. `lastEngaged` and an event's `when` arrive as
  * the display strings the frames show ("2 days ago", "Today, 09:14") because
@@ -102,6 +106,18 @@ export interface SavedView {
   status?: ContactStatus;
 }
 
+/**
+ * What a new view remembers.
+ *
+ * Deliberately not the cursor or the page size: a stored cursor is a
+ * position in a result set that no longer exists, and a stored limit would
+ * override the reader's own choice every time they opened the tab.
+ */
+export interface SavedViewFilters {
+  status?: ContactStatus;
+  q?: string;
+}
+
 export interface ListCard extends ContactList {
   archived: boolean;
   /** "Archived 1 Sep 2026" when archived, else "Used by 8 campaigns". */
@@ -152,6 +168,12 @@ function search(filters: ContactFilters): string {
 }
 
 export const audienceExtraApi = {
+  /**
+   * BACKEND PENDING: `GET /contacts` returns the contact, not `tags`,
+   * `lists` or `lastEngaged`. The path, the filters and the paging are real;
+   * the three columns D1 adds are not, and they are answered by the preview
+   * server.
+   */
   listContacts: async (filters: ContactFilters) => {
     const envelope = await apiRequestEnvelope<ContactRow[]>(`/contacts${search(filters)}`, {
       method: 'GET',
@@ -162,40 +184,70 @@ export const audienceExtraApi = {
     };
   },
 
-  // BACKEND PENDING: GET /stats
   stats: (filters: ContactFilters) => api.get<AudienceStats>(`/stats${search(filters)}`),
 
-  // BACKEND PENDING: GET /saved-views
   savedViews: () => api.get<SavedView[]>('/saved-views'),
 
+  /**
+   * "+ Save view".
+   *
+   * The key is derived from the label server-side, and a label whose key is
+   * already taken is a 409 rather than a silently suffixed duplicate: two
+   * tabs reading "Recent" that filter differently are indistinguishable on
+   * the strip.
+   */
+  createSavedView: (input: { label: string; filters?: SavedViewFilters }) =>
+    api.post<SavedView>('/saved-views', input),
+
+  /**
+   * BACKEND PENDING: `GET /contacts/:id` returns the contact row only. D2's
+   * consent block, suppression strip and engagement timeline have no server
+   * behind them yet.
+   */
   getContact: (id: string) => api.get<ContactDetail>(`/contacts/${id}`),
 
-  /** Bulk add or remove one tag across a selection. */
+  /**
+   * Bulk add or remove one tag across a selection.
+   *
+   * Both send the ids in a JSON body, the DELETE included. The ids used to
+   * ride in the DELETE's query string and that was wrong twice over: a
+   * thousand uuids is about 37 KB of URL, which nginx rejects at 8 KB with a
+   * 414 long before the selection cap is reached, and a URL is written to
+   * every access log, proxy and error breadcrumb between here and the
+   * database — which is not where a list of a customer's contact ids
+   * belongs. `api.delete` cannot carry a body, so this one call goes through
+   * `apiRequest` directly.
+   */
   tagContacts: (contactIds: string[], tagId: string) =>
-    api.post<{ updated: number }>('/contacts/tags', { contactIds, tagId }),
+    api.post<{ affected: number }>('/contacts/tags', { contactIds, tagId }),
   untagContacts: (contactIds: string[], tagId: string) =>
-    api.delete<{ updated: number }>(`/contacts/tags?tagId=${tagId}&ids=${contactIds.join(',')}`),
+    apiRequest<{ affected: number }>('/contacts/tags', {
+      method: 'DELETE',
+      body: { contactIds, tagId },
+    }),
 
   addToList: (listId: string, contactIds: string[]) =>
-    api.post<{ added: number }>(`/lists/${listId}/contacts`, { contactIds }),
+    api.post<{ affected: number; memberCount: number }>(`/lists/${listId}/contacts`, {
+      contactIds,
+    }),
 
-  // BACKEND PENDING: POST /exports
+  /**
+   * Starts an export. 202 — a worker turns the row into a file.
+   *
+   * `resource` is one of `contacts`, `suppressions`, `lists`, `tags`,
+   * `segments`. Anything else is a 400.
+   */
   startExport: (input: { resource: string; ids?: string[] }) =>
-    api.post<{ id: string }>('/exports', input),
+    api.post<{ id: string; status: string }>('/exports', input),
 
   listCards: () => api.get<ListCard[]>('/lists'),
-  // BACKEND PENDING: PATCH /lists/:id
   renameList: (id: string, name: string) => api.patch<ListCard>(`/lists/${id}`, { name }),
-  // BACKEND PENDING: POST /lists/:id/archive
   archiveList: (id: string) => api.post<ListCard>(`/lists/${id}/archive`),
 
   listTags: () => api.get<TagRow[]>('/tags'),
-  // BACKEND PENDING: PATCH /tags/:id
   renameTag: (id: string, name: string) => api.patch<TagRow>(`/tags/${id}`, { name }),
-  // BACKEND PENDING: GET /tags/merge-preview
   mergePreview: (ids: string[]) =>
     api.get<{ total: number; overlap: number }>(`/tags/merge-preview?ids=${ids.join(',')}`),
-  // BACKEND PENDING: POST /tags/merge
   mergeTags: (input: { keepId: string; mergeIds: string[] }) =>
     api.post<{ keepId: string; contacts: number }>('/tags/merge', input),
 
@@ -207,8 +259,17 @@ export const audienceExtraApi = {
     const rendered = query.toString();
     return api.get<SuppressionRow[]>(`/suppressions${rendered === '' ? '' : `?${rendered}`}`);
   },
-  // BACKEND PENDING: GET /suppressions/summary
   suppressionSummary: () => api.get<SuppressionSummary>('/suppressions/summary'),
+
+  /**
+   * The options D7's Source chip offers, "Any campaign" first.
+   *
+   * Empty beyond that until suppressions carry the campaign that caused
+   * them — the column exists (migration 0020) and nothing writes it yet, so
+   * the honest answer today is the one option that always applies.
+   */
+  suppressionSources: () =>
+    api.get<{ value: string; label: string }[]>('/suppressions/sources'),
 };
 
 /**
@@ -234,6 +295,8 @@ export const audienceExtraKeys = {
     [workspaceId, 'audience', 'suppressions', filters] as const,
   suppressionSummary: (workspaceId: string | null) =>
     [workspaceId, 'audience', 'suppressions', 'summary'] as const,
+  suppressionSources: (workspaceId: string | null) =>
+    [workspaceId, 'audience', 'suppressions', 'sources'] as const,
 };
 
 /**

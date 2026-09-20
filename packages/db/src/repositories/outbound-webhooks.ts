@@ -336,6 +336,76 @@ export class OutboundWebhookRepository {
       );
   }
 
+  /**
+   * Re-queues this endpoint's failed deliveries (J4c).
+   *
+   * **It cannot double-deliver, and that is structural rather than
+   * careful.** The guard is the `status IN ('failed','abandoned')` predicate
+   * on the UPDATE itself: a `delivered` row is never matched, so a replay can
+   * never re-send something that arrived, and a `pending` row is never
+   * matched either, so a replay cannot queue a second attempt at something
+   * already in flight. Running it twice in a row therefore moves rows the
+   * first time and zero rows the second — the guarded-update idiom CLAUDE.md
+   * section 9 asks for, with `RETURNING` as the count.
+   *
+   * `attempt` is deliberately not reset. The delivery worker's backoff reads
+   * it, and zeroing it would give an endpoint that has already failed nine
+   * times a fresh set of nine retries every time somebody clicked the button.
+   * `scheduled_for` moves to now, which is what "replay" means.
+   *
+   * `created_at >= since` is the partition pruner. Without it this UPDATE
+   * visits every partition of `outbound_webhook_deliveries` to find rows that
+   * can only be in the recent ones.
+   */
+  async replayFailed(
+    scope: WorkspaceScope,
+    input: { endpointId: string; since: Date; now: Date; limit: number },
+  ): Promise<number> {
+    const limit = Math.min(10_000, Math.max(1, Math.trunc(input.limit)));
+
+    const { rows } = await this.db.execute<{ id: string }>(sql`
+      UPDATE outbound_webhook_deliveries
+         SET status = 'pending',
+             scheduled_for = ${input.now},
+             error = NULL
+       WHERE (workspace_id, endpoint_id, created_at, id) IN (
+               SELECT workspace_id, endpoint_id, created_at, id
+                 FROM outbound_webhook_deliveries
+                WHERE workspace_id = ${scope.workspaceId}
+                  AND endpoint_id = ${input.endpointId}
+                  AND created_at >= ${input.since}
+                  AND status IN ('failed', 'abandoned')
+                ORDER BY created_at
+                LIMIT ${limit}
+             )
+   RETURNING id
+    `);
+
+    return rows.length;
+  }
+
+  /**
+   * How much a replay would re-send, and how far back it could reach.
+   *
+   * Read separately from the replay itself so J4c can print the number on the
+   * button before anybody presses it.
+   */
+  async countReplayable(
+    scope: WorkspaceScope,
+    input: { endpointId: string; since: Date },
+  ): Promise<number> {
+    const { rows } = await this.db.execute<{ undelivered: number }>(sql`
+      SELECT count(*)::int AS "undelivered"
+        FROM outbound_webhook_deliveries
+       WHERE workspace_id = ${scope.workspaceId}
+         AND endpoint_id = ${input.endpointId}
+         AND created_at >= ${input.since}
+         AND status IN ('failed', 'abandoned')
+    `);
+
+    return rows[0]?.undelivered ?? 0;
+  }
+
   /** The delivery log an integrator reads when an event did not arrive. */
   async listDeliveries(
     scope: WorkspaceScope,

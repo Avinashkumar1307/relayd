@@ -264,16 +264,28 @@ export const billingApi = {
   cancel: (input: { immediately: boolean; reason?: string }) =>
     api.post<{ endsAt: string | null }>('/billing/cancel', input),
 
-  /** BACKEND PENDING: POST /billing/reactivate — I9b's "Reactivate Growth". */
+  /**
+   * I9b's "Reactivate Growth".
+   *
+   * The server clears the scheduled cancellation at Stripe and writes
+   * nothing locally — the `customer.subscription.updated` webhook carries
+   * the authoritative flag. Invalidate and re-read rather than trusting
+   * this response.
+   */
   reactivate: () => api.post<{ ok: boolean }>('/billing/reactivate', {}),
 
-  /** BACKEND PENDING: POST /billing/retry-payment — I1b's "Retry now". */
+  /**
+   * I1b's "Retry now".
+   *
+   * The invoice is chosen server-side. `ok` means Stripe accepted the
+   * instruction, never that the card cleared — that arrives as a webhook.
+   */
   retryPayment: () => api.post<{ ok: boolean }>('/billing/retry-payment', {}),
 
-  /** BACKEND PENDING: PATCH /billing/details — I8's "Save details". */
+  /** I8's "Save details". */
   saveDetails: (input: BillingDetails) =>
     api.patch<BillingDetails>('/billing/details', input),
 
-  /** BACKEND PENDING: POST /billing/export — I9a/I9b's "Export everything". */
+  /** I9a/I9b's "Export everything". Answers 202: the export is a job. */
   exportEverything: () => api.post<{ ok: boolean }>('/billing/export', {}),
 };

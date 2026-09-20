@@ -15,10 +15,12 @@ export {
   contacts,
   contactLists,
   contactListMembers,
+  contactSavedViews,
   tags,
   contactTags,
   segments,
   suppressions,
+  exportJobs,
   importJobs,
   importRowErrors,
 } from './audience.js';

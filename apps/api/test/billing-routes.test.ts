@@ -80,6 +80,18 @@ function buildApp(role: WorkspaceRole, service: Partial<BillingService> = {}): E
     async cancel() {
       return { endsAt: null };
     },
+    async reactivate() {
+      return { ok: true };
+    },
+    async retryPayment() {
+      return { ok: true };
+    },
+    async updateDetails(_scope: unknown, input: unknown) {
+      return input;
+    },
+    async requestExport() {
+      return { ok: true };
+    },
     ...service,
   } as unknown as BillingService;
 
@@ -110,7 +122,7 @@ beforeAll(async () => {
   bearer = await tokens.issueAccessToken({ sub: USER, sid: 'session-1', wsIds: [WS], ver: 1 });
 });
 
-function auth(app: Express, method: 'get' | 'post', path: string) {
+function auth(app: Express, method: 'get' | 'post' | 'patch', path: string) {
   return request(app)[method](path)
     .set('Authorization', `Bearer ${bearer}`)
     .set('X-Workspace-Id', WS);
@@ -332,5 +344,75 @@ describe('a workspace the caller does not belong to', () => {
       .set('X-Workspace-Id', 'ws-someone-else');
 
     expect(res.status).toBe(404);
+  });
+});
+
+/**
+ * The four I-frame actions added in the delivery-and-money batch.
+ *
+ * Every one of them is `billing:write`, which is owner-only and can never be
+ * attached to an API key. Reactivating a subscription and retrying a payment
+ * are both money; a billing address and a VAT id are what a company's
+ * invoices are issued against.
+ */
+describe('reactivate, retry, details and export are owner-only', () => {
+  it.each([
+    ['post', '/api/v1/billing/reactivate'],
+    ['post', '/api/v1/billing/retry-payment'],
+    ['post', '/api/v1/billing/export'],
+  ] as const)('refuses an admin %s %s', async (method, path) => {
+    const res = await auth(buildApp('admin'), method, path).send({});
+    expect(res.status).toBe(403);
+  });
+
+  it('refuses an admin the details form', async () => {
+    const res = await auth(buildApp('admin'), 'patch', '/api/v1/billing/details').send({
+      email: 'finance@northwind.travel',
+      company: 'Northwind',
+      address: 'Dubai',
+      taxId: 'AE1',
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('lets an owner reactivate and retry', async () => {
+    expect((await auth(buildApp('owner'), 'post', '/api/v1/billing/reactivate').send({})).status).toBe(200);
+    expect((await auth(buildApp('owner'), 'post', '/api/v1/billing/retry-payment').send({})).status).toBe(200);
+  });
+
+  it('answers 202 to an export, because the data is not in the response', async () => {
+    const res = await auth(buildApp('owner'), 'post', '/api/v1/billing/export').send({});
+    expect(res.status).toBe(202);
+  });
+
+  it('validates the details form and refuses an unknown field', async () => {
+    // `.strict()`. A client sending `country` is told the field does not
+    // exist rather than having it silently dropped and wondering why their
+    // invoices are still wrong.
+    const bad = await auth(buildApp('owner'), 'patch', '/api/v1/billing/details').send({
+      email: 'not-an-address',
+    });
+    expect(bad.status).toBe(400);
+
+    const extra = await auth(buildApp('owner'), 'patch', '/api/v1/billing/details').send({
+      email: 'finance@northwind.travel',
+      country: 'AE',
+    });
+    expect(extra.status).toBe(400);
+  });
+
+  it('defaults the optional fields so a half-filled form saves', async () => {
+    const res = await auth(buildApp('owner'), 'patch', '/api/v1/billing/details').send({
+      email: 'finance@northwind.travel',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({
+      email: 'finance@northwind.travel',
+      company: '',
+      address: '',
+      taxId: '',
+    });
   });
 });

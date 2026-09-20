@@ -148,6 +148,18 @@ export const billingCustomers = pgTable(
     providerCustomerId: text('provider_customer_id'),
     status: text('status').notNull().default('pending').$type<BillingCustomerStatus>(),
     email: text('email'),
+    /**
+     * The invoice identity a customer edits on I8 (migration 0022).
+     *
+     * Null until they fill it in: a workspace has a billing customer row from
+     * the moment before Stripe is first called (R18), and none of this is
+     * known then. `address` is one text column rather than the structured set
+     * Stripe Tax wants — see the migration for why, and for what has to
+     * change before tax is calculated.
+     */
+    company: text('company'),
+    address: text('address'),
+    taxId: text('tax_id'),
     createdAt,
     updatedAt,
   },

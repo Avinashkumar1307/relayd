@@ -12,7 +12,9 @@ import type { GlobalMembershipRepository } from '@relayd/db';
 import {
   bulkTagSchema,
   createContactSchema,
+  createExportSchema,
   createImportSchema,
+  createSavedViewSchema,
   importMappingSchema,
   createListSchema,
   createSegmentSchema,
@@ -20,6 +22,10 @@ import {
   createTagSchema,
   listContactsQuerySchema,
   listMembershipSchema,
+  mergePreviewQuerySchema,
+  mergeTagsSchema,
+  renameListSchema,
+  renameTagSchema,
   updateContactSchema,
 } from '@relayd/validation';
 import { requirePrincipal, requireScope } from '../context.js';
@@ -51,14 +57,20 @@ export interface AudienceRouterOptions {
   memberships: GlobalMembershipRepository;
 }
 
-/** Query strings arrive as strings; Zod coerces, and rejects what it cannot. */
-function parseQuery<T>(schema: z.ZodType<T>, req: Request): T {
+/**
+ * Query strings arrive as strings; Zod coerces, and rejects what it cannot.
+ *
+ * Generic over the schema rather than over its output type, so a schema whose
+ * input and output differ — `?ids=a,b,c` parsed into an array — type-checks.
+ * `z.ZodType<T>` defaults its input to its output and refuses one.
+ */
+function parseQuery<S extends z.ZodTypeAny>(schema: S, req: Request): z.TypeOf<S> {
   const result = schema.safeParse(req.query);
   if (!result.success) {
     const issue = result.error.issues[0];
     throw Object.assign(new Error(issue?.message ?? 'Invalid query'), { status: 400 });
   }
-  return result.data;
+  return result.data as z.TypeOf<S>;
 }
 
 export function audienceRoutes(options: AudienceRouterOptions): Router {
@@ -72,6 +84,74 @@ export function audienceRoutes(options: AudienceRouterOptions): Router {
   const read = requirePermission('contact:read');
   const write = requirePermission('contact:write');
   const runImport = requirePermission('contact:import');
+  // Owners and admins only, per the matrix in packages/types/src/permissions.
+  // An export is the whole audience leaving the product in one file, which
+  // is a different act from editing a contact.
+  const runExport = requirePermission('contact:export');
+
+  // ------------------------------------------------------- audience overview
+
+  /**
+   * D1's header line: "48,213 contacts · 45,102 subscribed · 2,318
+   * suppressed", plus the count its footer pages through.
+   *
+   * Takes the same query the contacts list takes, including `view` and `q`,
+   * because `matching` has to be the size of the set the rows came from.
+   * `limit` and `cursor` are accepted and ignored — the page sends one
+   * filter object to both endpoints, and rejecting the two fields that only
+   * mean something to the list would make the caller build a second one.
+   */
+  router.get('/stats', ...chain, read, async (req: Request, res: Response) => {
+    const query = parseQuery(listContactsQuerySchema, req);
+    res.json({ data: await audience.stats(requireScope(), query) });
+  });
+
+  // ------------------------------------------------------------- saved views
+
+  router.get('/saved-views', ...chain, read, async (_req: Request, res: Response) => {
+    res.json({ data: await audience.listSavedViews(requireScope()) });
+  });
+
+  router.post(
+    '/saved-views',
+    ...chain,
+    write,
+    validateBody(createSavedViewSchema),
+    async (req: Request, res: Response) => {
+      const principal = requirePrincipal();
+      const body = req.body as Parameters<AudienceService['createSavedView']>[1];
+      const view = await audience.createSavedView(requireScope(), {
+        ...body,
+        createdBy: principal.userId,
+      });
+      res.status(201).json({ data: view });
+    },
+  );
+
+  // ----------------------------------------------------------------- exports
+
+  /**
+   * "Export" and "Export selected".
+   *
+   * 202, not 200: the row records the intent and a worker turns it into a
+   * file, so nothing is ready when this returns. docs/03: "Long operations —
+   * 202 Accepted with a resource whose status you poll."
+   */
+  router.post(
+    '/exports',
+    ...chain,
+    runExport,
+    validateBody(createExportSchema),
+    async (req: Request, res: Response) => {
+      const principal = requirePrincipal();
+      const body = req.body as Parameters<AudienceService['startExport']>[1];
+      const job = await audience.startExport(requireScope(), {
+        ...body,
+        requestedBy: principal.userId,
+      });
+      res.status(202).json({ data: job });
+    },
+  );
 
   // ---------------------------------------------------------------- contacts
 
@@ -182,6 +262,33 @@ export function audienceRoutes(options: AudienceRouterOptions): Router {
     },
   );
 
+  router.patch(
+    '/lists/:id',
+    ...chain,
+    write,
+    validateBody(renameListSchema),
+    async (req: Request, res: Response) => {
+      const list = await audience.renameList(
+        requireScope(),
+        req.params['id'] as ContactListId,
+        req.body as { name: string; description?: string },
+      );
+      res.json({ data: list });
+    },
+  );
+
+  /**
+   * Archive, which is not delete.
+   *
+   * A campaign that sent to this list still names it, and a past campaign
+   * whose audience has vanished cannot be audited. The card stays on D3,
+   * greyed and read-only.
+   */
+  router.post('/lists/:id/archive', ...chain, write, async (req: Request, res: Response) => {
+    const list = await audience.archiveList(requireScope(), req.params['id'] as ContactListId);
+    res.json({ data: list });
+  });
+
   router.delete('/lists/:id', ...chain, write, async (req: Request, res: Response) => {
     await audience.deleteList(requireScope(), req.params['id'] as ContactListId);
     res.status(204).send();
@@ -236,6 +343,45 @@ export function audienceRoutes(options: AudienceRouterOptions): Router {
     },
   );
 
+  /**
+   * The merge routes come before `/tags/:id`.
+   *
+   * Express matches in registration order, so a `:id` parameter registered
+   * first would swallow `merge` and `merge-preview` as tag ids. Neither
+   * collides today — there is no GET or POST on `/tags/:id` — but the
+   * ordering is the thing that keeps that true when one is added.
+   */
+  router.get('/tags/merge-preview', ...chain, read, async (req: Request, res: Response) => {
+    const { ids } = parseQuery(mergePreviewQuerySchema, req);
+    res.json({ data: await audience.mergePreview(requireScope(), ids) });
+  });
+
+  router.post(
+    '/tags/merge',
+    ...chain,
+    write,
+    validateBody(mergeTagsSchema),
+    async (req: Request, res: Response) => {
+      const body = req.body as { keepId: string; mergeIds: string[] };
+      res.json({ data: await audience.mergeTags(requireScope(), body) });
+    },
+  );
+
+  router.patch(
+    '/tags/:id',
+    ...chain,
+    write,
+    validateBody(renameTagSchema),
+    async (req: Request, res: Response) => {
+      const tag = await audience.renameTag(
+        requireScope(),
+        req.params['id'] as TagId,
+        req.body as { name?: string; color?: string },
+      );
+      res.json({ data: tag });
+    },
+  );
+
   router.delete('/tags/:id', ...chain, write, async (req: Request, res: Response) => {
     await audience.deleteTag(requireScope(), req.params['id'] as TagId);
     res.status(204).send();
@@ -286,6 +432,16 @@ export function audienceRoutes(options: AudienceRouterOptions): Router {
   });
 
   // ------------------------------------------------------------ suppressions
+
+  // Registered before `/suppressions` so the two literal paths are matched
+  // as themselves, and so a reader looking for D7's summary finds it first.
+  router.get('/suppressions/summary', ...chain, read, async (_req, res) => {
+    res.json({ data: await audience.suppressionSummary(requireScope()) });
+  });
+
+  router.get('/suppressions/sources', ...chain, read, async (_req, res) => {
+    res.json({ data: await audience.suppressionSources(requireScope()) });
+  });
 
   router.get('/suppressions', ...chain, read, async (_req, res) => {
     res.json({ data: await audience.listSuppressions(requireScope()) });

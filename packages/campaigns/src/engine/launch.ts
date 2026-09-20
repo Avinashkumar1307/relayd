@@ -198,6 +198,416 @@ export interface LaunchResult {
   suppressedAtSnapshot?: number;
 }
 
+/* ------------------------------------------------------------ pre-flight -- */
+
+/**
+ * The pre-flight, factored out so launch and `POST /campaigns/:id/preflight`
+ * cannot disagree.
+ *
+ * G2 step 7 shows the customer a list of checks before they press send. The
+ * only safe way to build that list is to run the checks launch runs — a
+ * pre-flight that says "7 pass" and is then refused by the launch it was
+ * supposed to predict is worse than no pre-flight at all, because it teaches
+ * the customer that the page is wrong and the error is noise.
+ *
+ * So there is one function, called twice:
+ *
+ *   Launch calls it with `stopAtFirstFailure: true`, which reproduces the
+ *   original control flow exactly — including *not* running the expensive
+ *   content scan when a cheaper check has already refused the launch.
+ *
+ *   The pre-flight endpoint calls it with `stopAtFirstFailure: false` and
+ *   renders every row.
+ *
+ * Everything the pre-flight cannot answer without launching stays out of it:
+ * the audience snapshot, and therefore `empty_audience` and
+ * `entitlement_exceeded`, which are decided against the rows the snapshot
+ * actually wrote. Those two remain in `launchCampaign` below. Reporting a
+ * guess at them here is exactly the disagreement this refactor exists to
+ * prevent.
+ */
+export type PreflightOutcome = 'pass' | 'warn' | 'fail';
+
+export const PREFLIGHT_KEYS = [
+  'template',
+  'sender',
+  'account',
+  'pool_routing',
+  'enforcement',
+  'links',
+  'content',
+  'consent',
+  'entitlement',
+] as const;
+
+export type PreflightKey = (typeof PREFLIGHT_KEYS)[number];
+
+export interface PreflightCheck {
+  key: PreflightKey;
+  outcome: PreflightOutcome;
+  title: string;
+  detail: string;
+  /**
+   * The launch failure this check would produce, or null.
+   *
+   * Carried on the row rather than only in the summary so a caller can map
+   * one row to one remedy — and so a reader can see, per row, that the
+   * pre-flight and the launch are naming the same thing.
+   */
+  failure: LaunchFailure | null;
+}
+
+/**
+ * What the pre-flight needs. A strict subset of `LaunchPort`, so any
+ * implementation of the launch port is already an implementation of this and
+ * the two can never be wired to different data.
+ */
+export type PreflightPort = Pick<
+  LaunchPort,
+  | 'senderIsUsable'
+  | 'ownerEmailIsVerified'
+  | 'workspaceIsInRamp'
+  | 'readEnforcementStage'
+  | 'launchIsApproved'
+  | 'scanContent'
+  | 'readConsentAttestation'
+  | 'readEntitlementForShare'
+>;
+
+export interface PreflightResult {
+  checks: PreflightCheck[];
+  /** The first failure in launch order, or null. */
+  failure: { failure: LaunchFailure; message: string } | null;
+  /**
+   * The entitlement row the check read, so launch can apply the limit
+   * against its snapshot without reading — and re-locking — it twice.
+   */
+  entitlement: { monthlySendLimit: number | null; used: number } | null;
+}
+
+export interface PreflightOptions {
+  /** True for launch: stop as soon as something refuses it. */
+  stopAtFirstFailure: boolean;
+  /**
+   * Called immediately after a content scan that did not block, at the exact
+   * point `launchCampaign` used to record its warning events.
+   *
+   * A callback rather than a `recordEvent` on the port because the
+   * pre-flight endpoint must write nothing: the wizard polls it, and a
+   * campaign whose timeline fills with "content warnings" every time
+   * somebody opens step 7 has a useless timeline.
+   */
+  onContentScanned?: (scan: {
+    findings: readonly LintFinding[];
+    reputationUnavailable: boolean;
+  }) => Promise<void>;
+}
+
+export async function runLaunchPreflight(
+  campaign: LaunchableCampaign,
+  port: PreflightPort,
+  options: PreflightOptions,
+): Promise<PreflightResult> {
+  const checks: PreflightCheck[] = [];
+
+  // An array rather than a `let`, so the first failure survives being
+  // written from inside the closure below without the reader — or the type
+  // checker — having to reason about when it was assigned.
+  const failures: { failure: LaunchFailure; message: string }[] = [];
+  const first = (): { failure: LaunchFailure; message: string } | null => failures[0] ?? null;
+
+  /** Records a row and, for a failure, the first one. Returns "stop now?". */
+  const add = (check: PreflightCheck): boolean => {
+    checks.push(check);
+
+    if (check.outcome === 'fail' && check.failure !== null) {
+      failures.push({ failure: check.failure, message: check.detail });
+    }
+
+    return options.stopAtFirstFailure && check.outcome === 'fail';
+  };
+
+  const pass = (key: PreflightKey, title: string, detail: string): PreflightCheck => ({
+    key,
+    outcome: 'pass',
+    title,
+    detail,
+    failure: null,
+  });
+
+  const fail = (
+    key: PreflightKey,
+    title: string,
+    failure: LaunchFailure,
+    detail: string,
+  ): PreflightCheck => ({ key, outcome: 'fail', title, detail, failure });
+
+  /** A check that could not be evaluated, because one before it failed. */
+  const skipped = (key: PreflightKey, title: string, detail: string): PreflightCheck => ({
+    key,
+    outcome: 'warn',
+    title,
+    detail,
+    failure: null,
+  });
+
+  // 1. Template.
+  const hasTemplate = campaign.templateVersionId !== null;
+
+  if (
+    add(
+      hasTemplate
+        ? pass('template', 'Template chosen', 'A published version is pinned at launch')
+        : fail('template', 'Template chosen', 'no_template', 'This campaign has no template'),
+    )
+  ) {
+    return { checks, failure: first(), entitlement: null };
+  }
+
+  // 2. A sender, or a pool.
+  const hasSender = campaign.senderAccountId !== null || campaign.sendingPoolId !== null;
+
+  if (
+    add(
+      hasSender
+        ? pass(
+            'sender',
+            'Sender verified',
+            campaign.senderAccountId === null
+              ? 'Sending from a pool; every member is checked as it is used'
+              : 'The sender identity is still verified with the provider',
+          )
+        : fail(
+            'sender',
+            'Sender verified',
+            'no_sender',
+            'This campaign has no sender or sending pool',
+          ),
+    )
+  ) {
+    return { checks, failure: first(), entitlement: null };
+  }
+
+  // The identity check, only when a single sender was chosen. Launch does
+  // not check pool members here either — routing picks one at send time and
+  // checks it then.
+  if (campaign.senderAccountId !== null && !(await port.senderIsUsable(campaign.senderAccountId))) {
+    if (
+      add(
+        fail(
+          'sender',
+          'Sender verified',
+          'unverified_sender',
+          'This campaign’s sender is not usable — its identity may no longer be verified',
+        ),
+      )
+    ) {
+      return { checks, failure: first(), entitlement: null };
+    }
+  }
+
+  // 3. The account itself. docs/06: "Email verification before any send."
+  if (
+    add(
+      (await port.ownerEmailIsVerified(campaign.workspaceId))
+        ? pass('account', 'Workspace verified', 'The workspace owner’s email address is verified')
+        : fail(
+            'account',
+            'Workspace verified',
+            'unverified_account',
+            'Verify the workspace owner’s email address before sending',
+          ),
+    )
+  ) {
+    return { checks, failure: first(), entitlement: null };
+  }
+
+  // 4. Pool routing, for a workspace still in its ramp.
+  const poolRefused =
+    campaign.sendingPoolId !== null && (await port.workspaceIsInRamp(campaign.workspaceId));
+
+  if (
+    add(
+      poolRefused
+        ? fail(
+            'pool_routing',
+            'Pool routing available',
+            'pool_routing_unavailable',
+            'New workspaces send from a single verified sender for their first 7 days. Choose a sender, or contact support to lift the limit.',
+          )
+        : pass(
+            'pool_routing',
+            'Pool routing available',
+            campaign.sendingPoolId === null
+              ? 'Sending from a single sender'
+              : 'This workspace is past its new-account ramp',
+          ),
+    )
+  ) {
+    return { checks, failure: first(), entitlement: null };
+  }
+
+  // 5. The enforcement ladder (docs/06 "Response ladder").
+  const stage = await port.readEnforcementStage(campaign.workspaceId);
+
+  if (!mayLaunch(stage)) {
+    if (
+      add(
+        fail(
+          'enforcement',
+          'Account in good standing',
+          'enforcement_paused',
+          'Sending is paused for this workspace. Check the notice in your dashboard for what to do next.',
+        ),
+      )
+    ) {
+      return { checks, failure: first(), entitlement: null };
+    }
+  } else if (needsReview(stage) && !(await port.launchIsApproved(campaign.id))) {
+    if (
+      add(
+        fail(
+          'enforcement',
+          'Account in good standing',
+          'enforcement_review_required',
+          'This workspace is under review. Campaigns need approval before they can be sent.',
+        ),
+      )
+    ) {
+      return { checks, failure: first(), entitlement: null };
+    }
+  } else {
+    add(pass('enforcement', 'Account in good standing', 'No sending restrictions on this workspace'));
+  }
+
+  // 6. Content: the phishing lint and link reputation, docs/06.
+  //
+  //    Skipped when there is no template — there is nothing to render, and
+  //    asking the scanner to do it anyway is how a pre-flight on an empty
+  //    draft turns into a 500.
+  if (!hasTemplate) {
+    add(skipped('links', 'Link reputation', 'Checked once a template is chosen'));
+    add(skipped('content', 'No phishing patterns detected', 'Checked once a template is chosen'));
+  } else {
+    const scan = await port.scanContent(campaign.id);
+
+    // docs/06: "known-bad domains block the launch." Somebody else's verdict
+    // about a domain, not a heuristic about wording, so it blocks on its own.
+    if (
+      add(
+        scan.blockedDomains.length > 0
+          ? fail(
+              'links',
+              'Link reputation',
+              'blocked_link_domain',
+              `This campaign links to ${scan.blockedDomains.join(', ')}, which a security feed has flagged. Remove the link or contact support.`,
+            )
+          : pass(
+              'links',
+              'Link reputation',
+              scan.reputationUnavailable
+                ? 'The reputation feed could not be reached; links were not checked'
+                : 'No link domain is on a security feed’s block list',
+            ),
+      )
+    ) {
+      return { checks, failure: first(), entitlement: null };
+    }
+
+    if (
+      add(
+        scan.blocked
+          ? fail(
+              'content',
+              'No phishing patterns detected',
+              'content_blocked',
+              'This campaign was held by our content checks. Review the warnings on this page, or contact support if you believe this is wrong.',
+            )
+          : scan.findings.length > 0
+            ? {
+                key: 'content',
+                outcome: 'warn',
+                title: 'No phishing patterns detected',
+                detail: `${scan.findings.length} warning${scan.findings.length === 1 ? '' : 's'}: ${scan.findings.map((finding) => finding.code).join(', ')}`,
+                failure: null,
+              }
+            : pass(
+                'content',
+                'No phishing patterns detected',
+                'No look-alike domains, hidden text or credential prompts',
+              ),
+      )
+    ) {
+      return { checks, failure: first(), entitlement: null };
+    }
+
+    // The same point in the sequence `launchCampaign` used to write its
+    // warning events: after both content refusals, before consent. Findings
+    // that did not block are recorded rather than discarded — an honest
+    // sender fixes a mismatched link; a dishonest one leaves a trail — and
+    // a feed that failed open has to be visible afterwards, or "was this
+    // campaign checked" has no answer.
+    await options.onContentScanned?.({
+      findings: scan.findings,
+      reputationUnavailable: scan.reputationUnavailable,
+    });
+  }
+
+  // 7. Consent. docs/06: "every launch re-confirms it."
+  const attestation = await port.readConsentAttestation(campaign.id);
+  const verdict = attestationAuthorises(attestation, campaign.audience);
+
+  if (
+    add(
+      verdict.ok
+        ? pass('consent', 'Consent confirmed', 'This audience’s consent was attested for this send')
+        : verdict.reason === 'audience_changed'
+          ? fail(
+              'consent',
+              'Consent confirmed',
+              'consent_audience_changed',
+              'The audience changed after consent was confirmed. Review the recipients and confirm again.',
+            )
+          : fail(
+              'consent',
+              'Consent confirmed',
+              'consent_not_attested',
+              'Confirm where this audience gave consent before sending',
+            ),
+    )
+  ) {
+    return { checks, failure: first(), entitlement: null };
+  }
+
+  // 8. The entitlement row, FOR SHARE (R28). Read before the snapshot and
+  //    held until the transaction ends, so a downgrade cannot commit in the
+  //    gap. The *limit* is applied against the snapshot, in launch.
+  const entitlement = await port.readEntitlementForShare(campaign.workspaceId);
+
+  if (
+    add(
+      entitlement === null
+        ? fail(
+            'entitlement',
+            'Plan allows sending',
+            'no_entitlement',
+            'This workspace has no active subscription. Choose a plan to start sending.',
+          )
+        : pass(
+            'entitlement',
+            'Plan allows sending',
+            entitlement.monthlySendLimit === null
+              ? 'This plan has no monthly send limit'
+              : `${Math.max(entitlement.monthlySendLimit - entitlement.used, 0).toLocaleString()} of ${entitlement.monthlySendLimit.toLocaleString()} sends remain this month`,
+          ),
+    )
+  ) {
+    return { checks, failure: first(), entitlement: null };
+  }
+
+  return { checks, failure: first(), entitlement };
+}
+
 /**
  * Launches a campaign.
  *
@@ -233,148 +643,51 @@ export async function launchCampaign(
     return { ok: false, failure, message };
   };
 
-  if (campaign.templateVersionId === null) {
-    return fail('no_template', 'This campaign has no template');
+  // The same function `POST /campaigns/:id/preflight` calls, in the same
+  // order, with the same messages. `stopAtFirstFailure` reproduces the
+  // control flow this block used to spell out inline — in particular, the
+  // content scan is still not paid for when a cheaper check has already
+  // refused the launch.
+  const preflight = await runLaunchPreflight(campaign, port, {
+    stopAtFirstFailure: true,
+    // At the exact point this used to sit: after both content refusals,
+    // before consent.
+    onContentScanned: async ({ findings, reputationUnavailable }) => {
+      // Findings that did not block are recorded rather than discarded. An
+      // honest sender fixes a mismatched link; a dishonest one has a trail.
+      if (findings.length > 0) {
+        await port.recordEvent({
+          campaignId,
+          eventType: 'launch.content_warnings',
+          detail: { codes: findings.map((finding) => finding.code) },
+        });
+      }
+
+      if (reputationUnavailable) {
+        // The feed failed open (see link-reputation.ts). That decision has
+        // to be visible afterwards, or "was this campaign checked" has no
+        // answer.
+        await port.recordEvent({
+          campaignId,
+          eventType: 'launch.reputation_unavailable',
+          detail: {},
+        });
+      }
+    },
+  });
+
+  if (preflight.failure !== null) {
+    return fail(preflight.failure.failure, preflight.failure.message);
   }
 
-  if (campaign.senderAccountId === null && campaign.sendingPoolId === null) {
-    return fail('no_sender', 'This campaign has no sender or sending pool');
-  }
+  // Not reachable: a pre-flight with no failure has read the entitlement and
+  // the template. Narrowed rather than asserted, because a `!` here would be
+  // the one place a future edit to the check order could launch a campaign
+  // over a plan limit without the compiler noticing.
+  const entitlement = preflight.entitlement;
+  const templateVersionId = campaign.templateVersionId;
 
-  if (campaign.senderAccountId !== null && !(await port.senderIsUsable(campaign.senderAccountId))) {
-    return fail(
-      'unverified_sender',
-      'This campaign’s sender is not usable — its identity may no longer be verified',
-    );
-  }
-
-  // 3. The account itself. docs/06: "Email verification before any send."
-  //
-  // After the sender check and before the entitlement read, because an
-  // unverified account is a cheaper refusal than a row lock and because the
-  // sender message is the more useful one when both are wrong.
-  if (!(await port.ownerEmailIsVerified(campaign.workspaceId))) {
-    return fail(
-      'unverified_account',
-      'Verify the workspace owner’s email address before sending',
-    );
-  }
-
-  // 4. Pool routing, for a workspace still in its ramp.
-  //
-  //    docs/06 excludes new accounts from pool routing. A pool spreads a
-  //    campaign across several provider connections, which is exactly how a
-  //    spammer spreads reputation damage and outruns a per-connection rate
-  //    limit — and a workspace days old is the one whose reputation nobody
-  //    knows yet.
-  //
-  //    Refused rather than silently downgraded to a single sender. Quietly
-  //    sending from somewhere other than where the customer chose is worse
-  //    than saying no: it works, so nobody asks why, and the first they hear
-  //    of it is a report attributing sends to the wrong identity.
-  if (campaign.sendingPoolId !== null && (await port.workspaceIsInRamp(campaign.workspaceId))) {
-    return fail(
-      'pool_routing_unavailable',
-      'New workspaces send from a single verified sender for their first 7 days. Choose a sender, or contact support to lift the limit.',
-    );
-  }
-
-  // 5. The enforcement ladder (docs/06 "Response ladder").
-  //
-  //    Before consent, because a paused workspace should be told it is
-  //    paused rather than asked to tick a consent box it will then be
-  //    refused on anyway. The order of these two is the difference between a
-  //    message that explains and one that wastes somebody's afternoon.
-  const stage = await port.readEnforcementStage(campaign.workspaceId);
-
-  if (!mayLaunch(stage)) {
-    return fail(
-      'enforcement_paused',
-      'Sending is paused for this workspace. Check the notice in your dashboard for what to do next.',
-    );
-  }
-
-  if (needsReview(stage) && !(await port.launchIsApproved(campaignId))) {
-    return fail(
-      'enforcement_review_required',
-      'This workspace is under review. Campaigns need approval before they can be sent.',
-    );
-  }
-
-  // 6. Content. docs/06: launch-time phishing lint and link reputation.
-  //
-  //    After the cheap refusals and before the snapshot, because rendering
-  //    the message is the expensive part of this check and there is no point
-  //    paying for it on a campaign that was going to be refused anyway.
-  const scan = await port.scanContent(campaignId);
-
-  if (scan.blockedDomains.length > 0) {
-    // docs/06: "known-bad domains block the launch." Unlike the lint, this
-    // is somebody else's verdict about a domain rather than a heuristic
-    // about wording, so it blocks on its own.
-    return fail(
-      'blocked_link_domain',
-      `This campaign links to ${scan.blockedDomains.join(', ')}, which a security feed has flagged. Remove the link or contact support.`,
-    );
-  }
-
-  if (scan.blocked) {
-    return fail(
-      'content_blocked',
-      'This campaign was held by our content checks. Review the warnings on this page, or contact support if you believe this is wrong.',
-    );
-  }
-
-  // Findings that did not block are recorded rather than discarded. An
-  // honest sender fixes a mismatched link; a dishonest one has a trail.
-  if (scan.findings.length > 0) {
-    await port.recordEvent({
-      campaignId,
-      eventType: 'launch.content_warnings',
-      detail: { codes: scan.findings.map((finding) => finding.code) },
-    });
-  }
-
-  if (scan.reputationUnavailable) {
-    // The feed failed open (see link-reputation.ts). That decision has to be
-    // visible afterwards, or "was this campaign checked" has no answer.
-    await port.recordEvent({
-      campaignId,
-      eventType: 'launch.reputation_unavailable',
-      detail: {},
-    });
-  }
-
-  // 7. Consent. docs/06: "every launch re-confirms it."
-  //
-  //    Before the snapshot, because a launch that is going to be refused
-  //    should not first write a recipient row per contact — and because the
-  //    fingerprint check below is about the audience *definition*, which is
-  //    known now and does not need the snapshot to evaluate.
-  const attestation = await port.readConsentAttestation(campaignId);
-  const verdict = attestationAuthorises(attestation, campaign.audience);
-
-  if (!verdict.ok) {
-    // Three distinct failures rather than one, because the sender has to do
-    // something different in each case and "consent not confirmed" when they
-    // confirmed it two minutes ago reads as a bug.
-    if (verdict.reason === 'audience_changed') {
-      return fail(
-        'consent_audience_changed',
-        'The audience changed after consent was confirmed. Review the recipients and confirm again.',
-      );
-    }
-
-    return fail('consent_not_attested', 'Confirm where this audience gave consent before sending');
-  }
-
-  // 8. The entitlement row, FOR SHARE (R28). Read before the snapshot, held
-  //    until this transaction ends, so a downgrade cannot commit in the gap.
-  const entitlement = await port.readEntitlementForShare(campaign.workspaceId);
-
-  if (entitlement === null) {
-    // No rows means no active subscription. Refused before the snapshot,
-    // because there is nothing to learn from taking one.
+  if (entitlement === null || templateVersionId === null) {
     return fail(
       'no_entitlement',
       'This workspace has no active subscription. Choose a plan to start sending.',
@@ -417,7 +730,7 @@ export async function launchCampaign(
     recipientCount: snapshot.inserted,
     // Pinned. A later edit to the template cannot change what this campaign
     // sent.
-    templateVersionId: campaign.templateVersionId,
+    templateVersionId,
   });
 
   await port.recordEvent({

@@ -3,14 +3,16 @@ import { api } from './client.js';
 /**
  * Template endpoints (section F).
  *
- * `apps/api/src/routes/templates.ts` serves the eight calls below the fold:
- * list, get, create, rename, delete, save version, publish and preview.
- * Everything section F's frames draw beyond that — the Active/Archived tabs,
- * the card thumbnail, "Edited 2 min ago by Dana Haddad", the version's
- * campaigns, Duplicate, Send test — has no column or endpoint yet. Those
- * fields are optional here and every call site that needs one carries a
- * `BACKEND PENDING` comment, so the pages render correctly against the mocked
- * API, which supplies them, and against the real one, which does not.
+ * `apps/api/src/routes/templates.ts` serves list, get, create, rename,
+ * delete, save version, publish, preview, archive, unarchive, duplicate and
+ * send test.
+ *
+ * What section F draws that still has no column or endpoint: the card
+ * thumbnail and its accent, "Edited 2 min ago by Dana Haddad", the newest
+ * version's state and count, and the campaigns a version is used by. Those
+ * fields stay optional here and every call site that needs one carries a
+ * `BACKEND PENDING` comment, so the pages render correctly against the
+ * mocked API, which supplies them, and against the real one, which does not.
  */
 
 export interface Template {
@@ -35,8 +37,15 @@ export interface Template {
   versionCount?: number;
   /** BACKEND PENDING: GET /templates ("Edited 2 min ago by Dana Haddad"). */
   editedLabel?: string;
-  /** BACKEND PENDING: GET /templates (the Active / Archived tabs). */
-  archived?: boolean;
+  /**
+   * F1's Active / Archived tabs.
+   *
+   * Served: `templates.archived_at` (migration 0021), rendered as a boolean
+   * because nothing on this page has a use for *when*. The list endpoint
+   * returns archived templates too — the tabs are a filter over one list,
+   * and filtering server-side would empty the second tab.
+   */
+  archived: boolean;
   /** BACKEND PENDING: GET /templates (the card thumbnail's header colour). */
   accent?: string;
   /** BACKEND PENDING: GET /templates (whether the thumbnail has a hero image). */
@@ -139,13 +148,18 @@ export const templateApi = {
 
   remove: (id: string) => api.delete<void>(`/templates/${id}`),
 
-  /** BACKEND PENDING: POST /templates/:id/archive */
+  /** 409 when it is already archived — which is a stale tab, not a 404. */
   archive: (id: string) => api.post<Template>(`/templates/${id}/archive`),
 
-  /** BACKEND PENDING: POST /templates/:id/unarchive */
   unarchive: (id: string) => api.post<Template>(`/templates/${id}/unarchive`),
 
-  /** BACKEND PENDING: POST /templates/:id/duplicate */
+  /**
+   * Copies the template and its newest version. The copy is a draft.
+   *
+   * The newest version, not the published one: duplicating is something an
+   * author does while looking at a template, and handing them a copy that
+   * silently dropped the draft on screen would be wrong.
+   */
   duplicate: (id: string) => api.post<Template>(`/templates/${id}/duplicate`),
 
   saveVersion: (
@@ -156,9 +170,22 @@ export const templateApi = {
   publish: (versionId: string) =>
     api.post<TemplateVersion>(`/templates/versions/${versionId}/publish`),
 
-  /** BACKEND PENDING: POST /templates/versions/:versionId/test */
-  sendTest: (versionId: string, to: string) =>
-    api.post<{ accepted: boolean }>(`/templates/versions/${versionId}/test`, { to }),
+  /**
+   * "Send test": one address, queued, never delivered synchronously.
+   *
+   * `accepted` means the job is on the queue — the API cannot send it
+   * itself, because only the worker role may read a provider credential.
+   * 503 on a deployment with no queue wired, which is the same answer
+   * `POST /senders/:id/test` gives.
+   *
+   * `senderId` is optional and there is no picker in F2a; the server
+   * resolves the workspace's usable sender when it is omitted.
+   */
+  sendTest: (versionId: string, to: string, senderId?: string) =>
+    api.post<{ accepted: boolean; jobId: string }>(
+      `/templates/versions/${versionId}/test`,
+      senderId === undefined ? { to } : { to, senderId },
+    ),
 
   preview: (versionId: string, contact: PreviewContact = {}) =>
     api.post<Preview>(`/templates/versions/${versionId}/preview`, contact),

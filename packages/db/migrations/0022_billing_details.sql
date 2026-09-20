@@ -1,0 +1,48 @@
+-- 0022_billing_details.sql
+--
+-- The invoice details a customer edits on I8: company name, billing address
+-- and VAT / tax id. `billing_customers` already holds the receipt email, so
+-- this is three columns on the row that already exists rather than a new
+-- table — there is exactly one billing identity per workspace per provider,
+-- which is what `uq_bc_workspace` already says.
+--
+-- ## Why this is forced
+--
+-- `PATCH /billing/details` (design frame I8) has nowhere to write. Searched
+-- before adding: `billing_customers` (email only), `workspaces.settings`
+-- jsonb, and `payment_methods`. `workspaces.settings` was rejected — it is an
+-- untyped product-preferences bag read by half the product, and putting a tax
+-- id in it means every consumer of workspace settings is now handling
+-- billing-identity data. `payment_methods` was rejected because the address
+-- outlives any particular card.
+--
+-- ## Why they are plain text and nullable
+--
+-- Nullable because a workspace exists before it has ever been billed, and the
+-- row is created pending (R18) with none of this known.
+--
+-- `address` is one text column rather than the structured line1/city/postal/
+-- country set Stripe Tax wants. That mirrors what the web client sends today
+-- (`BillingDetails.address: string`) and is deliberately the smaller
+-- commitment: a structured address is an expand-then-contract migration away,
+-- and guessing the shape now would bake in a wrong one. Flagged for the owner
+-- in the batch report — Stripe Tax will need country and postal code as their
+-- own columns before tax is calculated on anything.
+--
+-- No index. These columns are never a predicate; they are read by primary key
+-- through `uq_bc_workspace`.
+--
+-- RLS already covers the table (0013, `billing_customers_tenant`), and adding
+-- a column does not change a policy. No new grants are needed: `relayd_app`
+-- already has UPDATE on it.
+--
+-- Immutable once merged (CLAUDE.md section 8).
+--
+-- ROLLBACK: ALTER TABLE billing_customers
+--             DROP COLUMN IF EXISTS company,
+--             DROP COLUMN IF EXISTS address,
+--             DROP COLUMN IF EXISTS tax_id;
+
+ALTER TABLE billing_customers ADD COLUMN company text;
+ALTER TABLE billing_customers ADD COLUMN address text;
+ALTER TABLE billing_customers ADD COLUMN tax_id  text;

@@ -49,6 +49,17 @@ export function analyticsRoutes(options: AnalyticsRouterOptions): Router {
     ...(typeof req.query['to'] === 'string' ? { to: req.query['to'] } : {}),
   });
 
+  /**
+   * The dashboard, composed server-side (C1).
+   *
+   * One request rather than five because the page is one screen: five would
+   * each need their own loading, empty and error state, and the first one to
+   * fail would leave a dashboard that is half numbers and half spinners.
+   */
+  router.get('/analytics/dashboard', ...chain, async (_req, res: Response) => {
+    res.json({ data: await analytics.dashboard(requireScope()) });
+  });
+
   router.get('/analytics/overview', ...chain, async (req: Request, res: Response) => {
     res.json({ data: await analytics.overview(requireScope(), range(req)) });
   });
@@ -62,6 +73,15 @@ export function analyticsRoutes(options: AnalyticsRouterOptions): Router {
     ...chain,
     async (req: Request, res: Response) => {
       res.json({ data: await analytics.campaignTimeseries(requireScope(), id(req), range(req)) });
+    },
+  );
+
+  /** G4a's per-connection breakdown, including the delivery-uncertain count. */
+  router.get(
+    '/analytics/campaigns/:id/providers',
+    ...chain,
+    async (req: Request, res: Response) => {
+      res.json({ data: await analytics.campaignProviders(requireScope(), id(req)) });
     },
   );
 

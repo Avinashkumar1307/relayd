@@ -52,6 +52,22 @@ export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 /** How many endpoints one workspace may hold. */
 export const MAX_ENDPOINTS = 10;
 
+/**
+ * The type on a test delivery.
+ *
+ * Not in `WEBHOOK_EVENT_TYPES`, deliberately: nobody subscribes to it, and
+ * adding it to the list would let a customer subscribe to an event the
+ * product never emits on its own. It is addressed at one endpoint by id,
+ * bypassing subscription entirely, which is what a test is.
+ */
+export const TEST_EVENT_TYPE = 'endpoint.test';
+
+/** How far back a replay reaches. Also what J4c prints as `replayableUntil`. */
+export const REPLAY_WINDOW_DAYS = 7;
+
+/** The most one replay will re-queue, so the button cannot start an avalanche. */
+export const MAX_REPLAY = 5_000;
+
 export interface OutboundWebhookRepositories {
   webhooks: OutboundWebhookRepository;
   auditLogs: AuditLogRepository;
@@ -277,6 +293,132 @@ export class OutboundWebhookService {
           resourceId: input.endpointId,
         }),
       );
+    });
+  }
+
+  /**
+   * J4b's "Send test event".
+   *
+   * Queued as a real delivery rather than posted inline. Three reasons, and
+   * the third is the one that matters: an inline POST would be an
+   * unauthenticated outbound request made from the API process on a
+   * customer's instruction, it would block the request for as long as the
+   * customer's server felt like taking, and — the point of the button — it
+   * would not exercise the signing, the retry policy or the delivery log
+   * that a real event goes through. A test that takes a different path from
+   * the thing it is testing proves nothing.
+   *
+   * The event id carries a timestamp, so pressing the button twice sends two
+   * tests. That is deliberate and is the one place in this file where
+   * duplicate suppression is *not* wanted: the customer pressed it twice
+   * because the first one did not arrive.
+   */
+  async sendTest(
+    scope: WorkspaceScope,
+    input: { endpointId: string; actor: { userId: UserId } },
+  ): Promise<{ sent: boolean }> {
+    const now = this.now();
+
+    return this.options.unitOfWork(async (repos) => {
+      const endpoint = await repos.webhooks.find(scope, input.endpointId);
+      if (endpoint === null) throw new AppError('not_found', 'Not found', 404);
+
+      if (endpoint.status === 'disabled') {
+        throw new AppError(
+          'conflict',
+          'This endpoint is disabled. Re-enable it before sending a test event.',
+          409,
+        );
+      }
+
+      const queued = await repos.webhooks.enqueueDelivery(scope, {
+        endpointId: input.endpointId,
+        eventId: `${TEST_EVENT_TYPE}:${input.endpointId}:${now.getTime()}`,
+        eventType: TEST_EVENT_TYPE,
+        payload: {
+          type: TEST_EVENT_TYPE,
+          test: true,
+          workspaceId: scope.workspaceId,
+          endpointId: input.endpointId,
+          sentAt: now.toISOString(),
+        },
+        scheduledFor: now,
+      });
+
+      await repos.auditLogs.append(
+        scope,
+        buildAuditEntry({
+          id: this.options.newId(),
+          actor: { type: 'user', id: input.actor.userId },
+          action: 'webhook_endpoint.test_sent',
+          resourceType: 'webhook_endpoint',
+          resourceId: input.endpointId,
+        }),
+      );
+
+      return { sent: queued };
+    });
+  }
+
+  /**
+   * J4c's replay: re-queue what this endpoint failed to receive.
+   *
+   * **A replay cannot double-deliver.** The guard is in the repository's
+   * `WHERE status IN ('failed','abandoned')`, not in this method: a
+   * `delivered` row is not matched, so nothing that arrived can be sent
+   * again, and a `pending` row is not matched either, so nothing already in
+   * flight is queued twice. Calling this endpoint twice therefore replays
+   * once — the second call finds the rows already `pending` and answers
+   * zero. That is the guarded-update idiom CLAUDE.md section 9 asks for
+   * rather than a lock.
+   *
+   * Bounded to `REPLAY_WINDOW_DAYS` because the deliveries table is
+   * partitioned by `created_at`: an unbounded replay is a scan of every
+   * partition, and re-sending a three-month-old `email.bounced` to a
+   * customer's integration is not a kindness anyway.
+   */
+  async replay(
+    scope: WorkspaceScope,
+    input: { endpointId: string; actor: { userId: UserId } },
+  ): Promise<{ replaying: number }> {
+    const now = this.now();
+    const since = new Date(now.getTime() - REPLAY_WINDOW_DAYS * 86_400_000);
+
+    return this.options.unitOfWork(async (repos) => {
+      const endpoint = await repos.webhooks.find(scope, input.endpointId);
+      if (endpoint === null) throw new AppError('not_found', 'Not found', 404);
+
+      if (endpoint.status === 'disabled') {
+        // Replaying into a disabled endpoint would re-fail every row and
+        // leave the customer where they started. Re-enabling is a PATCH, and
+        // saying so is more useful than a silent zero.
+        throw new AppError(
+          'conflict',
+          'This endpoint is disabled. Re-enable it first, then replay.',
+          409,
+        );
+      }
+
+      const replaying = await repos.webhooks.replayFailed(scope, {
+        endpointId: input.endpointId,
+        since,
+        now,
+        limit: MAX_REPLAY,
+      });
+
+      await repos.auditLogs.append(
+        scope,
+        buildAuditEntry({
+          id: this.options.newId(),
+          actor: { type: 'user', id: input.actor.userId },
+          action: 'webhook_endpoint.replayed',
+          resourceType: 'webhook_endpoint',
+          resourceId: input.endpointId,
+          after: { replaying, since: since.toISOString() },
+        }),
+      );
+
+      return { replaying };
     });
   }
 

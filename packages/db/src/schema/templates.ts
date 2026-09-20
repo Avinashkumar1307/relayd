@@ -45,6 +45,12 @@ export const templates = pgTable(
       .notNull()
       .default(sql`now()`),
     deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * F1's Archived tab (migration 0021). Not a delete: the row stays
+     * readable, its name stays reserved by `uq_template_name`, and
+     * unarchiving clears it.
+     */
+    archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'date' }),
   },
   (table) => [
     uniqueIndex('uq_template_ws').on(table.id, table.workspaceId),

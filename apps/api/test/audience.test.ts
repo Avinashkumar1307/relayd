@@ -276,6 +276,65 @@ function buildAudienceWorld() {
         audit.push(entry);
       },
     } as unknown as AudienceRepositories['auditLogs'],
+
+    // The four repositories section D's extra endpoints added. Stubbed
+    // rather than modelled here: the tests in this file exercise CRUD, and
+    // audience-extra.test.ts owns the behaviour behind these. They are
+    // present because the service's repository bundle requires them, and a
+    // stub that throws would fail a test for the wrong reason.
+    savedViews: {
+      async list() {
+        return [];
+      },
+      async findByKey() {
+        return null;
+      },
+      async create() {
+        return null;
+      },
+    } as unknown as AudienceRepositories['savedViews'],
+
+    exports: {
+      async create(_s: unknown, input: { id: string; resource: string }) {
+        return { id: input.id, resource: input.resource, status: 'pending', filters: {} };
+      },
+      async findById() {
+        return null;
+      },
+      async list() {
+        return [];
+      },
+    } as unknown as AudienceRepositories['exports'],
+
+    stats: {
+      async contactStats() {
+        return { contacts: contacts.length, subscribed: 0, suppressed: suppressed.size, matching: 0 };
+      },
+      async tagCounts() {
+        return tagRows.map((tag) => ({
+          tagId: tag.id,
+          contactCount: tagLinks.filter((link) => link.tagId === tag.id).length,
+        }));
+      },
+      async segmentsByTag() {
+        return [];
+      },
+      async mergePreview() {
+        return { total: 0, overlap: 0 };
+      },
+      async suppressionSummary() {
+        return [];
+      },
+      async suppressionSources() {
+        return [];
+      },
+    } as unknown as AudienceRepositories['stats'],
+
+    tagMerge: {
+      async merge() {
+        return { moved: 0, collapsed: 0, segmentsRewritten: 0, contacts: 0 };
+      },
+    } as unknown as AudienceRepositories['tagMerge'],
   };
 
   return {

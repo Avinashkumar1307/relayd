@@ -23,6 +23,35 @@ export function suppressionHash(email: string): Buffer {
 }
 
 /**
+ * The predicate D1's search box applies, in one place.
+ *
+ * Shared by the contacts list and by the `matching` count in
+ * `AudienceStatsRepository.contactStats`, so the footer's "1–8 of 48,213"
+ * cannot be the answer to a different question than the eight rows above it.
+ *
+ * `%` and `_` in the user's text are escaped. Unescaped, a search for "a_b"
+ * quietly matches "axb", and a search for "%" matches the entire audience —
+ * a typo that turns into a full scan returning everything.
+ *
+ * ILIKE on all three columns rather than relying on `email` being citext, so
+ * the two plain-text name columns behave the same way. There is no trigram
+ * index behind this, so a search is a scan bounded by one workspace's own
+ * contacts; that is inside the contact limits the plans impose, and it is
+ * the first thing to index if a workspace ever outgrows them.
+ */
+export function contactSearchPredicate(search: string | null | undefined): SQL {
+  if (search === null || search === undefined || search === '') return sql`TRUE`;
+
+  const pattern = `%${search.replace(/[\\%_]/gu, (character) => `\\${character}`)}%`;
+
+  return sql`(
+    email::text ILIKE ${pattern}
+    OR coalesce(first_name, '') ILIKE ${pattern}
+    OR coalesce(last_name, '') ILIKE ${pattern}
+  )`;
+}
+
+/**
  * Rebinds a compiled `$1`-style statement as a Drizzle SQL object.
  *
  * sql.raw() on its own would execute the text and DISCARD the parameters —

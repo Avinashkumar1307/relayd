@@ -138,6 +138,38 @@ export function outboundWebhookRoutes(options: OutboundWebhookRouterOptions): Ro
     res.status(204).end();
   });
 
+  /**
+   * J4b's "Send test event".
+   *
+   * `Cache-Control` is not set here and does not need to be: nothing secret
+   * comes back, only whether a delivery was queued.
+   */
+  router.post('/webhook-endpoints/:id/test', ...manage, async (req: Request, res: Response) => {
+    res.json({
+      data: await webhooks.sendTest(requireScope(), {
+        endpointId: id(req),
+        actor: { userId: requirePrincipal().userId },
+      }),
+    });
+  });
+
+  /**
+   * J4c's replay.
+   *
+   * POST and not idempotent-by-header, because the operation is idempotent
+   * by construction: the guarded update in the repository only matches rows
+   * that are `failed` or `abandoned`, so a second call replays nothing and a
+   * delivered event can never be sent twice.
+   */
+  router.post('/webhook-endpoints/:id/replay', ...manage, async (req: Request, res: Response) => {
+    res.json({
+      data: await webhooks.replay(requireScope(), {
+        endpointId: id(req),
+        actor: { userId: requirePrincipal().userId },
+      }),
+    });
+  });
+
   /** The delivery log, which is what an integrator reads when nothing arrived. */
   router.get('/webhook-endpoints/:id/deliveries', ...manage, async (req: Request, res: Response) => {
     const limit = Number.parseInt(String(req.query['limit'] ?? ''), 10);

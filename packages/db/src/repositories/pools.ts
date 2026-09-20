@@ -120,7 +120,11 @@ export class SendingPoolRepository {
     const { rows } = await this.db.execute<Record<string, unknown>>(sql`
       SELECT m.pool_id            AS "poolId",
              m.sender_account_id  AS "senderAccountId",
-             sa.provider_connection_id AS "providerConnectionId",
+             -- sender_accounts names this column provider_id (0006). It was
+             -- written here as provider_connection_id, which is the name it
+             -- has on campaign_recipients, and no unit test could catch it
+             -- because the fake executor never resolves a column.
+             sa.provider_id      AS "providerConnectionId",
              m.weight, m.priority, m.enabled,
              sa.status, sa.health_score AS "healthScore",
              sa.cooldown_until AS "cooldownUntil"
@@ -162,6 +166,54 @@ export class SendingPoolRepository {
       });
   }
 
+  /**
+   * Every sender a pool could contain, with its connection's own numbers.
+   *
+   * The connection columns repeat on every sender that draws on the same
+   * connection, and that repetition is the point: H1b groups by
+   * `providerConnectionId` and counts each connection once, which is how the
+   * drawer avoids telling a customer that two SES senders doubled their
+   * capacity. The rate limiter keys its buckets on the same column, so the
+   * browser and the send path are reading the same fact.
+   *
+   * `sentToday` comes from `provider_stats` for the UTC day rather than from
+   * `sender_daily_usage`, for the same reason: quota is a property of the
+   * connection, and summing per-sender usage would count a shared bucket
+   * twice.
+   */
+  async listEligibleSenders(
+    scope: WorkspaceScope,
+    input: { day: string },
+  ): Promise<EligibleSenderRow[]> {
+    const { rows } = await this.db.execute<Record<string, unknown>>(sql`
+      SELECT sa.id                     AS "senderAccountId",
+             sa.from_email             AS "fromEmail",
+             sa.status                 AS "senderStatus",
+             sa.provider_id            AS "providerConnectionId",
+             pc.provider_type          AS "providerType",
+             pc.name                   AS "connectionName",
+             pc.status                 AS "connectionStatus",
+             pc.config                 AS "config",
+             pc.quota_snapshot         AS "quotaSnapshot",
+             si.verification_status    AS "identityStatus",
+             si.value                  AS "identityValue",
+             coalesce(ps.sent, 0)::int AS "sentToday"
+        FROM sender_accounts sa
+        JOIN provider_connections pc
+          ON pc.id = sa.provider_id AND pc.workspace_id = sa.workspace_id
+        JOIN sender_identities si
+          ON si.id = sa.identity_id AND si.workspace_id = sa.workspace_id
+        LEFT JOIN provider_stats ps
+          ON ps.provider_connection_id = pc.id
+         AND ps.workspace_id = pc.workspace_id
+         AND ps.day = ${input.day}::date
+       WHERE sa.workspace_id = ${scope.workspaceId}
+       ORDER BY pc.name, sa.from_email
+    `);
+
+    return rows.map(toEligibleSender);
+  }
+
   async removeMember(
     scope: WorkspaceScope,
     input: { poolId: SendingPoolId; senderAccountId: string },
@@ -179,4 +231,47 @@ export class SendingPoolRepository {
 
     return rows.length > 0;
   }
+}
+
+/**
+ * One candidate for pool membership, as H1b's member list draws it.
+ *
+ * The connection fields are properties of the connection, not of this
+ * sender. `perSecond` in particular is what the whole connection allows,
+ * never this sender's share of it — a pool does not divide a quota, and
+ * showing a divided number would suggest it did.
+ */
+export interface EligibleSenderRow {
+  senderAccountId: string;
+  fromEmail: string;
+  senderStatus: string;
+  providerConnectionId: string;
+  providerType: string;
+  connectionName: string;
+  connectionStatus: string;
+  /** Non-secret connection settings: region, host, port. Never a credential. */
+  config: Record<string, unknown>;
+  /** What the provider last told us about its own limits, or null. */
+  quotaSnapshot: Record<string, unknown> | null;
+  identityStatus: string;
+  identityValue: string;
+  /** The connection's sends today, UTC. Shared by every sender on it. */
+  sentToday: number;
+}
+
+function toEligibleSender(row: Record<string, unknown>): EligibleSenderRow {
+  return {
+    senderAccountId: String(row['senderAccountId']),
+    fromEmail: String(row['fromEmail']),
+    senderStatus: String(row['senderStatus']),
+    providerConnectionId: String(row['providerConnectionId']),
+    providerType: String(row['providerType']),
+    connectionName: String(row['connectionName']),
+    connectionStatus: String(row['connectionStatus']),
+    config: (row['config'] as Record<string, unknown> | null) ?? {},
+    quotaSnapshot: (row['quotaSnapshot'] as Record<string, unknown> | null) ?? null,
+    identityStatus: String(row['identityStatus']),
+    identityValue: String(row['identityValue']),
+    sentToday: Number(row['sentToday'] ?? 0),
+  };
 }

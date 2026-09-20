@@ -9,14 +9,26 @@ import type {
   UserId,
 } from '@relayd/types';
 import { compilePreviewCount, SegmentAstError } from '@relayd/audience';
+import { BASE_VIEW_KEYS, savedViewKeyFor } from '@relayd/validation';
 import type {
+  CreateExportRequest,
+  CreateSavedViewRequest,
+  SavedViewFilters,
+} from '@relayd/validation';
+import type {
+  AudienceStatsRepository,
   ConsentRepository,
   ContactListRepository,
   ContactRepository,
   ContactRow,
+  ExportJobRepository,
+  ExportResource,
   ImportJobRepository,
+  ListRow,
+  SavedViewRepository,
   SegmentRepository,
   SuppressionRepository,
+  TagMergeRepository,
   TagRepository,
   WorkspaceScope,
 } from '@relayd/db';
@@ -32,6 +44,61 @@ export interface AudienceRepositories {
   imports: ImportJobRepository;
   auditLogs: AuditLogRepository;
   consent: ConsentRepository;
+  /** D1's saved-view tabs (migration 0020). */
+  savedViews: SavedViewRepository;
+  /** The Export button's durable record of what was asked for. */
+  exports: ExportJobRepository;
+  /** D1's header counts, D4's tag counts, D7's summary. */
+  stats: AudienceStatsRepository;
+  /** The one write that touches four tables at once. */
+  tagMerge: TagMergeRepository;
+}
+
+/** D1's header line. */
+export interface AudienceStatsDto {
+  contacts: number;
+  subscribed: number;
+  suppressed: number;
+  /** Rows the current filter matches — the footer's "1–8 of 48,213". */
+  matching: number;
+}
+
+/** A saved view, drawn as a tab on D1. */
+export interface SavedViewDto {
+  key: string;
+  label: string;
+  status?: ContactRow['status'];
+}
+
+/** A list as D3's card draws it. */
+export interface ListCardDto {
+  id: string;
+  name: string;
+  description: string | null;
+  memberCount: number;
+  createdAt: Date;
+  archived: boolean;
+  /** "Archived 1 Sep 2026", or the member count while the list is active. */
+  footnote: string;
+  /** Not computed yet; see the note on `listLists`. */
+  growth30d: number | null;
+  trend: number[];
+}
+
+/** A tag as D4's table and its merge dialog draw it. */
+export interface TagCardDto {
+  id: string;
+  name: string;
+  color: string | null;
+  createdAt: Date;
+  contactCount: number;
+  /** Segment names that reference this tag. */
+  segments: string[];
+}
+
+export interface SuppressionSummaryDto {
+  total: number;
+  byReason: { reason: string; count: number }[];
 }
 
 export type AudienceUnitOfWork = <T>(
@@ -158,9 +225,142 @@ export class AudienceService {
       limit?: number | undefined;
       cursor?: string | undefined;
       status?: ContactRow['status'] | undefined;
+      view?: string | undefined;
+      q?: string | undefined;
     },
   ) {
-    return this.options.unitOfWork((repos) => repos.contacts.list(scope, options));
+    return this.options.unitOfWork(async (repos) => {
+      const filter = await this.resolveView(repos, scope, options);
+      return repos.contacts.list(scope, {
+        ...(options.limit === undefined ? {} : { limit: options.limit }),
+        ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+        ...filter,
+      });
+    });
+  }
+
+  /**
+   * D1's header line.
+   *
+   * Takes the same filter the list takes, because `matching` is the footer's
+   * "of 48,213" and it has to be the count of the same query that produced
+   * the rows. Sharing the filter resolution rather than the numbers: the two
+   * are separate requests, so they can disagree by a write that landed
+   * between them, and that is a great deal better than disagreeing by
+   * construction.
+   */
+  async stats(
+    scope: WorkspaceScope,
+    options: {
+      status?: ContactRow['status'] | undefined;
+      view?: string | undefined;
+      q?: string | undefined;
+    },
+  ): Promise<AudienceStatsDto> {
+    return this.options.unitOfWork(async (repos) => {
+      const filter = await this.resolveView(repos, scope, options);
+      return repos.stats.contactStats(scope, {
+        ...(filter.status === undefined ? {} : { status: filter.status }),
+        ...(filter.search === undefined ? {} : { search: filter.search }),
+      });
+    });
+  }
+
+  // -------------------------------------------------------------- saved views
+
+  async listSavedViews(scope: WorkspaceScope): Promise<SavedViewDto[]> {
+    return this.options.unitOfWork(async (repos) => {
+      const rows = await repos.savedViews.list(scope);
+      return rows.map((row) => toSavedViewDto(row.key, row.label, row.filters));
+    });
+  }
+
+  /**
+   * Saves the current filter as a tab.
+   *
+   * The key is derived from the label and must be free. A silent
+   * de-duplicating suffix was tempting and is wrong: two tabs called
+   * "Recent" that filter differently are indistinguishable on the strip, and
+   * the person who made the second one would never learn why their view does
+   * not do what they meant.
+   */
+  async createSavedView(
+    scope: WorkspaceScope,
+    input: CreateSavedViewRequest & { createdBy?: UserId },
+  ): Promise<SavedViewDto> {
+    return this.options.unitOfWork(async (repos) => {
+      const key = savedViewKeyFor(input.label);
+
+      if ((BASE_VIEW_KEYS as readonly string[]).includes(key)) {
+        throw new AppError(
+          'conflict',
+          `"${input.label}" is one of the built-in views and cannot be saved over`,
+          409,
+        );
+      }
+
+      const row = await repos.savedViews.create(scope, {
+        id: this.options.newId(),
+        key,
+        label: input.label,
+        filters: input.filters,
+        ...(input.createdBy === undefined ? {} : { createdBy: input.createdBy }),
+      });
+
+      if (row === null) {
+        throw new AppError('conflict', `A view called "${input.label}" already exists`, 409);
+      }
+
+      await this.audit(repos, scope, {
+        action: AUDIT_ACTIONS_AUDIENCE.savedViewCreated,
+        resourceType: 'contact_saved_view',
+        resourceId: row.id,
+        after: { key: row.key, label: row.label, filters: row.filters },
+      });
+
+      return toSavedViewDto(row.key, row.label, row.filters);
+    });
+  }
+
+  // ----------------------------------------------------------------- exports
+
+  /**
+   * Records that somebody asked for an export.
+   *
+   * The row is the intent and a worker turns it into a file. Nothing drains
+   * `export_jobs` yet, so the job stays `pending` — which is true, and is
+   * better than returning an id that names nothing at all.
+   */
+  async startExport(
+    scope: WorkspaceScope,
+    input: CreateExportRequest & { requestedBy?: UserId },
+  ): Promise<{ id: string; status: string }> {
+    return this.options.unitOfWork(async (repos) => {
+      const job = await repos.exports.create(scope, {
+        id: this.options.newId(),
+        resource: input.resource as ExportResource,
+        filters: {
+          ...(input.filters ?? {}),
+          ...(input.ids === undefined ? {} : { ids: input.ids }),
+        },
+        ...(input.requestedBy === undefined ? {} : { requestedBy: input.requestedBy }),
+      });
+
+      // An export is a copy of the audience leaving the product. docs/06
+      // treats that as a reportable act, so it is audited even though it
+      // changes nothing.
+      await this.audit(repos, scope, {
+        action: AUDIT_ACTIONS_AUDIENCE.exportStarted,
+        resourceType: 'export_job',
+        resourceId: job.id,
+        after: {
+          resource: job.resource,
+          selected: input.ids === undefined ? 'filter' : input.ids.length,
+        },
+      });
+
+      return { id: job.id, status: job.status };
+    });
   }
 
   async getContact(scope: WorkspaceScope, id: ContactId): Promise<ContactRow> {
@@ -260,8 +460,79 @@ export class AudienceService {
     });
   }
 
-  async listLists(scope: WorkspaceScope) {
-    return this.options.unitOfWork((repos) => repos.lists.list(scope));
+  /**
+   * D3's cards.
+   *
+   * `growth30d` and `trend` are null and empty rather than invented. Both
+   * need a daily history of list membership that nothing records today; the
+   * card renders without them, and a fabricated sparkline is worse than no
+   * sparkline. See the note in the report.
+   */
+  async listLists(scope: WorkspaceScope): Promise<ListCardDto[]> {
+    return this.options.unitOfWork(async (repos) => {
+      const rows = await repos.lists.list(scope);
+      return rows.map((row) => this.toListCard(row));
+    });
+  }
+
+  async renameList(
+    scope: WorkspaceScope,
+    id: ContactListId,
+    patch: { name: string; description?: string },
+  ): Promise<ListCardDto> {
+    return this.options.unitOfWork(async (repos) => {
+      const before = await repos.lists.findById(scope, id);
+      if (before === null) throw new AppError('not_found', 'List not found', 404);
+
+      // D3 greys the Rename action on an archived card; the server refuses
+      // it too, because a disabled button is a suggestion and this is the
+      // rule.
+      if (before.archivedAt !== null) {
+        throw new AppError('conflict', 'An archived list cannot be renamed', 409);
+      }
+
+      const updated = await repos.lists.update(scope, id, patch);
+      if (updated === null) throw new AppError('not_found', 'List not found', 404);
+
+      await this.audit(repos, scope, {
+        action: AUDIT_ACTIONS_AUDIENCE.listRenamed,
+        resourceType: 'contact_list',
+        resourceId: id,
+        before: { name: before.name },
+        after: { name: updated.name },
+      });
+
+      return this.toListCard(updated);
+    });
+  }
+
+  /**
+   * Archives a list.
+   *
+   * Not a delete: campaigns that sent to this list still name it, and an
+   * audience that vanishes from a past campaign's report is an audience
+   * nobody can audit. The guarded update means archiving twice is a 409
+   * rather than a second, later date on the card.
+   */
+  async archiveList(scope: WorkspaceScope, id: ContactListId): Promise<ListCardDto> {
+    return this.options.unitOfWork(async (repos) => {
+      const before = await repos.lists.findById(scope, id);
+      if (before === null) throw new AppError('not_found', 'List not found', 404);
+
+      const archived = await repos.lists.archive(scope, id, this.options.now());
+      if (archived === null) {
+        throw new AppError('conflict', 'That list is already archived', 409);
+      }
+
+      await this.audit(repos, scope, {
+        action: AUDIT_ACTIONS_AUDIENCE.listArchived,
+        resourceType: 'contact_list',
+        resourceId: id,
+        after: { name: archived.name, memberCount: archived.memberCount },
+      });
+
+      return this.toListCard(archived);
+    });
   }
 
   async deleteList(scope: WorkspaceScope, id: ContactListId): Promise<void> {
@@ -313,8 +584,140 @@ export class AudienceService {
     );
   }
 
-  async listTags(scope: WorkspaceScope) {
-    return this.options.unitOfWork((repos) => repos.tags.list(scope));
+  /**
+   * D4's table, and the rows its merge dialog shows.
+   *
+   * Three queries rather than one join: a tag's contact count and the
+   * segments that reference it aggregate over different tables at different
+   * cardinalities, and joining them would multiply one by the other.
+   */
+  async listTags(scope: WorkspaceScope): Promise<TagCardDto[]> {
+    return this.options.unitOfWork(async (repos) => {
+      const [rows, counts, segments] = await Promise.all([
+        repos.tags.list(scope),
+        repos.stats.tagCounts(scope),
+        repos.stats.segmentsByTag(scope),
+      ]);
+
+      const countFor = new Map(counts.map((row) => [String(row.tagId), row.contactCount]));
+      const segmentsFor = new Map<string, string[]>();
+      for (const row of segments) {
+        const key = String(row.tagId);
+        segmentsFor.set(key, [...(segmentsFor.get(key) ?? []), row.name]);
+      }
+
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        color: row.color,
+        createdAt: row.createdAt,
+        contactCount: countFor.get(String(row.id)) ?? 0,
+        segments: segmentsFor.get(String(row.id)) ?? [],
+      }));
+    });
+  }
+
+  async renameTag(
+    scope: WorkspaceScope,
+    id: TagId,
+    patch: { name?: string; color?: string },
+  ): Promise<TagCardDto> {
+    return this.options.unitOfWork(async (repos) => {
+      const before = await repos.tags.findById(scope, id);
+      if (before === null) throw new AppError('not_found', 'Tag not found', 404);
+
+      const updated = await repos.tags.update(scope, id, patch);
+      if (updated === null) throw new AppError('not_found', 'Tag not found', 404);
+
+      await this.audit(repos, scope, {
+        action: AUDIT_ACTIONS_AUDIENCE.tagRenamed,
+        resourceType: 'tag',
+        resourceId: id,
+        before: { name: before.name },
+        after: { name: updated.name },
+      });
+
+      const counts = await repos.stats.tagCounts(scope);
+      const segments = await repos.stats.segmentsByTag(scope);
+
+      return {
+        id: updated.id,
+        name: updated.name,
+        color: updated.color,
+        createdAt: updated.createdAt,
+        contactCount:
+          counts.find((row) => String(row.tagId) === String(id))?.contactCount ?? 0,
+        segments: segments
+          .filter((row) => String(row.tagId) === String(id))
+          .map((row) => row.name),
+      };
+    });
+  }
+
+  /**
+   * What a merge would produce, before it happens.
+   *
+   * Every id is checked against the workspace first. Without that, the
+   * overlap count for an id belonging to another workspace would be zero
+   * rather than an error — which is the same answer as "these tags share
+   * nobody", and the caller could not tell the two apart.
+   */
+  async mergePreview(
+    scope: WorkspaceScope,
+    tagIds: readonly string[],
+  ): Promise<{ total: number; overlap: number }> {
+    return this.options.unitOfWork(async (repos) => {
+      await this.assertTagsExist(repos, scope, tagIds);
+      return repos.stats.mergePreview(scope, tagIds as TagId[]);
+    });
+  }
+
+  /**
+   * Merges tags: one transaction, memberships move, duplicates collapse,
+   * the losing tags go.
+   *
+   * The whole thing runs inside the unit of work, so a failure halfway
+   * leaves no contact carrying a tag that no longer exists and no segment
+   * pointing at one.
+   */
+  async mergeTags(
+    scope: WorkspaceScope,
+    input: { keepId: string; mergeIds: string[] },
+  ): Promise<{ keepId: string; contacts: number }> {
+    return this.options.unitOfWork(async (repos) => {
+      const keep = await repos.tags.findById(scope, input.keepId as TagId);
+      if (keep === null) throw new AppError('not_found', 'Tag not found', 404);
+      await this.assertTagsExist(repos, scope, input.mergeIds);
+
+      const losing = await Promise.all(
+        input.mergeIds.map((id) => repos.tags.findById(scope, id as TagId)),
+      );
+
+      const result = await repos.tagMerge.merge(
+        scope,
+        keep.id,
+        input.mergeIds as TagId[],
+      );
+
+      await this.audit(repos, scope, {
+        action: AUDIT_ACTIONS_AUDIENCE.tagsMerged,
+        resourceType: 'tag',
+        resourceId: keep.id,
+        // The names, not only the ids: the losing tags no longer exist by
+        // the time anybody reads this row, and an audit entry that says
+        // "merged four uuids" answers nothing.
+        before: { merged: losing.map((tag) => tag?.name ?? 'unknown') },
+        after: {
+          keptTag: keep.name,
+          contacts: result.contacts,
+          moved: result.moved,
+          collapsed: result.collapsed,
+          segmentsRewritten: result.segmentsRewritten,
+        },
+      });
+
+      return { keepId: keep.id, contacts: result.contacts };
+    });
   }
 
   async deleteTag(scope: WorkspaceScope, id: TagId): Promise<void> {
@@ -426,6 +829,41 @@ export class AudienceService {
 
   async listSuppressions(scope: WorkspaceScope, options: { limit?: number } = {}) {
     return this.options.unitOfWork((repos) => repos.suppressions.list(scope, options));
+  }
+
+  /** D7's counts by reason, and the total it prints beside them. */
+  async suppressionSummary(scope: WorkspaceScope): Promise<SuppressionSummaryDto> {
+    return this.options.unitOfWork(async (repos) => {
+      const byReason = await repos.stats.suppressionSummary(scope);
+      return {
+        total: byReason.reduce((sum, row) => sum + row.count, 0),
+        byReason,
+      };
+    });
+  }
+
+  /**
+   * The options D7's Source filter offers.
+   *
+   * "Any campaign" is prepended here rather than in the browser so that the
+   * value the chip sends back (`any`) is defined on the side that has to
+   * interpret it.
+   *
+   * The list is empty until suppressions start carrying the campaign that
+   * caused them — see the note on `suppressions.source_campaign_id` in
+   * migration 0020. An empty filter is the honest rendering of "nothing has
+   * a campaign attached yet".
+   */
+  async suppressionSources(
+    scope: WorkspaceScope,
+  ): Promise<{ value: string; label: string }[]> {
+    return this.options.unitOfWork(async (repos) => {
+      const rows = await repos.stats.suppressionSources(scope);
+      return [
+        { value: 'any', label: 'Any campaign' },
+        ...rows.map((row) => ({ value: row.id, label: row.name })),
+      ];
+    });
   }
 
   async removeSuppression(scope: WorkspaceScope, id: SuppressionId): Promise<void> {
@@ -601,6 +1039,80 @@ export class AudienceService {
 
   // ----------------------------------------------------------------- private
 
+  /**
+   * Turns `?view=` into the filter it stands for.
+   *
+   * The view's own filter is the base and the request's explicit `status`
+   * and `q` win over it, so typing in the search box while a view is
+   * selected narrows the view rather than being silently discarded.
+   *
+   * An unknown key is a 404, not an empty filter. A tab whose view has been
+   * deleted must not quietly become "all contacts" — the reader would see a
+   * different audience than the tab's name claims.
+   */
+  private async resolveView(
+    repos: AudienceRepositories,
+    scope: WorkspaceScope,
+    options: {
+      status?: ContactRow['status'] | undefined;
+      view?: string | undefined;
+      q?: string | undefined;
+    },
+  ): Promise<{ status?: ContactRow['status']; search?: string }> {
+    let stored: SavedViewFilters = {};
+
+    if (options.view !== undefined && !(BASE_VIEW_KEYS as readonly string[]).includes(options.view)) {
+      const view = await repos.savedViews.findByKey(scope, options.view);
+      if (view === null) throw new AppError('not_found', 'Saved view not found', 404);
+      stored = view.filters as SavedViewFilters;
+    }
+
+    const status = options.status ?? stored.status;
+    const search = options.q ?? stored.q;
+
+    return {
+      ...(status === undefined ? {} : { status }),
+      ...(search === undefined || search === '' ? {} : { search }),
+    };
+  }
+
+  /**
+   * Every id names a tag in this workspace, or 404.
+   *
+   * One `findById` per id rather than a batched read: a merge selection is a
+   * handful of tags, and the point is the answer per id, not the throughput.
+   */
+  private async assertTagsExist(
+    repos: AudienceRepositories,
+    scope: WorkspaceScope,
+    tagIds: readonly string[],
+  ): Promise<void> {
+    for (const id of tagIds) {
+      if ((await repos.tags.findById(scope, id as TagId)) === null) {
+        throw new AppError('not_found', 'Tag not found', 404);
+      }
+    }
+  }
+
+  private toListCard(row: ListRow): ListCardDto {
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      memberCount: row.memberCount,
+      createdAt: row.createdAt,
+      archived: row.archivedAt !== null,
+      footnote:
+        row.archivedAt === null
+          ? `${row.memberCount.toLocaleString('en-US')} contacts`
+          : `Archived ${formatDay(row.archivedAt)}`,
+      // Neither is computed: a list's daily membership history is not
+      // recorded anywhere, and a made-up sparkline is worse than none.
+      growth30d: null,
+      trend: [],
+    };
+  }
+
   private compile(definition: unknown, scope: WorkspaceScope, cap: number) {
     try {
       return compilePreviewCount(definition, scope.workspaceId, cap);
@@ -651,6 +1163,36 @@ function sanitiseFilename(filename: string): string {
       .replace(/\.{2,}/gu, '.')
       .slice(-120) || 'upload'
   );
+}
+
+/** A stored view row as D1's tab strip wants it. */
+function toSavedViewDto(
+  key: string,
+  label: string,
+  filters: { status?: string | undefined },
+): SavedViewDto {
+  return {
+    key,
+    label,
+    ...(filters.status === undefined
+      ? {}
+      : { status: filters.status as ContactRow['status'] }),
+  };
+}
+
+/**
+ * "12 Mar 2026" — the date format every D frame prints.
+ *
+ * Written out rather than left to `Intl`, for the reason the browser copy in
+ * `apps/web/src/api/audience-extra.ts` gives: current ICU abbreviates
+ * September as "Sept" in en-GB and the frames say "19 Sep 2026", so a date
+ * rendered through `Intl` changes spelling when the runtime's ICU is
+ * updated. UTC, because the workspace timezone is not modelled yet.
+ */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatDay(value: Date): string {
+  return `${value.getUTCDate()} ${MONTHS[value.getUTCMonth()] ?? ''} ${value.getUTCFullYear()}`;
 }
 
 function contentTypeFor(fileType: 'csv' | 'tsv' | 'xlsx'): string {

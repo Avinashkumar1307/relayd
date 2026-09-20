@@ -22,6 +22,7 @@ import type {
 } from '@relayd/types';
 
 import { AUDIT_ACTIONS_PROVIDERS, buildAuditEntry, type Actor } from './audit.js';
+import { senderDnsView, type SenderDnsView } from './sender-dns.js';
 
 /**
  * Provider connections and senders.
@@ -65,6 +66,27 @@ export interface ProviderServiceOptions {
    * when the queues are declared, and consumed with the send path in Phase 6.
    */
   testSends?: TestSendQueue;
+  /**
+   * Re-checks a sender identity's DNS out of band.
+   *
+   * A job for the same reason a test send is one: re-reading verification
+   * state means calling the provider, calling the provider means reading the
+   * credential, and docs/06 gives the API task role permission to write
+   * secrets and not to read them. The request therefore asks for a check and
+   * reports the state it can see; it does not perform one. Absent until the
+   * queue is wired, and then the route answers 503 rather than pretending.
+   */
+  dnsChecks?: DnsCheckQueue;
+  /**
+   * Posts a signed synthetic event at this connection's own ingest URL.
+   *
+   * Also a job, and for a second reason on top of the credential one: the
+   * point of E1d is to prove the *whole* inbound path — that the URL
+   * resolves, that the signature verifies against this connection's secret,
+   * and that the event lands in `provider_webhook_events`. A check that ran
+   * inside the API process would prove none of that.
+   */
+  ingestTests?: IngestTestQueue;
   newId: () => string;
   now: () => Date;
   currentActor: () => Actor;
@@ -96,6 +118,21 @@ export interface TestSendQueue {
     senderAccountId: string;
     to: readonly string[];
     subject: string;
+  }): Promise<{ jobId: string }>;
+}
+
+export interface DnsCheckQueue {
+  enqueue(input: {
+    workspaceId: string;
+    providerConnectionId: string;
+    senderIdentityId: string;
+  }): Promise<{ jobId: string }>;
+}
+
+export interface IngestTestQueue {
+  enqueue(input: {
+    workspaceId: string;
+    providerConnectionId: string;
   }): Promise<{ jobId: string }>;
 }
 
@@ -576,6 +613,134 @@ export class ProviderService {
 
       return { jobId, queued: input.to.length };
     });
+  }
+
+  // -------------------------------------------------------------- sender DNS
+
+  /**
+   * The SPF / DKIM / DMARC drawer for one sender (E2b).
+   *
+   * Reports what `sender_identities` holds. The composition and every
+   * judgement about what counts as verified live in `sender-dns.ts`, which
+   * has no repository and no clock of its own and is therefore testable
+   * against a row rather than against a database.
+   */
+  async senderDns(scope: WorkspaceScope, id: SenderAccountId): Promise<SenderDnsView> {
+    return this.options.unitOfWork(async (repos) => {
+      const { identity } = await this.senderWithIdentity(repos, scope, id);
+
+      return senderDnsView({ senderId: id, identity, now: this.options.now() });
+    });
+  }
+
+  /**
+   * E2b's "Check DNS now".
+   *
+   * Asks for a re-check and answers with the state as it stands. It does not
+   * wait for the check: the check calls the provider, which needs the
+   * credential, which this process cannot read (docs/06). Returning the
+   * current view rather than a bare acknowledgement is what the browser
+   * expects — it writes the response straight into the drawer's cache — and
+   * it is honest, because `nextCheckInMinutes` says when the answer will
+   * actually move.
+   */
+  async checkSenderDns(scope: WorkspaceScope, id: SenderAccountId): Promise<SenderDnsView> {
+    const queue = this.options.dnsChecks;
+    if (queue === undefined) {
+      throw new AppError(
+        'service_unavailable',
+        'DNS re-checks are not available on this deployment yet',
+        503,
+      );
+    }
+
+    const view = await this.options.unitOfWork(async (repos) => {
+      const { sender, identity } = await this.senderWithIdentity(repos, scope, id);
+
+      await queue.enqueue({
+        workspaceId: scope.workspaceId,
+        providerConnectionId: sender.providerId,
+        senderIdentityId: identity.id,
+      });
+
+      return senderDnsView({ senderId: id, identity, now: this.options.now() });
+    });
+
+    return view;
+  }
+
+  /**
+   * E1d's "Send test event": prove the inbound webhook path works.
+   *
+   * Refused for a provider that has no inbound webhooks at all rather than
+   * queued and silently dropped — D4 makes SMTP best-effort by design, and a
+   * spinner that never resolves teaches the customer the wrong thing about
+   * why their bounces are missing.
+   *
+   * Audited, because it writes an event into the workspace's own ingest
+   * inbox and an operator reading `provider_webhook_events` later needs to
+   * know which row was a drill.
+   */
+  async sendIngestTestEvent(
+    scope: WorkspaceScope,
+    id: ProviderConnectionId,
+  ): Promise<{ sent: boolean }> {
+    const queue = this.options.ingestTests;
+    if (queue === undefined) {
+      throw new AppError(
+        'service_unavailable',
+        'Webhook tests are not available on this deployment yet',
+        503,
+      );
+    }
+
+    return this.options.unitOfWork(async (repos) => {
+      const connection = await repos.connections.findById(scope, id);
+      if (connection === null) throw new AppError('not_found', 'Connection not found', 404);
+
+      if (connection.capabilities['supportsWebhooks'] === false) {
+        throw new AppError(
+          'validation_failed',
+          'This provider has no inbound webhooks, so there is nothing to test. Delivery over it is best-effort.',
+          422,
+        );
+      }
+
+      if (connection.status === 'revoked' || connection.status === 'disabled') {
+        throw new AppError('conflict', `This connection is ${connection.status}`, 409);
+      }
+
+      await queue.enqueue({ workspaceId: scope.workspaceId, providerConnectionId: id });
+
+      await this.audit(repos, scope, {
+        action: AUDIT_ACTIONS_PROVIDERS.ingestTested,
+        resourceId: id,
+      });
+
+      return { sent: true };
+    });
+  }
+
+  /**
+   * A sender and the identity behind it, both scoped, both 404 on a miss.
+   *
+   * 404 rather than 403 for a sender in another workspace (CLAUDE.md
+   * section 11), and 404 rather than 500 for a sender whose identity has
+   * vanished — the FK is ON DELETE RESTRICT so it should not happen, and if
+   * it does the caller still gets an answer they can read.
+   */
+  private async senderWithIdentity(
+    repos: ProviderRepositories,
+    scope: WorkspaceScope,
+    id: SenderAccountId,
+  ) {
+    const sender = await repos.senders.findById(scope, id);
+    if (sender === null) throw new AppError('not_found', 'Sender not found', 404);
+
+    const identity = await repos.identities.findById(scope, sender.identityId);
+    if (identity === null) throw new AppError('not_found', 'Sender identity not found', 404);
+
+    return { sender, identity };
   }
 
   private ingestUrl(providerType: ProviderType, token: string): string {

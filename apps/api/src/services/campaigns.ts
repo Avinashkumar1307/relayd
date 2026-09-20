@@ -3,6 +3,7 @@ import {
   applyLifecycleAction,
   launchCampaign,
   retryFailedRecipients,
+  runLaunchPreflight,
   type LaunchPort,
   type LifecycleAction,
   type LifecyclePort,
@@ -10,6 +11,7 @@ import {
 } from '@relayd/campaigns';
 import type {
   AuditLogRepository,
+  CampaignEventRow,
   CampaignRepository,
   ConsentRepository,
   WorkspaceScope,
@@ -62,6 +64,13 @@ export interface CampaignServiceOptions {
 
   /** Enqueues the dispatch job after a successful launch. */
   enqueueDispatch(input: { workspaceId: string; campaignId: CampaignId }): Promise<void>;
+
+  /**
+   * The clock, for rendering timeline timestamps as "11:02" or "18 Sep,
+   * 16:20". Injected so the test for that rule is not a test of what day it
+   * happens to be. Defaults to the real one.
+   */
+  now?: () => Date;
 }
 
 export const AUDIT_ACTIONS_CAMPAIGNS = {
@@ -75,6 +84,8 @@ export const AUDIT_ACTIONS_CAMPAIGNS = {
   cancelled: 'campaign.cancelled',
   retried: 'campaign.retry_failed',
   cloned: 'campaign.cloned',
+  archived: 'campaign.archived',
+  unarchived: 'campaign.unarchived',
 } as const;
 
 /**
@@ -124,7 +135,13 @@ export class CampaignService {
 
   async list(
     scope: WorkspaceScope,
-    query: { state?: string | undefined; search?: string | undefined; limit: number; cursor?: string | undefined },
+    query: {
+      state?: string | undefined;
+      search?: string | undefined;
+      archived?: 'active' | 'archived' | 'all' | undefined;
+      limit: number;
+      cursor?: string | undefined;
+    },
   ) {
     return this.options.unitOfWork((repos) => repos.campaigns.list(scope, query));
   }
@@ -162,6 +179,123 @@ export class CampaignService {
         // know the difference between "we could not send" and "we do not
         // know whether we sent".
         deliveryUncertain: counters.uncertain,
+      };
+    });
+  }
+
+  /**
+   * G3's "Event timeline".
+   *
+   * Reads `campaign_events` and nothing else. Every number a row quotes was
+   * written into the event's `detail` at the moment it was true, which is
+   * both why the timeline is cheap and why it still reads correctly when the
+   * page is reopened a week later — recomputing "31,618 of 48,213 handed to
+   * providers" from today's counters would print a different sentence every
+   * time.
+   */
+  async timeline(scope: WorkspaceScope, id: CampaignId): Promise<TimelineEvent[]> {
+    return this.options.unitOfWork(async (repos) => {
+      // Checked first, so a campaign in another workspace is a 404 and not
+      // an empty list. An empty list would be a slow oracle: it tells the
+      // caller the id exists, just quietly.
+      const campaign = await repos.campaigns.findById(scope, id);
+      if (campaign === null) throw new AppError('not_found', 'Campaign not found', 404);
+
+      const rows = await repos.campaigns.listEvents(scope, id);
+      const zone = campaign.timezone ?? 'UTC';
+      const now = this.options.now?.() ?? new Date();
+
+      return rows.map((row) => describeCampaignEvent(row, { zone, now }));
+    });
+  }
+
+  /**
+   * Files a terminal campaign away (G1's Archive action).
+   *
+   * `campaign:write`, not `campaign:launch`: archiving a finished campaign
+   * changes nothing about sending. The repository's guard is what stops a
+   * live one being hidden.
+   */
+  async archive(scope: WorkspaceScope, id: CampaignId) {
+    return this.setArchived(scope, id, true);
+  }
+
+  async unarchive(scope: WorkspaceScope, id: CampaignId) {
+    return this.setArchived(scope, id, false);
+  }
+
+  private async setArchived(scope: WorkspaceScope, id: CampaignId, archived: boolean) {
+    return this.options.unitOfWork(async (repos) => {
+      const updated = archived
+        ? await repos.campaigns.archive(scope, id)
+        : await repos.campaigns.unarchive(scope, id);
+
+      if (updated === null) {
+        // Zero rows is three different things — no such campaign, already in
+        // that state, or still running — and the customer has to do
+        // something different for each.
+        const existing = await repos.campaigns.findById(scope, id);
+        if (existing === null) throw new AppError('not_found', 'Campaign not found', 404);
+
+        if (archived && existing.archivedAt === null) {
+          throw new AppError(
+            'conflict',
+            'Only a campaign that has finished can be archived',
+            409,
+          );
+        }
+
+        throw new AppError(
+          'conflict',
+          archived ? 'That campaign is already archived' : 'That campaign is not archived',
+          409,
+        );
+      }
+
+      await this.audit(repos, scope, {
+        action: archived
+          ? AUDIT_ACTIONS_CAMPAIGNS.archived
+          : AUDIT_ACTIONS_CAMPAIGNS.unarchived,
+        resourceId: id,
+        after: { archived },
+      });
+
+      return updated;
+    });
+  }
+
+  /**
+   * G2 step 7's pre-flight: the launch checks, without launching.
+   *
+   * Runs `runLaunchPreflight` — the same function, in the same order, with
+   * the same messages the launch would produce — against the same port. It
+   * takes no claim, writes no event and takes no snapshot, so it can be
+   * polled while the author edits.
+   *
+   * Two checks are deliberately absent, and their absence is the honest
+   * part: `empty_audience` and `entitlement_exceeded` are decided against
+   * the rows the snapshot actually wrote, and there is no snapshot here.
+   * The wizard already shows an audience count from
+   * `POST /campaigns/audience-preview`, which counts with the snapshot's own
+   * predicates; guessing at those two here would be the disagreement this
+   * endpoint exists to avoid.
+   */
+  async preflight(scope: WorkspaceScope, id: CampaignId) {
+    return this.options.unitOfWork(async (repos) => {
+      const port = this.options.ports.launch(repos, scope);
+
+      const campaign = await port.readCampaign(id);
+      if (campaign === null) throw new AppError('not_found', 'Campaign not found', 404);
+
+      const result = await runLaunchPreflight(campaign, port, { stopAtFirstFailure: false });
+
+      return {
+        ok: result.failure === null,
+        // The launch failure code this campaign would be refused with, so a
+        // caller can map the summary to the same remedy the launch error
+        // would have named.
+        failure: result.failure?.failure ?? null,
+        checks: result.checks,
       };
     });
   }
@@ -541,4 +675,239 @@ export class CampaignService {
       }),
     );
   }
+}
+
+/* --------------------------------------------------------------- timeline -- */
+
+/**
+ * One row of G3's "Event timeline", as the client declares it.
+ *
+ * `time` is a rendered string because that is what the frame draws and what
+ * `apps/web/src/api/campaigns.ts` types. Rendering it here rather than in
+ * the browser is the only way it can be in the *campaign's* timezone: a
+ * Dubai campaign read from a laptop in London says 09:00 on both, which is
+ * the time the customer scheduled and the time their recipients saw.
+ * `occurredAt` carries the instant alongside it for anything that needs to
+ * sort, diff or re-render.
+ */
+export interface TimelineEvent {
+  id: string;
+  title: string;
+  time: string;
+  detail: string;
+  tone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral';
+  occurredAt: string;
+}
+
+type Tone = TimelineEvent['tone'];
+
+/**
+ * How each `campaign_events.event_type` reads on the timeline.
+ *
+ * A table rather than a chain of ifs, so "what can the timeline say" is one
+ * thing to read — and so an event type nobody thought about falls through to
+ * the default below instead of disappearing. A timeline that silently drops
+ * the entry explaining why a campaign stopped is worse than one that prints
+ * a clumsy title.
+ */
+const EVENT_COPY: Readonly<Record<string, { title: string; tone: Tone }>> = {
+  'launch.queued': { title: 'Queued', tone: 'neutral' },
+  'launch.rejected': { title: 'Launch refused', tone: 'danger' },
+  'launch.content_warnings': { title: 'Content warnings', tone: 'warning' },
+  'launch.reputation_unavailable': { title: 'Link reputation unavailable', tone: 'warning' },
+  'campaign.pause': { title: 'Paused', tone: 'warning' },
+  'campaign.paused': { title: 'Paused automatically', tone: 'warning' },
+  'campaign.resume': { title: 'Resumed', tone: 'brand' },
+  'campaign.cancel': { title: 'Cancelled', tone: 'danger' },
+  'campaign.completed': { title: 'Completed', tone: 'success' },
+  'campaign.forced_transition': { title: 'Recovered automatically', tone: 'warning' },
+  'campaign.retry_failed': { title: 'Failed recipients retried', tone: 'neutral' },
+  'campaign.test_send': { title: 'Test message sent', tone: 'neutral' },
+  'campaign.sent': { title: 'Sending finished', tone: 'success' },
+  'dispatch.stalled': { title: 'Dispatch stalled', tone: 'warning' },
+  'dispatch.ramp_capped': { title: 'New-account daily cap reached', tone: 'warning' },
+  'dunning.notice': { title: 'Payment notice', tone: 'warning' },
+  'dunning.stage_changed': { title: 'Billing status changed', tone: 'warning' },
+  'dunning.resolved': { title: 'Payment resolved', tone: 'success' },
+};
+
+export function describeCampaignEvent(
+  row: CampaignEventRow,
+  context: { zone: string; now: Date },
+): TimelineEvent {
+  const copy = EVENT_COPY[row.eventType] ?? { title: humanise(row.eventType), tone: 'neutral' as Tone };
+
+  return {
+    id: row.id,
+    title: copy.title,
+    tone: copy.tone,
+    time: formatEventTime(row.createdAt, context),
+    detail: eventDetail(row),
+    occurredAt: row.createdAt.toISOString(),
+  };
+}
+
+/**
+ * "11:02" today, "18 Sep, 16:20" before that — the two forms G3 draws.
+ *
+ * An unknown IANA zone throws inside `Intl`, and a campaign whose timezone
+ * column holds something a migration once allowed must still render a
+ * timeline. So the zone is tried once and UTC is the fallback.
+ */
+function formatEventTime(at: Date, context: { zone: string; now: Date }): string {
+  const zone = usableZone(context.zone);
+
+  const clock = new Intl.DateTimeFormat('en-GB', {
+    timeZone: zone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: zone,
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+
+  const on = datePartsOf(parts, at);
+  const today = datePartsOf(parts, context.now);
+
+  if (on.year === today.year && on.month === today.month && on.day === today.day) {
+    return clock.format(at);
+  }
+
+  // "18 Sep", not "18 Sept": the month is sliced to three letters because
+  // en-GB's own abbreviation for September is four, and which one ICU gives
+  // is a property of the Node build rather than a decision anybody made.
+  // The year is dropped deliberately — it is on `occurredAt` for anyone who
+  // needs it, and a timeline reads as a sequence, not a set of dates.
+  return `${on.day} ${on.month.slice(0, 3)}, ${clock.format(at)}`;
+}
+
+function datePartsOf(
+  formatter: Intl.DateTimeFormat,
+  at: Date,
+): { year: string; month: string; day: string } {
+  const parts = formatter.formatToParts(at);
+  const find = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((part) => part.type === type)?.value ?? '';
+
+  return { year: find('year'), month: find('month'), day: find('day') };
+}
+
+function usableZone(zone: string): string {
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: zone });
+    return zone;
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
+ * The sentence under the title.
+ *
+ * Built from the event's own `detail` blob and from the actor's name — never
+ * from a live count. What the timeline says happened is what was true when
+ * it happened.
+ */
+function eventDetail(row: CampaignEventRow): string {
+  const detail = isRecord(row.detail) ? row.detail : {};
+  const parts: string[] = [];
+
+  const who = actorPhrase(row);
+  if (who !== null) parts.push(who);
+
+  switch (row.eventType) {
+    case 'launch.queued': {
+      const recipients = asCount(detail['recipientCount']);
+      const suppressed = asCount(detail['suppressedAtSnapshot']);
+
+      if (recipients !== null) {
+        parts.push(
+          suppressed !== null && suppressed > 0
+            ? `${recipients.toLocaleString()} recipients · ${suppressed.toLocaleString()} suppressed removed`
+            : `${recipients.toLocaleString()} recipients`,
+        );
+      }
+      break;
+    }
+
+    case 'launch.rejected': {
+      // The launch failure code, spelled out. It is the same refusal the
+      // launch endpoint answered with, which is what makes "why was this
+      // refused" answerable from the timeline alone.
+      const failure = detail['failure'];
+      if (typeof failure === 'string') parts.push(humanise(failure));
+      break;
+    }
+
+    case 'launch.content_warnings': {
+      const codes = detail['codes'];
+      if (Array.isArray(codes) && codes.length > 0) parts.push(codes.join(', '));
+      break;
+    }
+
+    case 'campaign.retry_failed': {
+      const retried = asCount(detail['retried']);
+      if (retried !== null) parts.push(`${retried.toLocaleString()} recipients requeued`);
+      break;
+    }
+
+    case 'campaign.test_send': {
+      const to = detail['to'];
+      if (Array.isArray(to)) {
+        parts.push(`${to.length} test recipient${to.length === 1 ? '' : 's'}`);
+      }
+      break;
+    }
+
+    case 'campaign.forced_transition': {
+      const from = detail['from'];
+      const to = detail['to'];
+      if (typeof from === 'string' && typeof to === 'string') parts.push(`${from} to ${to}`);
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  return parts.join(' · ');
+}
+
+/**
+ * "Farah Al-Mansoori", "An API key", "The provider".
+ *
+ * Never an id: a timeline that prints a uuid in place of a name answers
+ * "who" with "look it up yourself", and the join that resolves the name has
+ * already been paid for.
+ */
+function actorPhrase(row: CampaignEventRow): string | null {
+  switch (row.actorType) {
+    case 'user':
+      return row.actorName ?? 'A member of this workspace';
+    case 'api_key':
+      return 'An API key';
+    case 'provider':
+      return 'The provider';
+    default:
+      return null;
+  }
+}
+
+/** `launch.content_warnings` becomes "Launch content warnings". */
+function humanise(value: string): string {
+  const words = value.replace(/[._]/gu, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function asCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

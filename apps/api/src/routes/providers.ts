@@ -155,6 +155,27 @@ export function providerRoutes(options: ProviderRouterOptions): Router {
     res.status(204).send();
   });
 
+  /**
+   * E1d's "Send test event": prove the inbound webhook path works.
+   *
+   * `provider:write` rather than `provider:read`. It writes a synthetic row
+   * into the workspace's own ingest inbox and leaves an audit trail, and a
+   * viewer who can look at a connection has no business putting events into
+   * it.
+   */
+  router.post(
+    '/providers/:id/ingest/test',
+    ...chain,
+    write,
+    async (req: Request, res: Response) => {
+      const result = await providers.sendIngestTestEvent(
+        requireScope(),
+        req.params['id'] as ProviderConnectionId,
+      );
+      res.json({ data: result });
+    },
+  );
+
   // ------------------------------------------------------------- identities
 
   router.get('/providers/:id/identities', ...chain, read, async (req: Request, res: Response) => {
@@ -237,6 +258,37 @@ export function providerRoutes(options: ProviderRouterOptions): Router {
    * campaign to it — and that is exactly why it is capped, audited and behind
    * provider:write.
    */
+  /**
+   * The SPF / DKIM / DMARC records behind a sender (E2b).
+   *
+   * `provider:read`: it reports state and reveals nothing a viewer of the
+   * connection cannot already see. DNS records are public by construction —
+   * the whole point of them is that every receiving mail server can read
+   * them.
+   */
+  router.get('/senders/:id/dns', ...chain, read, async (req: Request, res: Response) => {
+    res.json({ data: await providers.senderDns(requireScope(), req.params['id'] as SenderAccountId) });
+  });
+
+  /**
+   * E2b's "Check DNS now".
+   *
+   * `provider:write`, because it queues work against the provider on the
+   * customer's behalf, and POST rather than GET because it is not safe to
+   * repeat without consequence — a GET that enqueues a job is a job a
+   * prefetching browser can start.
+   */
+  router.post(
+    '/senders/:id/dns/check',
+    ...chain,
+    write,
+    async (req: Request, res: Response) => {
+      res.json({
+        data: await providers.checkSenderDns(requireScope(), req.params['id'] as SenderAccountId),
+      });
+    },
+  );
+
   router.post(
     '/senders/:id/test',
     ...chain,

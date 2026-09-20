@@ -124,10 +124,47 @@ export interface Recipient {
 export interface TimelineEvent {
   id: string;
   title: string;
-  /** "11:02", "18 Sep, 16:20" — already in the workspace's timezone. */
+  /**
+   * "11:02", "18 Sep, 16:20" — already in the campaign's timezone.
+   *
+   * Rendered by the API rather than here, and that is the point: a Dubai
+   * campaign read from a laptop in London has to say the time the customer
+   * scheduled, not the time it is where the browser happens to be.
+   */
   time: string;
   detail: string;
   tone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral';
+  /** The instant behind `time`, for sorting or re-rendering. */
+  occurredAt: string;
+}
+
+/**
+ * One row of G2 step 7's pre-flight list.
+ *
+ * The server runs the same checks the launch runs — literally the same
+ * function — so a pre-flight that passes and a launch that then refuses
+ * cannot disagree about anything in this list.
+ *
+ * Two checks are not here and their absence is deliberate: the audience
+ * count and the plan-limit headroom are decided against the snapshot the
+ * launch takes, and the pre-flight takes none. The wizard shows those from
+ * `POST /campaigns/audience-preview`, which counts with the snapshot's own
+ * predicates.
+ */
+export interface PreflightServerCheck {
+  key: string;
+  outcome: 'pass' | 'warn' | 'fail';
+  title: string;
+  detail: string;
+  /** The launch failure code this check would produce. Null when it passed. */
+  failure: string | null;
+}
+
+export interface PreflightResult {
+  ok: boolean;
+  /** The first failure in launch order — the code `POST /launch` would answer. */
+  failure: string | null;
+  checks: PreflightServerCheck[];
 }
 
 export interface PoolMemberHealth {
@@ -163,7 +200,11 @@ export interface PoolSummary {
 }
 
 export const campaignsApi = {
-  list: (query: { state?: string; search?: string } = {}) =>
+  /**
+   * `archived` defaults to `active` server-side, so an archived campaign is
+   * off G1 until something asks for it.
+   */
+  list: (query: { state?: string; search?: string; archived?: 'active' | 'archived' | 'all' } = {}) =>
     api.get<{ items: Campaign[]; nextCursor: string | null }>('/campaigns', query),
 
   get: (id: string) =>
@@ -174,7 +215,7 @@ export const campaignsApi = {
   recipients: (id: string, query: { state?: string; search?: string } = {}) =>
     api.get<{ items: Recipient[]; nextCursor: string | null }>(`/campaigns/${id}/recipients`, query),
 
-  /** BACKEND PENDING: GET /campaigns/:id/timeline — G3's "Event timeline". */
+  /** G3's "Event timeline", newest first, from `campaign_events`. */
   timeline: (id: string) => api.get<TimelineEvent[]>(`/campaigns/${id}/timeline`),
 
   create: (input: { name: string }) => api.post<Campaign>('/campaigns', input),
@@ -221,6 +262,27 @@ export const campaignsApi = {
     api.post<{ retried: number; excluded: Record<string, number> }>(`/campaigns/${id}/retry-failed`),
 
   testSend: (id: string, to: string[]) => api.post<{ queued: number }>(`/campaigns/${id}/test-send`, { to }),
+
+  /**
+   * G1's Archive action, on a campaign that has finished.
+   *
+   * 409 while it is still running — archiving hides it from the list, and
+   * hiding a campaign that is still handing messages to a provider would
+   * take the only view of a live send off the screen.
+   */
+  archive: (id: string) => api.post<Campaign>(`/campaigns/${id}/archive`),
+
+  /** The inverse. Find archived campaigns with `list({ archived: 'archived' })`. */
+  unarchive: (id: string) => api.post<Campaign>(`/campaigns/${id}/unarchive`),
+
+  /**
+   * G2 step 7's server-side checks, run without launching.
+   *
+   * POST despite reading nothing: it renders the message and calls a link
+   * reputation feed, and a GET invites a browser prefetch to do that
+   * unasked.
+   */
+  preflight: (id: string) => api.post<PreflightResult>(`/campaigns/${id}/preflight`),
 };
 
 export const poolsApi = {
@@ -250,6 +312,8 @@ export const campaignKeys = {
     [workspaceId, 'campaigns', id, 'recipients', query] as const,
   timeline: (workspaceId: string | null, id: string) =>
     [workspaceId, 'campaigns', id, 'timeline'] as const,
+  preflight: (workspaceId: string | null, id: string) =>
+    [workspaceId, 'campaigns', id, 'preflight'] as const,
   audiencePreview: (workspaceId: string | null, selection: unknown) =>
     [workspaceId, 'campaigns', 'audience-preview', selection] as const,
   pools: (workspaceId: string | null) => [workspaceId, 'pools'] as const,

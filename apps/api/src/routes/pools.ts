@@ -54,6 +54,16 @@ export function poolRoutes(options: PoolRouterOptions): Router {
     res.json({ data: await pools.list(requireScope()) });
   });
 
+  /**
+   * The senders a pool may contain, with their connection's headroom (H1b).
+   *
+   * Declared before `/pools/:id`, or Express 5 matches `senders` as an id
+   * and the drawer gets a 404 from `pools.get`.
+   */
+  router.get('/pools/senders', ...chain, read, async (_req, res: Response) => {
+    res.json({ data: await pools.eligibleSenders(requireScope()) });
+  });
+
   router.get('/pools/:id', ...chain, read, async (req: Request, res: Response) => {
     res.json({ data: await pools.get(requireScope(), id(req)) });
   });

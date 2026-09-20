@@ -79,6 +79,17 @@ export const AUDIT_ACTIONS_AUDIENCE = {
   contactsUntagged: 'contact.untagged',
   listCreated: 'list.created',
   listDeleted: 'list.deleted',
+  listRenamed: 'list.renamed',
+  listArchived: 'list.archived',
+  tagRenamed: 'tag.renamed',
+  tagsMerged: 'tag.merged',
+  savedViewCreated: 'saved_view.created',
+  /**
+   * An export is a copy of the audience leaving the product. Nothing about
+   * the workspace changes, and it is still the row somebody wants when they
+   * ask who took the contact list.
+   */
+  exportStarted: 'export.started',
   suppressionAdded: 'suppression.added',
   suppressionRemoved: 'suppression.removed',
   importStarted: 'import.started',
@@ -91,4 +102,12 @@ export const AUDIT_ACTIONS_PROVIDERS = {
   senderCreated: 'sender.created',
   senderRemoved: 'sender.removed',
   testSent: 'sender.test_sent',
+  /**
+   * E1d's webhook drill.
+   *
+   * Audited because it puts a synthetic row in the workspace's own
+   * `provider_webhook_events` inbox, and an operator reading that table
+   * afterwards has to be able to tell a drill from a real event.
+   */
+  ingestTested: 'provider.ingest_tested',
 } as const;
