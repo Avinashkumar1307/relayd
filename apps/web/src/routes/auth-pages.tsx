@@ -11,6 +11,7 @@ import {
 import type { LoginRequest, RegisterRequest } from '@relayd/validation';
 import { ApiError, api } from '../api/client.js';
 import { useAuth } from '../auth/AuthProvider.js';
+import { AuthLayout, Button as UiButton, Field as UiField, PasswordField } from '@relayd/ui';
 import { AuthCard, Field, FormError, SubmitButton } from '../components/form.js';
 
 /**
@@ -44,6 +45,14 @@ function useSubmitError() {
   return { formError, setFormError, handle };
 }
 
+/**
+ * B1 Sign in /login (design/B Auth & onboarding.dc.html).
+ *
+ * The frame: title "Sign in", subtitle "Use the work email you registered
+ * with.", Email, Password with "Forgot password?" on the label row and the
+ * reveal toggle in the box, a full-width 40px primary button, then "New to
+ * Relayd? Create an account" under the card.
+ */
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -51,51 +60,56 @@ export function LoginPage() {
   const form = useForm<LoginRequest>({ resolver: zodResolver(loginSchema) });
 
   return (
-    <AuthCard
+    <AuthLayout
       title="Sign in"
-      subtitle={
+      subtitle="Use the work email you registered with."
+      after={
         <>
-          or{' '}
-          <Link to="/register" className="font-medium text-slate-900 underline">
-            create an account
+          New to Relayd?{' '}
+          <Link to="/register" className="font-medium text-brand no-underline hover:text-brand-hover">
+            Create an account
           </Link>
         </>
       }
     >
+      {/* The B1 card is one 20px column: heading, email, password, button. */}
       <form
-        className="space-y-4"
+        className="flex flex-col gap-5"
         onSubmit={form.handleSubmit(async (values) => {
           try {
             await login(values.email, values.password);
-            navigate('/settings/workspace', { replace: true });
+            navigate('/dashboard', { replace: true });
           } catch (error) {
             handle(error);
           }
         })}
       >
         <FormError message={formError} />
-        <Field
+        <UiField
           label="Email"
+          size="lg"
           type="email"
           autoComplete="email"
           {...form.register('email')}
           error={form.formState.errors.email?.message}
         />
-        <Field
+        <PasswordField
           label="Password"
-          type="password"
+          size="lg"
           autoComplete="current-password"
+          labelAside={
+            <Link to="/forgot-password" className="text-ui font-medium text-brand no-underline hover:text-brand-hover">
+              Forgot password?
+            </Link>
+          }
           {...form.register('password')}
           error={form.formState.errors.password?.message}
         />
-        <SubmitButton pending={form.formState.isSubmitting}>Sign in</SubmitButton>
-        <p className="text-center text-xs text-slate-500">
-          <Link to="/forgot-password" className="underline">
-            Forgot your password?
-          </Link>
-        </p>
+        <UiButton type="submit" size="lg" block pending={form.formState.isSubmitting}>
+          Sign in
+        </UiButton>
       </form>
-    </AuthCard>
+    </AuthLayout>
   );
 }
 

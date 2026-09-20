@@ -1,5 +1,5 @@
-import { Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router';
-import { useAuth } from './auth/AuthProvider.js';
+import { Link, Navigate, Route, Routes } from 'react-router';
+import { AppShell } from './components/app-shell.js';
 import { RequireAnonymous, RequireAuth } from './auth/guards.js';
 import {
   ForgotPasswordPage,
@@ -108,106 +108,6 @@ export function App() {
       <Route path="/audience" element={<Navigate to="/audience/contacts" replace />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
-  );
-}
-
-/**
- * The authenticated shell: workspace switcher and navigation.
- *
- * Renders an Outlet so nested routes appear inside it.
- */
-function AppShell() {
-  const { memberships, currentWorkspaceId, switchWorkspace, logout, current } = useAuth();
-
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-3">
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-semibold text-slate-900">Relayd</span>
-
-            {memberships.length > 1 ? (
-              <>
-                <label className="sr-only" htmlFor="workspace-switcher">
-                  Current workspace
-                </label>
-                <select
-                  id="workspace-switcher"
-                  value={currentWorkspaceId ?? ''}
-                  onChange={(event) => switchWorkspace(event.target.value)}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-sm"
-                >
-                  {memberships.map((membership) => (
-                    <option key={membership.workspaceId} value={membership.workspaceId}>
-                      {membership.workspaceName}
-                    </option>
-                  ))}
-                </select>
-              </>
-            ) : (
-              <span className="text-sm text-slate-600">{current?.workspaceName}</span>
-            )}
-          </div>
-
-          <nav className="flex flex-wrap items-center gap-4 text-sm">
-            <NavLink to="/audience/contacts">Contacts</NavLink>
-            <NavLink to="/audience/lists">Lists</NavLink>
-            <NavLink to="/audience/tags">Tags</NavLink>
-            <NavLink to="/audience/imports">Imports</NavLink>
-            <NavLink to="/audience/suppressions">Suppressions</NavLink>
-
-            <span aria-hidden="true" className="text-slate-300">
-              |
-            </span>
-
-            <NavLink to="/dashboard">Dashboard</NavLink>
-            <NavLink to="/campaigns">Campaigns</NavLink>
-            <NavLink to="/templates">Templates</NavLink>
-            <NavLink to="/providers">Providers</NavLink>
-            <NavLink to="/senders">Senders</NavLink>
-
-            <span aria-hidden="true" className="text-slate-300">
-              |
-            </span>
-
-            <NavLink to="/billing">Billing</NavLink>
-            <NavLink to="/settings/workspace">Workspace</NavLink>
-            <NavLink to="/settings/team">Team</NavLink>
-            <NavLink to="/settings/api">API</NavLink>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="text-slate-600 hover:text-slate-900"
-            >
-              Sign out
-            </button>
-          </nav>
-        </div>
-      </header>
-
-      <Outlet />
-    </div>
-  );
-}
-
-/**
- * A navigation link that marks the current page.
- *
- * aria-current is what tells a screen reader which one is active; the colour
- * alone tells it nothing.
- */
-function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
-  const { pathname } = useLocation();
-  const active = pathname === to;
-
-  return (
-    <Link
-      to={to}
-      aria-current={active ? 'page' : undefined}
-      className={active ? 'font-medium text-slate-900' : 'text-slate-600 hover:text-slate-900'}
-    >
-      {children}
-    </Link>
   );
 }
 
