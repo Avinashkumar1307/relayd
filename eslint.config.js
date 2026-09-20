@@ -16,6 +16,11 @@ export default tseslint.config(
       // generated browser runtime. Linting it would only ever produce
       // findings nobody is allowed to act on (CLAUDE.md section 15).
       'design/**',
+      // Derived, git-ignored working directories: the rendered design frames
+      // (scripts/design/render-frames.py) and the multi-agent workflow
+      // scripts, which run in the orchestrator's own sandbox, not in ours.
+      '.design-rendered/**',
+      '.workflows/**',
     ],
   },
 

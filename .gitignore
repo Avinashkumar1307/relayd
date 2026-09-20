@@ -18,3 +18,9 @@ apps/web/dist/
 npm-debug.log*
 pnpm-debug.log*
 .vitest-results.json
+
+# Rendered design frames (scripts/design/render-frames.py); derived, never committed
+.design-rendered/
+
+# Workflow scripts for multi-agent runs; derived, never committed
+.workflows/
