@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>body{margin:0;background:#F7F8FC}a{color:#4F46E5}a:hover{color:#4338CA}</style>
+</helmet>
+<div style="min-height:100vh;color:#111827;font-family:Inter,system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased">
+<div style="max-width:1100px;margin:0 auto;padding:48px 32px 96px;box-sizing:border-box">
+  <div style="display:flex;align-items:center;gap:10px"><span style="width:32px;height:32px;border-radius:8px;background:#4F46E5;display:grid;place-items:center"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"></path><path d="M22 2l-7 20-4-9-9-4 20-7z"></path></svg></span><span style="font-size:16px;font-weight:600">Relayd</span><span style="color:#9CA3AF">/</span><span style="color:#6B7280">Design files</span></div>
+  <h1 style="margin:16px 0 0;font-size:32px;line-height:1.2;font-weight:600;letter-spacing:-0.02em">Every frame, by section</h1>
+  <p style="margin:8px 0 0;color:#6B7280;max-width:720px;text-wrap:pretty">One canvas per section, frames named with the brief's section letter and route. Sample workspace: Northwind Voyages. Shared parts: <span style="font-family:'JetBrains Mono',monospace;font-size:12px">Shell.dc.html</span>, <span style="font-family:'JetBrains Mono',monospace;font-size:12px">relayd-ui.js</span>, <span style="font-family:'JetBrains Mono',monospace;font-size:12px">sample-data.js</span>.</p>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:32px">
+    <sc-for list="{{ files }}" as="f" hint-placeholder-count="13">
+    <a href="{{ f.href }}" style="display:block;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;padding:18px 20px;text-decoration:none;color:inherit" style-hover="border-color:#9CA3AF">
+      <div style="display:flex;align-items:center;gap:10px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;padding:2px 7px;border-radius:6px;background:#EEF2FF;color:#4F46E5">{{ f.code }}</span><span style="font-weight:600;font-size:15px">{{ f.title }}</span><span style="margin-left:auto;font-size:12px;color:#9CA3AF">{{ f.count }}</span></div>
+      <div style="font-size:13px;color:#6B7280;margin-top:8px;text-wrap:pretty">{{ f.frames }}</div>
+    </a>
+    </sc-for>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const FILES = [
+  ['00', 'Design system', '00 Design System.dc.html', '1 sheet', 'Colour (light, dark, semantic), type, spacing, buttons, fields, all badges, segmented bar, data table, empty and error, drawer, modal, stepper, ID chips, reveal-once secret, toasts, skeletons, banners'],
+  ['01', 'Shell + Dashboard options', '01 Shell + Dashboard options.dc.html', '3 frames', '1a by the book · 1b icon rail · 1c split — committed: 1a shell + 1b bands + 1c sidebar usage'],
+  ['A', 'Public', 'A Public.dc.html', '7 frames', 'A1 Landing · A2 Pricing · A3 Unsubscribe confirm, done, already + mobile · A4 Not found'],
+  ['B', 'Auth & onboarding', 'B Auth & onboarding.dc.html', '13 frames', 'B1 Sign in · B2 Register · B3 Verify pending, success, expired · B4 Forgot, Reset · B5 Invitation signed-in, signed-out · B6 Create workspace, checklist · B1, B2 mobile'],
+  ['C', 'Dashboard', 'C Dashboard.dc.html', '5 frames', 'Light · Dark · New workspace with checklist · All clear (right column collapsed) · Mobile'],
+  ['D', 'Audience', 'D Audience.dc.html', '23 frames', 'D1 Contacts · D2 Drawer ×2 · D3 Lists · D4 Tags + merge · D5 Segments list, builder · D6 Imports ×4 stages · D7 Suppressions · empty + error for 6 tables'],
+  ['E', 'Providers & senders', 'E Providers & Senders.dc.html', '10 frames', 'E1 Providers · connect wizard ×3 (choose, credentials, webhook once) · E2 Senders · DNS drawer · empty + error ×2'],
+  ['F', 'Templates', 'F Templates.dc.html', '6 frames', 'F1 Grid · F2 Editor HTML, Settings + history, dark mobile preview · empty + error'],
+  ['G', 'Campaigns', 'G Campaigns.dc.html', '19 frames', 'G1 List · G2 Wizard steps 1–7 + Editor review · G3 Detail sending, held, auto-paused, dark · G4 Analytics light, dark · G1, G3 mobile · empty + error'],
+  ['H', 'Sending pools', 'H Sending Pools.dc.html', '4 frames', 'H1 Table · edit drawer · empty + error'],
+  ['I', 'Billing', 'I Billing.dc.html', '17 frames', 'I1 Overview, past due, locked (K3) · I2 Plans · I3 Downgrade blocked · I4 Handoff · I5 Confirming, confirmed, timeout · I6 Cancelled · I7 Invoices + empty + error · I8 Payment method · I9 Cancel, confirmed · I1 mobile'],
+  ['J', 'Settings & API', 'J Settings & API.dc.html', '17 frames', 'J1 Workspace · J2 Team, invite, permissions · J3 API keys, create, reveal-once · J4 Webhooks, drawer, delivery log · J5 Profile · J6 Audit · empty + error ×3'],
+  ['K', 'System states', 'K System States.dc.html', '11 frames', 'K1 six banners with state contracts · K2 suspended read-only · K3 locked page · K4 skeletons table, dashboard, detail · generic error'],
+];
+class Component extends DCLogic { renderVals() { return { files: FILES.map(([code, title, file, count, frames]) => ({ code, title, href: encodeURI(file), count, frames })) }; } }
+</script>
+</body>
+</html>

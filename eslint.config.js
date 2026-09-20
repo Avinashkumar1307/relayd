@@ -11,6 +11,11 @@ export default tseslint.config(
       '**/.turbo/**',
       '**/coverage/**',
       '**/*.tsbuildinfo',
+      // The Claude Design export. Reference, never code that ships: the
+      // frames are read for layout, tokens and copy, and `support.js` is a
+      // generated browser runtime. Linting it would only ever produce
+      // findings nobody is allowed to act on (CLAUDE.md section 15).
+      'design/**',
     ],
   },
 

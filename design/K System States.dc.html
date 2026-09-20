@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+:root,[data-theme="light"]{--bg:#F7F8FC;--surface:#FFFFFF;--tint:#F9FAFB;--border:#E5E7EB;--text:#111827;--text-2:#6B7280;--text-3:#9CA3AF;--brand:#4F46E5;--brand-hover:#4338CA;--brand-soft:#EEF2FF;--on-brand:#FFFFFF;--success:#10B981;--success-text:#047857;--success-soft:#ECFDF5;--warning:#F59E0B;--warning-text:#B45309;--warning-soft:#FFFBEB;--danger:#DC2626;--danger-text:#B91C1C;--danger-soft:#FEF2F2;--info:#0EA5E9;--info-text:#0369A1;--info-soft:#F0F9FF;--neutral:#6B7280;--neutral-text:#4B5563;--neutral-soft:#F3F4F6;--seg-pending:#D1D5DB;--uncertain:#64748B;--bot:#9CA3AF;--overlay-shadow:0 12px 32px rgba(17,24,39,.12);color-scheme:light}
+[data-theme="dark"]{--bg:#0B1020;--surface:#141B3D;--tint:#1B2350;--border:#26305A;--text:#E6E9F5;--text-2:#8A93B5;--text-3:#6470A0;--brand:#818CF8;--brand-hover:#A5B4FC;--brand-soft:#1E2757;--on-brand:#0B1020;--success-text:#34D399;--success-soft:rgba(16,185,129,.14);--warning-text:#FBBF24;--warning-soft:rgba(245,158,11,.14);--danger-text:#F87171;--danger-soft:rgba(220,38,38,.16);--info-text:#38BDF8;--info-soft:rgba(14,165,233,.14);--neutral-text:#A5ADCB;--neutral-soft:rgba(138,147,181,.14);--seg-pending:#2E3A6B;--overlay-shadow:0 12px 32px rgba(0,0,0,.5);color-scheme:dark}
+body{margin:0;background:#EEEFF3;font-family:Inter,system-ui,sans-serif}
+a{color:#4F46E5}a:hover{color:#4338CA}
+@keyframes rl-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes rl-spin{to{transform:rotate(360deg)}}
+@keyframes rl-shimmer{to{background-position:-200% 0}}
+.dv-turn{padding:40px 44px 32px;scroll-margin-top:16px}.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}.dv-tname{font:600 13px/1.2 Inter,system-ui,sans-serif;color:#1a1a1a}.dv-opts{display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start;width:4400px}.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 12px/1.3 Inter,system-ui,sans-serif;color:rgba(0,0,0,.6)}.dv-card{flex:none;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}.dv-opt:target .dv-oid{background:#4F46E5;color:#fff}
+</style>
+</helmet>
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">K</a><span class="dv-tname">System states — K1 six global banners with their state contract · K2 suspended read-only shell · K3 locked page for insufficient role · K4 skeletons for table, dashboard and detail pages, plus the generic error with request ID.</span></div>
+<div class="dv-opts">
+
+<sc-for list="{{ banners }}" as="bn" hint-placeholder-count="6">
+<div class="dv-opt" id="{{ bn.id }}"><div class="dv-olabel"><a class="dv-oid" href="{{ bn.href }}">K1</a>{{ bn.label }}</div>
+<div class="dv-card"><div data-theme="light" data-screen-label="{{ bn.screen }}" style="width:1440px;display:flex;text-align:left">
+<dc-import name="Shell" active="dashboard" breadcrumb="Dashboard" banner="{{ bn.key }}" role="{{ bn.role }}" min-height="560px" hint-size="1440px,560px" style="width:1440px">
+<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px"><div><h1 style="margin:0;font-size:24px;line-height:1.2;font-weight:600;letter-spacing:-0.01em">Dashboard</h1><p style="margin:4px 0 0;color:var(--text-2)">Northwind Voyages · 1–19 Sep 2026 · Asia/Dubai</p></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;display:grid;grid-template-columns:220px repeat(3,minmax(0,1fr));gap:24px">
+  <div><div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)">State</div><div style="font-family:'JetBrains Mono',monospace;font-size:13px;margin-top:8px;padding:4px 8px;border-radius:6px;background:var(--neutral-soft);display:inline-block">{{ bn.key }}</div><div style="font-size:12px;color:var(--text-2);margin-top:10px;text-wrap:pretty">{{ bn.trigger }}</div></div>
+  <div><div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--success-text)">Still works</div><ul style="margin:8px 0 0;padding-left:16px;font-size:13px;color:var(--text-2);display:flex;flex-direction:column;gap:4px"><sc-for list="{{ bn.works }}" as="w" hint-placeholder-count="3"><li>{{ w }}</li></sc-for></ul></div>
+  <div><div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--danger-text)">Blocked</div><ul style="margin:8px 0 0;padding-left:16px;font-size:13px;color:var(--text-2);display:flex;flex-direction:column;gap:4px"><sc-for list="{{ bn.blocked }}" as="w" hint-placeholder-count="2"><li>{{ w }}</li></sc-for></ul></div>
+  <div><div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)">What happens next</div><div style="font-size:13px;color:var(--text-2);margin-top:8px;text-wrap:pretty">{{ bn.next }}</div></div>
+</div>
+</dc-import>
+</div></div></div>
+</sc-for>
+
+<div class="dv-opt" id="K2"><div class="dv-olabel"><a class="dv-oid" href="#K2">K2</a>Suspended read-only mode — every write action disabled, data still visible</div>
+<div class="dv-card"><div data-theme="light" data-screen-label="K2 Suspended read-only /campaigns" style="width:1440px;display:flex;text-align:left">
+<dc-import name="Shell" active="campaigns" breadcrumb="Sending / Campaigns" banner="suspended" min-height="1024px" hint-size="1440px,1024px" style="width:1440px">
+<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px"><div><h1 style="margin:0;font-size:24px;line-height:1.2;font-weight:600;letter-spacing:-0.01em">Campaigns</h1><p style="margin:4px 0 0;color:var(--text-2)">Every send, with its state and what happens next.</p></div><div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--text-2)">Read-only while suspended</span><button disabled="{{ true }}" title="Workspace is read-only until billing is resolved" style="display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px 0 10px;border:1px solid transparent;border-radius:8px;background:var(--neutral-soft);color:var(--text-3);font-family:inherit;font-size:13px;font-weight:500;cursor:not-allowed"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z"></path><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Create campaign</button></div></div>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px">
+  <sc-for list="{{ suspendedFacts }}" as="f" hint-placeholder-count="4"><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px"><div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500"><span style="{{ f.dot }}"></span>{{ f.title }}</div><div style="font-size:12px;color:var(--text-2);margin-top:4px;text-wrap:pretty">{{ f.body }}</div></div></sc-for>
+</div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;opacity:.92">
+  <div style="display:grid;grid-template-columns:minmax(0,1.6fr) 168px 130px 110px 100px 170px 120px;align-items:center;background:var(--tint);border-bottom:1px solid var(--border);font-size:12px;font-weight:500;color:var(--text-2)"><div style="padding:8px 18px">Campaign</div><div style="padding:8px 12px">State</div><div style="padding:8px 12px">Progress</div><div style="padding:8px 12px;text-align:right">Recipients</div><div style="padding:8px 12px;text-align:right">Clicks</div><div style="padding:8px 12px">Scheduled / sent</div><div style="padding:8px 18px 8px 12px;text-align:right">Actions</div></div>
+  <sc-for list="{{ suspendedRows }}" as="c" hint-placeholder-count="6">
+  <div style="display:grid;grid-template-columns:minmax(0,1.6fr) 168px 130px 110px 100px 170px 120px;align-items:center;border-bottom:1px solid var(--border);font-size:13px;min-height:52px">
+    <div style="padding:10px 18px;min-width:0"><div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</div><div style="font-size:12px;color:var(--text-2)">{{ c.sub }}</div></div>
+    <div style="padding:10px 12px"><span style="{{ c.badgeStyle }}"><span style="{{ c.dotStyle }}"></span><sc-if value="{{ c.lock }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z"></path><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></sc-if>{{ c.stateLabel }}</span></div>
+    <div style="padding:10px 12px"><div style="display:flex;height:8px;width:106px;border-radius:4px;overflow:hidden;background:var(--neutral-soft)"><sc-for list="{{ c.segs }}" as="s" hint-placeholder-count="1"><div style="{{ s.style }}"></div></sc-for></div></div>
+    <div style="padding:10px 12px;text-align:right;font-variant-numeric:tabular-nums">{{ c.recipientsLabel }}</div>
+    <div style="padding:10px 12px;text-align:right;font-variant-numeric:tabular-nums">{{ c.clickLabel }}</div>
+    <div style="padding:10px 12px;color:var(--text-2);font-size:12px;white-space:nowrap">{{ c.when }}</div>
+    <div style="padding:10px 18px 10px 12px;display:flex;justify-content:flex-end;gap:6px"><a href="#" style="height:28px;padding:0 8px;display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;font-weight:500;text-decoration:none">View</a><button disabled="{{ true }}" title="Read-only while suspended" style="height:28px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:var(--neutral-soft);color:var(--text-3);font-family:inherit;font-size:12px;font-weight:500;cursor:not-allowed">Edit</button></div>
+  </div>
+  </sc-for>
+  <div style="display:flex;align-items:center;gap:8px;padding:12px 18px;font-size:12px;color:var(--text-2)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z"></path><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Viewing and exporting stay available. Sending, editing, imports, API writes and webhooks resume automatically the moment billing is resolved.</div>
+</div>
+</dc-import>
+</div></div></div>
+
+<div class="dv-opt" id="K3"><div class="dv-olabel"><a class="dv-oid" href="#K3">K3</a>Locked page for insufficient role — Editor opens Billing</div>
+<div class="dv-card"><div data-theme="light" data-screen-label="K3 Locked page /billing (Editor)" style="width:1440px;display:flex;text-align:left">
+<dc-import name="Shell" active="billing" breadcrumb="Settings / Billing" role="Editor" min-height="720px" hint-size="1440px,720px" style="width:1440px">
+<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px"><div><h1 style="margin:0;font-size:24px;line-height:1.2;font-weight:600;letter-spacing:-0.01em">Billing</h1><p style="margin:4px 0 0;color:var(--text-2)">Plan, usage and payment for Northwind Voyages.</p></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:64px 24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px">
+  <span style="width:48px;height:48px;border-radius:12px;background:var(--neutral-soft);color:var(--text-2);display:grid;place-items:center"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z"></path><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>
+  <div style="font-weight:600;font-size:16px;line-height:1.2">This page needs the Owner role</div>
+  <div style="font-size:13px;color:var(--text-2);max-width:440px;text-wrap:pretty">You are signed in as an <span style="font-weight:500;color:var(--text)">Editor</span>. Billing requires <code style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:1px 5px;border-radius:4px;background:var(--neutral-soft)">billing:read</code>, which only the Owner holds. The same page appears for Admins and Viewers, and for any other page a role cannot open.</div>
+  <div style="display:flex;align-items:center;gap:10px;margin-top:6px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--tint);font-size:13px"><span style="width:28px;height:28px;border-radius:14px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-size:11px;font-weight:600">DH</span><span>Owner: <span style="font-weight:500">Dana Haddad</span> · dana@northwind.travel</span></div>
+  <div style="display:flex;gap:8px;margin-top:4px"><a href="#" style="display:inline-flex;align-items:center;height:34px;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;font-weight:500;text-decoration:none">See what each role can do</a><button style="height:34px;padding:0 12px;border:1px solid transparent;border-radius:8px;background:var(--brand);color:var(--on-brand);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer">Ask the Owner</button></div>
+</div>
+</dc-import>
+</div></div></div>
+
+<div class="dv-opt" id="K4a"><div class="dv-olabel"><a class="dv-oid" href="#K4a">K4</a>Loading skeleton — table page (Contacts)</div>
+<div class="dv-card"><div data-theme="light" data-screen-label="K4 Skeleton /audience/contacts" style="width:1440px;display:flex;text-align:left">
+<dc-import name="Shell" active="contacts" breadcrumb="Audience / Contacts" has-alerts="{{ false }}" min-height="900px" hint-size="1440px,900px" style="width:1440px">
+<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px"><div><h1 style="margin:0;font-size:24px;line-height:1.2;font-weight:600;letter-spacing:-0.01em">Contacts</h1><div style="{{ sk.desc }}"></div></div><div style="display:flex;gap:8px"><div style="{{ sk.btn }}"></div><div style="{{ sk.btnPrimary }}"></div></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+  <div style="display:flex;gap:16px;padding:14px 16px;border-bottom:1px solid var(--border)"><div style="{{ sk.tab }}"></div><div style="{{ sk.tab }}"></div><div style="{{ sk.tab }}"></div></div>
+  <div style="display:flex;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border)"><div style="{{ sk.chip }}"></div><div style="{{ sk.chip }}"></div><span style="flex:1"></span><div style="{{ sk.search }}"></div></div>
+  <div style="height:36px;background:var(--tint);border-bottom:1px solid var(--border)"></div>
+  <sc-for list="{{ skRows }}" as="r" hint-placeholder-count="8"><div style="display:grid;grid-template-columns:44px minmax(0,1.5fr) minmax(0,1fr) 132px minmax(0,1.1fr) minmax(0,1fr) 124px 110px;align-items:center;gap:0;padding:13px 0;border-bottom:1px solid var(--border)"><div style="padding-left:16px"><div style="{{ r.box }}"></div></div><div style="padding:0 12px"><div style="{{ r.c1 }}"></div></div><div style="padding:0 12px"><div style="{{ r.c2 }}"></div></div><div style="padding:0 12px"><div style="{{ r.badge }}"></div></div><div style="padding:0 12px;display:flex;gap:4px"><div style="{{ r.tag }}"></div><div style="{{ r.tag }}"></div></div><div style="padding:0 12px"><div style="{{ r.c3 }}"></div></div><div style="padding:0 12px"><div style="{{ r.c4 }}"></div></div><div style="padding:0 16px 0 12px"><div style="{{ r.c4 }}"></div></div></div></sc-for>
+  <div style="display:flex;justify-content:space-between;padding:12px 16px"><div style="{{ sk.foot }}"></div><div style="{{ sk.foot }}"></div></div>
+</div>
+<div style="font-size:12px;color:var(--text-3);margin-top:12px">Shown after 300 ms. Header, tabs and actions are real so the page is oriented before data arrives; row count matches the saved page size.</div>
+</dc-import>
+</div></div></div>
+
+<div class="dv-opt" id="K4b"><div class="dv-olabel"><a class="dv-oid" href="#K4b">K4</a>Loading skeleton — dashboard</div>
+<div class="dv-card"><div data-theme="light" data-screen-label="K4 Skeleton /dashboard" style="width:1440px;display:flex;text-align:left">
+<dc-import name="Shell" active="dashboard" breadcrumb="Dashboard" has-alerts="{{ false }}" min-height="1024px" hint-size="1440px,1024px" style="width:1440px">
+<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px"><div><h1 style="margin:0;font-size:24px;line-height:1.2;font-weight:600;letter-spacing:-0.01em">Dashboard</h1><div style="{{ sk.desc }}"></div></div><div style="{{ sk.btn }}"></div></div>
+<div style="display:flex;align-items:center;gap:20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:16px"><div style="{{ sk.label }}"></div><div style="{{ sk.value }}"></div><div style="{{ sk.meter }}"></div><div style="{{ sk.label }}"></div></div>
+<div style="display:grid;grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px"><sc-for list="{{ skStats }}" as="st" hint-placeholder-count="4"><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:10px"><div style="{{ st.label }}"></div><div style="{{ st.value }}"></div><div style="{{ st.sub }}"></div></div></sc-for></div>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:20px"><sc-for list="{{ skProviders }}" as="p" hint-placeholder-count="3"><div style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px"><div style="{{ p.tile }}"></div><div style="flex:1;display:flex;flex-direction:column;gap:8px"><div style="{{ p.line }}"></div><div style="{{ p.bar }}"></div></div></div></sc-for></div>
+<div style="display:grid;grid-template-columns:minmax(0,1fr) 352px;gap:24px;align-items:start">
+  <div style="display:flex;flex-direction:column;gap:20px"><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px"><div style="{{ sk.label }}"></div><div style="display:flex;align-items:flex-end;gap:4px;height:160px;margin-top:16px"><sc-for list="{{ skBars }}" as="b" hint-placeholder-count="30"><div style="{{ b }}"></div></sc-for></div></div><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border)"><div style="{{ sk.label }}"></div></div><sc-for list="{{ skCampaigns }}" as="r" hint-placeholder-count="5"><div style="display:grid;grid-template-columns:minmax(0,1fr) 168px 120px 92px 88px;align-items:center;padding:14px 0;border-bottom:1px solid var(--border)"><div style="padding:0 18px"><div style="{{ r.c1 }}"></div></div><div style="padding:0 12px"><div style="{{ r.badge }}"></div></div><div style="padding:0 12px"><div style="{{ r.bar }}"></div></div><div style="padding:0 12px"><div style="{{ r.c4 }}"></div></div><div style="padding:0 12px"><div style="{{ r.c4 }}"></div></div></div></sc-for></div></div>
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:16px"><div style="{{ sk.label }}"></div><sc-for list="{{ skAttention }}" as="a" hint-placeholder-count="3"><div style="display:flex;gap:12px"><div style="{{ a.icon }}"></div><div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="{{ a.t }}"></div><div style="{{ a.d }}"></div><div style="{{ a.d2 }}"></div></div></div></sc-for></div>
+</div>
+</dc-import>
+</div></div></div>
+
+<div class="dv-opt" id="K4c"><div class="dv-olabel"><a class="dv-oid" href="#K4c">K4</a>Loading skeleton — detail page (campaign)</div>
+<div class="dv-card"><div data-theme="light" data-screen-label="K4 Skeleton /campaigns/:id" style="width:1440px;display:flex;text-align:left">
+<dc-import name="Shell" active="campaigns" breadcrumb="Sending / Campaigns / …" has-alerts="{{ false }}" min-height="900px" hint-size="1440px,900px" style="width:1440px">
+<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px"><div style="display:flex;flex-direction:column;gap:10px"><div style="{{ sk.crumb }}"></div><div style="display:flex;align-items:center;gap:10px"><div style="{{ sk.title }}"></div><div style="{{ sk.badge }}"></div></div><div style="{{ sk.desc }}"></div></div><div style="display:flex;gap:8px"><div style="{{ sk.btn }}"></div><div style="{{ sk.btn }}"></div><div style="{{ sk.btnPrimary }}"></div></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px"><div style="display:flex;justify-content:space-between"><div style="{{ sk.label }}"></div><div style="{{ sk.label }}"></div></div><div style="{{ sk.bigBar }}"></div><div style="display:flex;gap:22px;margin-top:12px"><div style="{{ sk.legend }}"></div><div style="{{ sk.legend }}"></div><div style="{{ sk.legend }}"></div><div style="{{ sk.legend }}"></div></div></div>
+<div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px"><sc-for list="{{ skStats6 }}" as="st" hint-placeholder-count="6"><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px"><div style="{{ st.label }}"></div><div style="{{ st.value }}"></div><div style="{{ st.sub }}"></div></div></sc-for></div>
+<div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start"><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden"><div style="display:flex;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border)"><div style="{{ sk.chip }}"></div><div style="{{ sk.chip }}"></div><div style="{{ sk.chip }}"></div></div><div style="height:36px;background:var(--tint);border-bottom:1px solid var(--border)"></div><sc-for list="{{ skRows }}" as="r" hint-placeholder-count="8"><div style="display:grid;grid-template-columns:minmax(0,1.3fr) 150px minmax(0,1.4fr) 60px 140px 120px;align-items:center;padding:13px 0;border-bottom:1px solid var(--border)"><div style="padding:0 16px"><div style="{{ r.c1 }}"></div></div><div style="padding:0 12px"><div style="{{ r.badge }}"></div></div><div style="padding:0 12px"><div style="{{ r.c2 }}"></div></div><div style="padding:0 12px"><div style="{{ r.c4 }}"></div></div><div style="padding:0 12px"><div style="{{ r.c3 }}"></div></div><div style="padding:0 16px 0 12px"><div style="{{ r.c4 }}"></div></div></div></sc-for></div><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:14px"><div style="{{ sk.label }}"></div><sc-for list="{{ skAttention }}" as="a" hint-placeholder-count="3"><div style="display:flex;gap:10px"><div style="{{ a.dot }}"></div><div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="{{ a.t }}"></div><div style="{{ a.d }}"></div></div></div></sc-for></div></div>
+</dc-import>
+</div></div></div>
+
+<div class="dv-opt" id="K4d"><div class="dv-olabel"><a class="dv-oid" href="#K4d">K4</a>Generic error state — request ID in mono for support</div>
+<div class="dv-card"><div data-theme="light" data-screen-label="K4 Generic error /reports" style="width:1440px;display:flex;text-align:left">
+<dc-import name="Shell" active="reports" breadcrumb="Analytics / Reports" min-height="720px" hint-size="1440px,720px" style="width:1440px">
+<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px"><div><h1 style="margin:0;font-size:24px;line-height:1.2;font-weight:600;letter-spacing:-0.01em">Reports</h1><p style="margin:4px 0 0;color:var(--text-2)">Cross-campaign analytics for Northwind Voyages.</p></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:72px 24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px">
+  <span style="width:48px;height:48px;border-radius:12px;background:var(--danger-soft);color:var(--danger-text);display:grid;place-items:center"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></span>
+  <div style="font-weight:600;font-size:18px;line-height:1.2">Something went wrong on our side</div>
+  <div style="font-size:13px;color:var(--text-2);max-width:460px;text-wrap:pretty">The request failed with a server error. Nothing you did caused it and no data was changed. Try again; if it keeps happening, send support the request ID below and we can trace exactly what happened.</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 6px 0 12px;border:1px solid var(--border);border-radius:6px;background:var(--tint);font-family:'JetBrains Mono',monospace;font-size:13px">req_01J9K4ERR7Q2M8<button onClick="{{ copyReq }}" style="height:24px;padding:0 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text-2);font-family:Inter,system-ui,sans-serif;font-size:11px;font-weight:500;cursor:pointer">{{ copyReqLabel }}</button></span><span style="font-size:12px;color:var(--text-3)">20 Sep 2026, 09:58:12 GST · HTTP 502</span></div>
+  <div style="display:flex;gap:8px;margin-top:8px"><a href="#" style="display:inline-flex;align-items:center;height:34px;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;font-weight:500;text-decoration:none">Status page</a><button style="height:34px;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer">Contact support</button><button style="height:34px;padding:0 12px;border:1px solid transparent;border-radius:8px;background:var(--brand);color:var(--on-brand);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer">Try again</button></div>
+</div>
+</dc-import>
+</div></div></div>
+
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const BANNERS = [
+  ['past_due', 'K1a', 'Past due · 0–14 days · “payment failed, sending continues”', 'Owner', 'Card declined on the renewal date. Retries on days 2, 4, 7 and 11.', ['Sending, scheduling and launches', 'Imports, API, webhooks', 'Everything else'], ['Nothing yet'], 'At day 15 the workspace becomes restricted. Owner sees “Update payment method”; other roles see “Ask your workspace owner”.'],
+  ['restricted', 'K1b', 'Restricted · 15–30 days · launches blocked, scheduled campaigns held', 'Owner', 'Invoice still unpaid after 14 days of retries.', ['Viewing contacts, campaigns and reports', 'Editing drafts and templates', 'Imports and exports', 'Campaigns already sending finish'], ['New launches and launch requests', 'Scheduled campaigns (moved to held)', 'API sends'], 'At day 31 the workspace is suspended. Held campaigns launch automatically when payment clears.'],
+  ['suspended', 'K1c', 'Suspended · 31+ days · read-only', 'Owner', 'Invoice unpaid after 30 days.', ['Signing in', 'Viewing everything', 'Exporting contacts, suppressions and reports'], ['Every write: sending, editing, imports, API writes, outbound webhooks', 'Inviting members'], 'Data is retained 30 more days, then deleted with 3 email warnings. Paying the open invoice restores full access within a minute.'],
+  ['new_cap', 'K1d', 'New-account sending cap · “500/day for your first 7 days”', 'Owner', 'Workspace created less than 7 days ago.', ['Everything', 'Up to 500 emails per day across all campaigns'], ['Sending more than 500 in a day (queued until the next day)'], 'Cap lifts automatically on day 8. Provider limits still apply underneath it.'],
+  ['complaint_pause', 'K1e', 'Complaint auto-pause · a campaign exceeded 0.3%', 'Owner', 'Complaint rate on a sending campaign crossed 0.3% of delivered.', ['Every other campaign', 'Editing the paused campaign’s audience and content'], ['That campaign’s remaining sends until an Owner or Admin resumes'], 'Resume re-checks the rate every 500 sends and pauses again if it stays above 0.3%. Suppressions from the complaints are already applied.'],
+  ['provider_failed', 'K1f', 'Provider connection failed · credentials rejected', 'Admin', 'SendGrid rejected the API key at 08:40 GST.', ['Campaigns on other connections', 'Viewing and editing everything'], ['Sends through the failed connection (campaigns using it pause)', 'Delivery events from it'], 'Rotate credentials in Providers. Paused campaigns resume where they stopped; nothing is sent twice.'],
+];
+const sk = (w, h, r = 4) => ({ width: w, height: h, borderRadius: r, background: 'linear-gradient(90deg,var(--neutral-soft) 25%,var(--tint) 50%,var(--neutral-soft) 75%)', backgroundSize: '200% 100%', animation: 'rl-shimmer 1.4s linear infinite', flex: 'none' });
+class Component extends DCLogic {
+  state = { ui: null, d: null, copied: false };
+  componentDidMount() { Promise.all([import('./relayd-ui.js'), import('./sample-data.js')]).then(([ui, d]) => this.setState({ ui, d })); }
+  renderVals() {
+    const { ui, d } = this.state;
+    const rows = ui && d ? d.campaigns.slice(0, 6).map((c) => ({ ...ui.stateBadge(ui.CAMPAIGN_STATES, c.state), name: c.name, sub: c.note || c.id, when: c.when, recipientsLabel: c.recipients == null ? '—' : c.recipients.toLocaleString('en-US'), clickLabel: ui.clickRate(c), segs: ui.segments(c) })) : [];
+    const widths = [0.72, 0.55, 0.64, 0.48, 0.7, 0.58, 0.66, 0.5];
+    return {
+      banners: BANNERS.map(([key, id, label, role, trigger, works, blocked, next]) => ({ key, id, href: '#' + id, label, role, screen: 'K1 Global banner /dashboard · ' + key, trigger, works, blocked, next })),
+      suspendedFacts: [['Read-only since 18 Sep 2026', 'Invoice INV-2026-0812 unpaid for 31 days.', '#DC2626'], ['Nothing deleted', 'Contacts, campaigns, templates and reports are intact.', '#10B981'], ['Exports available', 'CSV exports keep working for the whole suspension.', '#10B981'], ['Resumes automatically', 'Paying the open invoice restores writes within a minute.', '#0EA5E9']].map(([title, body, c]) => ({ title, body, dot: { width: 8, height: 8, borderRadius: 4, background: c, flex: 'none' } })),
+      suspendedRows: rows,
+      copyReq: () => { try { navigator.clipboard && navigator.clipboard.writeText('req_01J9K4ERR7Q2M8'); } catch (e) {} this.setState({ copied: true }); setTimeout(() => this.setState({ copied: false }), 1500); }, copyReqLabel: this.state.copied ? 'Copied' : 'Copy',
+      sk: { desc: { ...sk(360, 12), marginTop: 10 }, btn: sk(110, 34, 8), btnPrimary: { ...sk(140, 34, 8), opacity: 0.8 }, tab: sk(90, 14), chip: sk(120, 28, 8), search: sk(220, 30, 8), foot: sk(160, 12), label: sk(140, 12), value: sk(120, 24, 6), meter: { ...sk('100%', 8), flex: 1 }, crumb: sk(90, 12), title: sk(420, 26, 6), badge: sk(84, 22, 6), bigBar: { ...sk('100%', 14, 7), marginTop: 14 }, legend: sk(120, 12) },
+      skRows: widths.map((w) => ({ box: sk(16, 16), c1: sk((w * 100) + '%', 14), c2: sk(((1.2 - w) * 100) + '%', 14), c3: sk('70%', 12), c4: sk('60%', 12), badge: sk(84, 22, 6), tag: sk(48, 20, 6) })),
+      skStats: [1, 2, 3, 4].map((i) => ({ label: sk(i === 1 ? 120 : 90, 12), value: sk(i === 1 ? 160 : 100, i === 1 ? 32 : 24, 6), sub: sk('70%', 12) })),
+      skStats6: [1, 2, 3, 4, 5, 6].map(() => ({ label: sk('60%', 12), value: sk('50%', 22, 6), sub: sk('80%', 11) })),
+      skProviders: [1, 2, 3].map(() => ({ tile: sk(36, 36, 8), line: sk('70%', 12), bar: sk('100%', 4, 2) })),
+      skBars: d ? d.activity.map((v) => ({ ...sk(0, Math.max(2, v / 15000 * 100) + '%', 2), flex: 1, width: 'auto' })) : [],
+      skCampaigns: widths.slice(0, 5).map((w) => ({ c1: sk((w * 100) + '%', 14), badge: sk(84, 22, 6), bar: sk(96, 8, 4), c4: sk('60%', 12) })),
+      skAttention: [1, 2, 3].map(() => ({ icon: sk(26, 26, 6), dot: sk(8, 8, 4), t: sk('80%', 12), d: sk('100%', 10), d2: sk('60%', 10) })),
+    };
+  }
+}
+</script>
+</body>
+</html>
