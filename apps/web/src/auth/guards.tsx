@@ -33,7 +33,9 @@ export function RequireAnonymous({ children }: { children: ReactNode }) {
   const location = useLocation();
 
   if (status === 'loading') return <RouteSkeleton pathname={location.pathname} />;
-  if (status === 'authenticated') return <Navigate to="/settings/workspace" replace />;
+  // The dashboard, not workspace settings: this redirect was written in
+  // phase 1, when /settings/workspace was the only page there was.
+  if (status === 'authenticated') return <Navigate to="/dashboard" replace />;
 
   return <>{children}</>;
 }
