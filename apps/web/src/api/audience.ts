@@ -110,45 +110,45 @@ export const audienceApi = {
     if (params.cursor !== undefined) query.set('cursor', params.cursor);
     if (params.status !== undefined) query.set('status', params.status);
     const suffix = query.toString();
-    return getPage<Contact>(`/audience/contacts${suffix === '' ? '' : `?${suffix}`}`);
+    return getPage<Contact>(`/contacts${suffix === '' ? '' : `?${suffix}`}`);
   },
 
   createContact: (input: {
     email: string;
     firstName?: string;
     lastName?: string;
-  }) => api.post<Contact & { wasCreated: boolean; suppressed: boolean }>('/audience/contacts', input),
+  }) => api.post<Contact & { wasCreated: boolean; suppressed: boolean }>('/contacts', input),
 
   updateContact: (id: string, patch: { status?: ContactStatus; firstName?: string; lastName?: string }) =>
-    api.patch<Contact>(`/audience/contacts/${id}`, patch),
+    api.patch<Contact>(`/contacts/${id}`, patch),
 
-  deleteContact: (id: string) => api.delete<void>(`/audience/contacts/${id}`),
+  deleteContact: (id: string) => api.delete<void>(`/contacts/${id}`),
 
-  listLists: () => api.get<ContactList[]>('/audience/lists'),
+  listLists: () => api.get<ContactList[]>('/lists'),
   createList: (input: { name: string; description?: string }) =>
-    api.post<ContactList>('/audience/lists', input),
-  deleteList: (id: string) => api.delete<void>(`/audience/lists/${id}`),
+    api.post<ContactList>('/lists', input),
+  deleteList: (id: string) => api.delete<void>(`/lists/${id}`),
 
-  listTags: () => api.get<Tag[]>('/audience/tags'),
-  createTag: (input: { name: string; color?: string }) => api.post<Tag>('/audience/tags', input),
-  deleteTag: (id: string) => api.delete<void>(`/audience/tags/${id}`),
+  listTags: () => api.get<Tag[]>('/tags'),
+  createTag: (input: { name: string; color?: string }) => api.post<Tag>('/tags', input),
+  deleteTag: (id: string) => api.delete<void>(`/tags/${id}`),
 
-  listSuppressions: () => api.get<Suppression[]>('/audience/suppressions'),
+  listSuppressions: () => api.get<Suppression[]>('/suppressions'),
   createSuppression: (input: { email: string; reason?: Suppression['reason']; notes?: string }) =>
-    api.post<Suppression>('/audience/suppressions', input),
-  deleteSuppression: (id: string) => api.delete<void>(`/audience/suppressions/${id}`),
+    api.post<Suppression>('/suppressions', input),
+  deleteSuppression: (id: string) => api.delete<void>(`/suppressions/${id}`),
 
-  listImports: () => api.get<ImportJob[]>('/audience/imports'),
-  getImport: (id: string) => api.get<ImportJob>(`/audience/imports/${id}`),
-  listImportErrors: (id: string) => api.get<ImportRowError[]>(`/audience/imports/${id}/errors`),
-  cancelImport: (id: string) => api.post<ImportJob>(`/audience/imports/${id}/cancel`),
+  listImports: () => api.get<ImportJob[]>('/imports'),
+  getImport: (id: string) => api.get<ImportJob>(`/imports/${id}`),
+  listImportErrors: (id: string) => api.get<ImportRowError[]>(`/imports/${id}/errors`),
+  cancelImport: (id: string) => api.post<ImportJob>(`/imports/${id}/cancel`),
 
   createImport: (input: { filename: string; byteSize: number; fileType: 'csv' | 'tsv' | 'xlsx' }) =>
     api.post<{
       id: string;
       status: ImportStatus;
       upload: { url: string; expiresInSeconds: number };
-    }>('/audience/imports', input),
+    }>('/imports', input),
 
   setImportMapping: (
     id: string,
@@ -162,7 +162,7 @@ export const audienceApi = {
         consentSource: string;
       };
     },
-  ) => api.post<ImportJob>(`/audience/imports/${id}/mapping`, input),
+  ) => api.post<ImportJob>(`/imports/${id}/mapping`, input),
 };
 
 /** Query keys, in one place so an invalidation cannot miss a page. */

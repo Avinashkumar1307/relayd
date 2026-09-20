@@ -153,7 +153,7 @@ function search(filters: ContactFilters): string {
 
 export const audienceExtraApi = {
   listContacts: async (filters: ContactFilters) => {
-    const envelope = await apiRequestEnvelope<ContactRow[]>(`/audience/contacts${search(filters)}`, {
+    const envelope = await apiRequestEnvelope<ContactRow[]>(`/contacts${search(filters)}`, {
       method: 'GET',
     });
     return {
@@ -162,42 +162,42 @@ export const audienceExtraApi = {
     };
   },
 
-  // BACKEND PENDING: GET /audience/stats
-  stats: (filters: ContactFilters) => api.get<AudienceStats>(`/audience/stats${search(filters)}`),
+  // BACKEND PENDING: GET /stats
+  stats: (filters: ContactFilters) => api.get<AudienceStats>(`/stats${search(filters)}`),
 
-  // BACKEND PENDING: GET /audience/saved-views
-  savedViews: () => api.get<SavedView[]>('/audience/saved-views'),
+  // BACKEND PENDING: GET /saved-views
+  savedViews: () => api.get<SavedView[]>('/saved-views'),
 
-  getContact: (id: string) => api.get<ContactDetail>(`/audience/contacts/${id}`),
+  getContact: (id: string) => api.get<ContactDetail>(`/contacts/${id}`),
 
   /** Bulk add or remove one tag across a selection. */
   tagContacts: (contactIds: string[], tagId: string) =>
-    api.post<{ updated: number }>('/audience/contacts/tags', { contactIds, tagId }),
+    api.post<{ updated: number }>('/contacts/tags', { contactIds, tagId }),
   untagContacts: (contactIds: string[], tagId: string) =>
-    api.delete<{ updated: number }>(`/audience/contacts/tags?tagId=${tagId}&ids=${contactIds.join(',')}`),
+    api.delete<{ updated: number }>(`/contacts/tags?tagId=${tagId}&ids=${contactIds.join(',')}`),
 
   addToList: (listId: string, contactIds: string[]) =>
-    api.post<{ added: number }>(`/audience/lists/${listId}/contacts`, { contactIds }),
+    api.post<{ added: number }>(`/lists/${listId}/contacts`, { contactIds }),
 
-  // BACKEND PENDING: POST /audience/exports
+  // BACKEND PENDING: POST /exports
   startExport: (input: { resource: string; ids?: string[] }) =>
-    api.post<{ id: string }>('/audience/exports', input),
+    api.post<{ id: string }>('/exports', input),
 
-  listCards: () => api.get<ListCard[]>('/audience/lists'),
-  // BACKEND PENDING: PATCH /audience/lists/:id
-  renameList: (id: string, name: string) => api.patch<ListCard>(`/audience/lists/${id}`, { name }),
-  // BACKEND PENDING: POST /audience/lists/:id/archive
-  archiveList: (id: string) => api.post<ListCard>(`/audience/lists/${id}/archive`),
+  listCards: () => api.get<ListCard[]>('/lists'),
+  // BACKEND PENDING: PATCH /lists/:id
+  renameList: (id: string, name: string) => api.patch<ListCard>(`/lists/${id}`, { name }),
+  // BACKEND PENDING: POST /lists/:id/archive
+  archiveList: (id: string) => api.post<ListCard>(`/lists/${id}/archive`),
 
-  listTags: () => api.get<TagRow[]>('/audience/tags'),
-  // BACKEND PENDING: PATCH /audience/tags/:id
-  renameTag: (id: string, name: string) => api.patch<TagRow>(`/audience/tags/${id}`, { name }),
-  // BACKEND PENDING: GET /audience/tags/merge-preview
+  listTags: () => api.get<TagRow[]>('/tags'),
+  // BACKEND PENDING: PATCH /tags/:id
+  renameTag: (id: string, name: string) => api.patch<TagRow>(`/tags/${id}`, { name }),
+  // BACKEND PENDING: GET /tags/merge-preview
   mergePreview: (ids: string[]) =>
-    api.get<{ total: number; overlap: number }>(`/audience/tags/merge-preview?ids=${ids.join(',')}`),
-  // BACKEND PENDING: POST /audience/tags/merge
+    api.get<{ total: number; overlap: number }>(`/tags/merge-preview?ids=${ids.join(',')}`),
+  // BACKEND PENDING: POST /tags/merge
   mergeTags: (input: { keepId: string; mergeIds: string[] }) =>
-    api.post<{ keepId: string; contacts: number }>('/audience/tags/merge', input),
+    api.post<{ keepId: string; contacts: number }>('/tags/merge', input),
 
   listSuppressions: (filters: { reason?: string; source?: string; q?: string }) => {
     const query = new URLSearchParams();
@@ -205,10 +205,10 @@ export const audienceExtraApi = {
     if (filters.source !== undefined && filters.source !== 'any') query.set('source', filters.source);
     if (filters.q !== undefined && filters.q !== '') query.set('q', filters.q);
     const rendered = query.toString();
-    return api.get<SuppressionRow[]>(`/audience/suppressions${rendered === '' ? '' : `?${rendered}`}`);
+    return api.get<SuppressionRow[]>(`/suppressions${rendered === '' ? '' : `?${rendered}`}`);
   },
-  // BACKEND PENDING: GET /audience/suppressions/summary
-  suppressionSummary: () => api.get<SuppressionSummary>('/audience/suppressions/summary'),
+  // BACKEND PENDING: GET /suppressions/summary
+  suppressionSummary: () => api.get<SuppressionSummary>('/suppressions/summary'),
 };
 
 /**

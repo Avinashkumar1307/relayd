@@ -115,12 +115,12 @@ function contact(id: string, email: string, extra: Record<string, unknown> = {})
 function contactsRoutes(contacts: Route): Route[] {
   return [
     {
-      match: (url) => url.includes('/audience/stats'),
+      match: (url) => url.includes('/stats'),
       respond: () => ({ body: { data: { contacts: 48_213, subscribed: 45_102, suppressed: 2_318, matching: 48_213 } } }),
     },
-    { match: (url) => url.includes('/audience/saved-views'), respond: () => ({ body: { data: [] } }) },
-    { match: (url) => url.includes('/audience/tags'), respond: () => ({ body: { data: [] } }) },
-    { match: (url) => url.includes('/audience/lists'), respond: () => ({ body: { data: [] } }) },
+    { match: (url) => url.includes('/saved-views'), respond: () => ({ body: { data: [] } }) },
+    { match: (url) => url.includes('/tags'), respond: () => ({ body: { data: [] } }) },
+    { match: (url) => url.includes('/lists'), respond: () => ({ body: { data: [] } }) },
     contacts,
   ];
 }
@@ -129,7 +129,7 @@ describe('contacts', () => {
   it('shows the contacts the server returned', async () => {
     mockApi(
       contactsRoutes({
-        match: (url) => url.includes('/audience/contacts'),
+        match: (url) => url.includes('/contacts'),
         respond: () => ({ body: { data: [contact('c1', 'amira.khalil@example.ae')], meta: { hasMore: false } } }),
       }),
     );
@@ -150,7 +150,7 @@ describe('contacts', () => {
     const urls: string[] = [];
     mockApi(
       contactsRoutes({
-        match: (url) => url.includes('/audience/contacts'),
+        match: (url) => url.includes('/contacts'),
         respond: (url) => {
           urls.push(url);
           return { body: { data: [contact('c1', 'a@example.com')], meta: {} } };
@@ -172,7 +172,7 @@ describe('contacts', () => {
     const urls: string[] = [];
     mockApi(
       contactsRoutes({
-        match: (url) => url.includes('/audience/contacts'),
+        match: (url) => url.includes('/contacts'),
         respond: (url) => {
           urls.push(url);
           return url.includes('cursor=')
@@ -202,7 +202,7 @@ describe('contacts', () => {
     const urls: string[] = [];
     mockApi(
       contactsRoutes({
-        match: (url) => url.includes('/audience/contacts'),
+        match: (url) => url.includes('/contacts'),
         respond: (url) => {
           urls.push(url);
           return {
@@ -230,7 +230,7 @@ describe('contacts', () => {
     // An empty table where a request failed is a dashboard lying to its user.
     mockApi(
       contactsRoutes({
-        match: (url) => url.includes('/audience/contacts'),
+        match: (url) => url.includes('/contacts'),
         respond: () => ({
           status: 500,
           body: { error: { code: 'internal_error', message: 'Database unavailable', requestId: 'req-9' } },
@@ -249,7 +249,7 @@ describe('contacts', () => {
   it('hides the write controls from a viewer', async () => {
     mockApi(
       contactsRoutes({
-        match: (url) => url.includes('/audience/contacts'),
+        match: (url) => url.includes('/contacts'),
         respond: () => ({ body: { data: [contact('c1', 'a@example.com')], meta: {} } }),
       }),
       VIEWER,
@@ -267,12 +267,12 @@ describe('contacts', () => {
   it('empty is the import prompt, not a bare table', async () => {
     mockApi([
       {
-        match: (url) => url.includes('/audience/stats'),
+        match: (url) => url.includes('/stats'),
         respond: () => ({ body: { data: { contacts: 0, subscribed: 0, suppressed: 0, matching: 0 } } }),
       },
-      { match: (url) => url.includes('/audience/saved-views'), respond: () => ({ body: { data: [] } }) },
+      { match: (url) => url.includes('/saved-views'), respond: () => ({ body: { data: [] } }) },
       {
-        match: (url) => url.includes('/audience/contacts'),
+        match: (url) => url.includes('/contacts'),
         respond: () => ({ body: { data: [], meta: {} } }),
       },
     ]);
@@ -293,11 +293,11 @@ describe('contacts', () => {
     // offers no way out of it.
     mockApi([
       ...contactsRoutes({
-        match: (url) => url.includes('/audience/contacts') && !url.includes('/audience/contacts/c9'),
+        match: (url) => url.includes('/contacts') && !url.includes('/contacts/c9'),
         respond: () => ({ body: { data: [contact('c9', 'lena.b@example.de')], meta: {} } }),
       }),
       {
-        match: (url) => url.includes('/audience/contacts/c9'),
+        match: (url) => url.includes('/contacts/c9'),
         respond: () => ({
           body: {
             data: contact('c9', 'lena.b@example.de', {
@@ -339,8 +339,8 @@ describe('tags', () => {
 
   function tagRoutes(): Route[] {
     return [
-      { match: (url) => url.includes('/audience/tags/merge-preview'), respond: () => ({ body: { data: { total: 13_412, overlap: 634 } } }) },
-      { match: (url) => url.includes('/audience/tags'), respond: () => ({ body: { data: TAGS } }) },
+      { match: (url) => url.includes('/tags/merge-preview'), respond: () => ({ body: { data: { total: 13_412, overlap: 634 } } }) },
+      { match: (url) => url.includes('/tags'), respond: () => ({ body: { data: TAGS } }) },
     ];
   }
 
@@ -376,7 +376,7 @@ describe('tags', () => {
     const sent: unknown[] = [];
     mockApi([
       {
-        match: (url) => url.includes('/audience/tags/merge') && !url.includes('merge-preview'),
+        match: (url) => url.includes('/tags/merge') && !url.includes('merge-preview'),
         respond: (_url, init) => {
           sent.push(JSON.parse(String(init?.body ?? '{}')));
           return { body: { data: { keepId: 'tg_dubai', contacts: 13_412 } } };
@@ -402,7 +402,7 @@ describe('tags', () => {
   });
 
   it('points an empty workspace at the contacts table', async () => {
-    mockApi([{ match: (url) => url.includes('/audience/tags'), respond: () => ({ body: { data: [] } }) }]);
+    mockApi([{ match: (url) => url.includes('/tags'), respond: () => ({ body: { data: [] } }) }]);
 
     renderPage(<TagsPage />);
 
@@ -418,7 +418,7 @@ describe('tags', () => {
   it('shows the request id when tags fail to load', async () => {
     mockApi([
       {
-        match: (url) => url.includes('/audience/tags'),
+        match: (url) => url.includes('/tags'),
         respond: () => ({
           status: 500,
           body: { error: { code: 'internal_error', message: 'Upstream timed out', requestId: 'req_01J9D4FQ7M2X' } },
@@ -454,11 +454,11 @@ describe('suppressions', () => {
     // is how a workspace loses its sending reputation.
     mockApi([
       {
-        match: (url) => url.includes('/audience/suppressions/summary'),
+        match: (url) => url.includes('/suppressions/summary'),
         respond: () => ({ body: { data: { total: 2_318, byReason: [] } } }),
       },
       {
-        match: (url) => url.includes('/audience/suppressions'),
+        match: (url) => url.includes('/suppressions'),
         respond: () => ({
           body: {
             data: [
@@ -489,13 +489,13 @@ describe('suppressions', () => {
   it('counts the whole list in the header, not the page of rows', async () => {
     mockApi([
       {
-        match: (url) => url.includes('/audience/suppressions/summary'),
+        match: (url) => url.includes('/suppressions/summary'),
         respond: () => ({
           body: { data: { total: 2_318, byReason: [{ reason: 'unsubscribe', count: 1_462 }] } },
         }),
       },
       {
-        match: (url) => url.includes('/audience/suppressions'),
+        match: (url) => url.includes('/suppressions'),
         respond: () => ({ body: { data: [suppression('s1', 'a@example.com', 'unsubscribe')] } }),
       },
     ]);
@@ -513,7 +513,7 @@ describe('suppressions', () => {
   it('says suppression is still enforced when the page itself fails', async () => {
     mockApi([
       {
-        match: (url) => url.includes('/audience/suppressions'),
+        match: (url) => url.includes('/suppressions'),
         respond: () => ({
           status: 503,
           body: { error: { code: 'unavailable', message: 'Upstream unavailable', requestId: 'req_01J9D7FQ7M2X' } },
@@ -538,7 +538,7 @@ describe('lists', () => {
   it('keeps an archived list visible and read-only', async () => {
     // A list a campaign was sent to is part of that campaign's record, so
     // hiding it would hide the answer to "who received this".
-    mockApi([{ match: (url) => url.includes('/audience/lists'), respond: () => ({ body: { data: LISTS } }) }]);
+    mockApi([{ match: (url) => url.includes('/lists'), respond: () => ({ body: { data: LISTS } }) }]);
 
     renderPage(<ListsPage />);
 
@@ -552,7 +552,7 @@ describe('lists', () => {
   });
 
   it('switches between the card and table layouts', async () => {
-    mockApi([{ match: (url) => url.includes('/audience/lists'), respond: () => ({ body: { data: LISTS } }) }]);
+    mockApi([{ match: (url) => url.includes('/lists'), respond: () => ({ body: { data: LISTS } }) }]);
 
     renderPage(<ListsPage />);
     await screen.findAllByText('Newsletter EU');

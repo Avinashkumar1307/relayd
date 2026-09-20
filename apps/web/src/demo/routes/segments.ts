@@ -46,10 +46,10 @@ function preview(definition: unknown): Record<string, unknown> {
 }
 
 export const routes: Route[] = [
-  { method: 'GET', pattern: /^\/audience\/segments$/u, handler: () => segments() },
+  { method: 'GET', pattern: /^\/segments$/u, handler: () => segments() },
   {
     method: 'POST',
-    pattern: /^\/audience\/segments$/u,
+    pattern: /^\/segments$/u,
     handler: (_m, body) => {
       const input = body as { name: string; definition: unknown };
       const row: Row = {
@@ -68,17 +68,17 @@ export const routes: Route[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/audience\/segments\/preview$/u,
+    pattern: /^\/segments\/preview$/u,
     handler: (_m, body) => preview((body as { definition?: unknown } | undefined)?.definition),
   },
   {
     method: 'POST',
-    pattern: /^\/audience\/segments\/([^/]+)\/preview$/u,
+    pattern: /^\/segments\/([^/]+)\/preview$/u,
     handler: (m) => preview(saved(m[1] ?? '')?.['definition']),
   },
   {
     method: 'PATCH',
-    pattern: /^\/audience\/segments\/([^/]+)$/u,
+    pattern: /^\/segments\/([^/]+)$/u,
     handler: (m, body) => {
       const row = saved(m[1] ?? '');
       if (row === undefined) return {};
@@ -94,7 +94,7 @@ export const routes: Route[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/audience\/segments\/([^/]+)$/u,
+    pattern: /^\/segments\/([^/]+)$/u,
     handler: (m) => {
       const rows = segments();
       const index = rows.findIndex((row) => row.id === m[1]);

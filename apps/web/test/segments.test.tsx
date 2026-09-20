@@ -109,17 +109,17 @@ const segment = (extra: Record<string, unknown> = {}) => ({
 });
 
 const vocabulary: Stub[] = [
-  { match: (url) => url.endsWith('/audience/tags'), respond: () => ({ body: { data: [] } }) },
-  { match: (url) => url.endsWith('/audience/lists'), respond: () => ({ body: { data: [] } }) },
+  { match: (url) => url.endsWith('/tags'), respond: () => ({ body: { data: [] } }) },
+  { match: (url) => url.endsWith('/lists'), respond: () => ({ body: { data: [] } }) },
 ];
 
 const segmentsList = (rows: unknown[]): Stub => ({
-  match: (url) => url.endsWith('/audience/segments'),
+  match: (url) => url.endsWith('/segments'),
   respond: () => ({ body: { data: rows } }),
 });
 
 const preview = (body: Record<string, unknown>, seen?: { definitions: unknown[] }): Stub => ({
-  match: (url) => url.includes('/audience/segments/preview'),
+  match: (url) => url.includes('/segments/preview'),
   respond: (_url, init) => {
     seen?.definitions.push((JSON.parse(String(init?.body)) as { definition: unknown }).definition);
     return { body: { data: body } };
@@ -229,7 +229,7 @@ describe('the segment builder (D5b)', () => {
     mockApi([
       preview({ count: 12, capped: false, cap: 10_000 }),
       {
-        match: (url) => url.endsWith('/audience/segments'),
+        match: (url) => url.endsWith('/segments'),
         respond: (_url, init) => {
           if (init?.method !== 'POST') return { body: { data: [] } };
           saved.body = JSON.parse(String(init.body));

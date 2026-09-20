@@ -119,12 +119,12 @@ const draft = (extra: Record<string, unknown> = {}) =>
   });
 
 const single = (row: Record<string, unknown>): Stub => ({
-  match: (url) => /\/audience\/imports\/[^/]+$/u.test(url),
+  match: (url) => /\/imports\/[^/]+$/u.test(url),
   respond: () => ({ body: { data: row } }),
 });
 
 const list = (rows: Record<string, unknown>[]): Stub => ({
-  match: (url) => url.endsWith('/audience/imports'),
+  match: (url) => url.endsWith('/imports'),
   respond: () => ({ body: { data: rows } }),
 });
 
@@ -305,8 +305,8 @@ describe('mapping columns (D6b)', () => {
 describe('the consent gate (D6c)', () => {
   function consentRoutes(started: { body?: unknown }): Stub[] {
     return [
-      { match: (url) => url.endsWith('/audience/lists'), respond: () => ({ body: { data: [] } }) },
-      { match: (url) => url.endsWith('/audience/tags'), respond: () => ({ body: { data: [] } }) },
+      { match: (url) => url.endsWith('/lists'), respond: () => ({ body: { data: [] } }) },
+      { match: (url) => url.endsWith('/tags'), respond: () => ({ body: { data: [] } }) },
       {
         match: (url) => url.endsWith('/mapping'),
         respond: (_url, init) => {

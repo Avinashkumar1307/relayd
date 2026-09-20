@@ -420,8 +420,8 @@ describe('the campaign detail page (G3)', () => {
 
 const wizardStubs = (row: Record<string, unknown>, extra: Stub[] = []): Stub[] => [
   ...extra,
-  { match: (url) => url.includes('/audience/lists'), respond: () => ({ body: { data: [] } }) },
-  { match: (url) => url.includes('/audience/segments'), respond: () => ({ body: { data: [] } }) },
+  { match: (url) => url.includes('/lists'), respond: () => ({ body: { data: [] } }) },
+  { match: (url) => url.includes('/segments'), respond: () => ({ body: { data: [] } }) },
   { match: (url) => url.includes('/templates'), respond: () => ({ body: { data: [] } }) },
   {
     match: (url) => url.includes('/senders'),

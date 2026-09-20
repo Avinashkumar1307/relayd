@@ -12,9 +12,9 @@ import { api } from './client.js';
  *
  * ## What the backend has, and what D5 needs that it does not
  *
- * `apps/api/src/routes/audience.ts` serves GET/POST `/audience/segments`,
- * DELETE `/audience/segments/:id`, POST `/audience/segments/preview` and
- * POST `/audience/segments/:id/preview`. The fields marked BACKEND PENDING
+ * `apps/api/src/routes/audience.ts` serves GET/POST `/segments`,
+ * DELETE `/segments/:id`, POST `/segments/preview` and
+ * POST `/segments/:id/preview`. The fields marked BACKEND PENDING
  * below are drawn on frame D5a/D5b and have no column or endpoint yet; they
  * are optional here so the page renders correctly against both the mocked
  * API, which supplies them, and the real one, which does not.
@@ -28,9 +28,9 @@ export interface Segment {
   cachedCount: number | null;
   cachedAt: string | null;
   createdAt: string;
-  /** BACKEND PENDING: GET /audience/segments (no `updated_at` column yet). */
+  /** BACKEND PENDING: GET /segments (no `updated_at` column yet). */
   updatedAt?: string;
-  /** BACKEND PENDING: GET /audience/segments (the D5a "Last used" column). */
+  /** BACKEND PENDING: GET /segments (the D5a "Last used" column). */
   lastUsedLabel?: string | null;
 }
 
@@ -46,29 +46,29 @@ export interface SegmentPreview {
   /** True when the count stopped at `cap`; the UI then says "up to". */
   capped: boolean;
   cap: number;
-  /** BACKEND PENDING: POST /audience/segments/preview ("of 45,102 subscribed"). */
+  /** BACKEND PENDING: POST /segments/preview ("of 45,102 subscribed"). */
   subscribedTotal?: number;
-  /** BACKEND PENDING: POST /audience/segments/preview (the D5b sample panel). */
+  /** BACKEND PENDING: POST /segments/preview (the D5b sample panel). */
   sample?: SegmentSample[];
 }
 
 export const segmentApi = {
-  list: () => api.get<Segment[]>('/audience/segments'),
+  list: () => api.get<Segment[]>('/segments'),
 
   create: (input: { name: string; definition: SegmentNode }) =>
-    api.post<Segment>('/audience/segments', input),
+    api.post<Segment>('/segments', input),
 
-  /** BACKEND PENDING: PATCH /audience/segments/:id — saving an edit. */
+  /** BACKEND PENDING: PATCH /segments/:id — saving an edit. */
   update: (id: string, input: { name: string; definition: SegmentNode }) =>
-    api.patch<Segment>(`/audience/segments/${id}`, input),
+    api.patch<Segment>(`/segments/${id}`, input),
 
-  remove: (id: string) => api.delete<void>(`/audience/segments/${id}`),
+  remove: (id: string) => api.delete<void>(`/segments/${id}`),
 
   /** The count for a definition being edited, before it is saved. */
   preview: (definition: SegmentNode) =>
-    api.post<SegmentPreview>('/audience/segments/preview', { definition }),
+    api.post<SegmentPreview>('/segments/preview', { definition }),
 
-  previewSaved: (id: string) => api.post<SegmentPreview>(`/audience/segments/${id}/preview`),
+  previewSaved: (id: string) => api.post<SegmentPreview>(`/segments/${id}/preview`),
 };
 
 /** Query keys, in one place so an invalidation cannot miss a page. */

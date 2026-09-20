@@ -515,7 +515,7 @@ function onboardingStubs(): void {
       lastSendAt: null,
     },
   ]);
-  responses.set('GET /audience/imports', []);
+  responses.set('GET /imports', []);
   responses.set('GET /campaigns', { items: [], nextCursor: null });
   responses.set('GET /workspaces/current', {
     id: 'ws_nv',

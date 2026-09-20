@@ -54,22 +54,22 @@ function advance(job: Row): Row {
 export const routes: Route[] = [
   {
     method: 'GET',
-    pattern: /^\/audience\/imports$/u,
+    pattern: /^\/imports$/u,
     handler: () => state.imports.filter((job) => STARTED.includes(String(job['status']))).map(advance),
   },
   {
     method: 'GET',
-    pattern: /^\/audience\/imports\/([^/]+)\/errors$/u,
+    pattern: /^\/imports\/([^/]+)\/errors$/u,
     handler: (m) => importErrors[m[1] ?? ''] ?? [],
   },
   {
     method: 'PUT',
-    pattern: /^\/audience\/imports\/([^/]+)\/upload$/u,
+    pattern: /^\/imports\/([^/]+)\/upload$/u,
     handler: () => ({ ok: true }),
   },
   {
     method: 'GET',
-    pattern: /^\/audience\/imports\/([^/]+)$/u,
+    pattern: /^\/imports\/([^/]+)$/u,
     handler: (m) => {
       const job = find(state.imports, m[1] ?? '');
       return job === undefined ? (state.imports[1] as Row) : advance(job);
@@ -77,7 +77,7 @@ export const routes: Route[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/audience\/imports\/([^/]+)\/mapping$/u,
+    pattern: /^\/imports\/([^/]+)\/mapping$/u,
     handler: (m, body) => {
       const job = find(state.imports, m[1] ?? '');
       if (job === undefined) return {};
@@ -99,7 +99,7 @@ export const routes: Route[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/audience\/imports\/([^/]+)\/cancel$/u,
+    pattern: /^\/imports\/([^/]+)\/cancel$/u,
     handler: (m) => {
       const job = find(state.imports, m[1] ?? '');
       if (job === undefined) return {};
@@ -111,7 +111,7 @@ export const routes: Route[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/audience\/imports$/u,
+    pattern: /^\/imports$/u,
     handler: (_m, body) => {
       const input = body as { filename: string; fileType: string; byteSize?: number };
       const job: Row = {

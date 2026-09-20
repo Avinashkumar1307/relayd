@@ -58,11 +58,11 @@ function detailFor(row: Row): Row {
 export const routes: Route[] = [
   /* ------------------------------------------------------------ contacts -- */
 
-  { method: 'GET', pattern: /^\/audience\/stats$/u, handler: () => audienceStats },
-  { method: 'GET', pattern: /^\/audience\/saved-views$/u, handler: () => savedViews },
+  { method: 'GET', pattern: /^\/stats$/u, handler: () => audienceStats },
+  { method: 'GET', pattern: /^\/saved-views$/u, handler: () => savedViews },
 
-  { method: 'GET', pattern: /^\/audience\/contacts$/u, handler: () => state.contacts, paged: true },
-  { method: 'POST', pattern: /^\/audience\/contacts\/tags$/u, handler: (_m, body) => {
+  { method: 'GET', pattern: /^\/contacts$/u, handler: () => state.contacts, paged: true },
+  { method: 'POST', pattern: /^\/contacts\/tags$/u, handler: (_m, body) => {
     const input = body as { contactIds: string[]; tagId: string };
     const tag = find(state.tags, input.tagId);
     for (const contactId of input.contactIds) {
@@ -75,8 +75,8 @@ export const routes: Route[] = [
     }
     return { updated: input.contactIds.length };
   } },
-  { method: 'DELETE', pattern: /^\/audience\/contacts\/tags$/u, handler: () => ({ updated: 0 }) },
-  { method: 'POST', pattern: /^\/audience\/contacts$/u, handler: (_m, body) => {
+  { method: 'DELETE', pattern: /^\/contacts\/tags$/u, handler: () => ({ updated: 0 }) },
+  { method: 'POST', pattern: /^\/contacts$/u, handler: (_m, body) => {
     const input = body as { email: string; firstName?: string; lastName?: string };
     const row: Row = {
       id: id('ct_'),
@@ -93,26 +93,26 @@ export const routes: Route[] = [
     state.contacts.unshift(row);
     return row;
   } },
-  { method: 'GET', pattern: /^\/audience\/contacts\/([^/]+)$/u, handler: (m) => {
+  { method: 'GET', pattern: /^\/contacts\/([^/]+)$/u, handler: (m) => {
     const row = find(state.contacts, m[1] ?? '');
     return row === undefined ? {} : detailFor(row);
   } },
-  { method: 'PATCH', pattern: /^\/audience\/contacts\/([^/]+)$/u, handler: (m, body) => {
+  { method: 'PATCH', pattern: /^\/contacts\/([^/]+)$/u, handler: (m, body) => {
     const row = find(state.contacts, m[1] ?? '');
     if (row !== undefined) Object.assign(row, body as object);
     return row ?? {};
   } },
-  { method: 'DELETE', pattern: /^\/audience\/contacts\/([^/]+)$/u, handler: (m) => {
+  { method: 'DELETE', pattern: /^\/contacts\/([^/]+)$/u, handler: (m) => {
     state.contacts = state.contacts.filter((row) => row.id !== m[1]);
     return {};
   } },
 
-  { method: 'POST', pattern: /^\/audience\/exports$/u, handler: () => ({ id: id('exp_') }) },
+  { method: 'POST', pattern: /^\/exports$/u, handler: () => ({ id: id('exp_') }) },
 
   /* --------------------------------------------------------------- lists -- */
 
-  { method: 'GET', pattern: /^\/audience\/lists$/u, handler: () => state.lists },
-  { method: 'POST', pattern: /^\/audience\/lists$/u, handler: (_m, body) => {
+  { method: 'GET', pattern: /^\/lists$/u, handler: () => state.lists },
+  { method: 'POST', pattern: /^\/lists$/u, handler: (_m, body) => {
     const input = body as { name: string; description?: string };
     const row: Row = {
       id: id('ls_'),
@@ -128,7 +128,7 @@ export const routes: Route[] = [
     state.lists.unshift(row);
     return row;
   } },
-  { method: 'POST', pattern: /^\/audience\/lists\/([^/]+)\/archive$/u, handler: (m) => {
+  { method: 'POST', pattern: /^\/lists\/([^/]+)\/archive$/u, handler: (m) => {
     const row = find(state.lists, m[1] ?? '');
     if (row !== undefined) {
       row['archived'] = true;
@@ -136,23 +136,23 @@ export const routes: Route[] = [
     }
     return row ?? {};
   } },
-  { method: 'POST', pattern: /^\/audience\/lists\/([^/]+)\/contacts$/u, handler: (_m, body) => ({
+  { method: 'POST', pattern: /^\/lists\/([^/]+)\/contacts$/u, handler: (_m, body) => ({
     added: ((body as { contactIds?: string[] }).contactIds ?? []).length,
   }) },
-  { method: 'PATCH', pattern: /^\/audience\/lists\/([^/]+)$/u, handler: (m, body) => {
+  { method: 'PATCH', pattern: /^\/lists\/([^/]+)$/u, handler: (m, body) => {
     const row = find(state.lists, m[1] ?? '');
     if (row !== undefined) Object.assign(row, body as object);
     return row ?? {};
   } },
-  { method: 'DELETE', pattern: /^\/audience\/lists\/([^/]+)$/u, handler: (m) => {
+  { method: 'DELETE', pattern: /^\/lists\/([^/]+)$/u, handler: (m) => {
     state.lists = state.lists.filter((row) => row.id !== m[1]);
     return {};
   } },
 
   /* ---------------------------------------------------------------- tags -- */
 
-  { method: 'GET', pattern: /^\/audience\/tags\/merge-preview$/u, handler: () => ({ total: 13_412, overlap: 634 }) },
-  { method: 'POST', pattern: /^\/audience\/tags\/merge$/u, handler: (_m, body) => {
+  { method: 'GET', pattern: /^\/tags\/merge-preview$/u, handler: () => ({ total: 13_412, overlap: 634 }) },
+  { method: 'POST', pattern: /^\/tags\/merge$/u, handler: (_m, body) => {
     const input = body as { keepId: string; mergeIds: string[] };
     const keep = find(state.tags, input.keepId);
     const merged = input.mergeIds.filter((mergeId) => mergeId !== input.keepId);
@@ -170,8 +170,8 @@ export const routes: Route[] = [
 
     return { keepId: input.keepId, contacts: Number(keep?.['contactCount'] ?? 0) };
   } },
-  { method: 'GET', pattern: /^\/audience\/tags$/u, handler: () => state.tags },
-  { method: 'POST', pattern: /^\/audience\/tags$/u, handler: (_m, body) => {
+  { method: 'GET', pattern: /^\/tags$/u, handler: () => state.tags },
+  { method: 'POST', pattern: /^\/tags$/u, handler: (_m, body) => {
     const input = body as { name: string; color?: string };
     const row: Row = {
       id: id('tg_'),
@@ -184,21 +184,21 @@ export const routes: Route[] = [
     state.tags.unshift(row);
     return row;
   } },
-  { method: 'PATCH', pattern: /^\/audience\/tags\/([^/]+)$/u, handler: (m, body) => {
+  { method: 'PATCH', pattern: /^\/tags\/([^/]+)$/u, handler: (m, body) => {
     const row = find(state.tags, m[1] ?? '');
     if (row !== undefined) Object.assign(row, body as object);
     return row ?? {};
   } },
-  { method: 'DELETE', pattern: /^\/audience\/tags\/([^/]+)$/u, handler: (m) => {
+  { method: 'DELETE', pattern: /^\/tags\/([^/]+)$/u, handler: (m) => {
     state.tags = state.tags.filter((row) => row.id !== m[1]);
     return {};
   } },
 
   /* -------------------------------------------------------- suppressions -- */
 
-  { method: 'GET', pattern: /^\/audience\/suppressions\/summary$/u, handler: () => suppressionSummary },
-  { method: 'GET', pattern: /^\/audience\/suppressions$/u, handler: () => state.suppressions },
-  { method: 'POST', pattern: /^\/audience\/suppressions$/u, handler: (_m, body) => {
+  { method: 'GET', pattern: /^\/suppressions\/summary$/u, handler: () => suppressionSummary },
+  { method: 'GET', pattern: /^\/suppressions$/u, handler: () => state.suppressions },
+  { method: 'POST', pattern: /^\/suppressions$/u, handler: (_m, body) => {
     const input = body as { email: string; reason?: string; notes?: string };
     const row: Row = {
       id: id('sp'),
@@ -212,7 +212,7 @@ export const routes: Route[] = [
     state.suppressions.unshift(row);
     return row;
   } },
-  { method: 'DELETE', pattern: /^\/audience\/suppressions\/([^/]+)$/u, handler: (m) => {
+  { method: 'DELETE', pattern: /^\/suppressions\/([^/]+)$/u, handler: (m) => {
     state.suppressions = state.suppressions.filter((row) => row.id !== m[1]);
     return {};
   } },
