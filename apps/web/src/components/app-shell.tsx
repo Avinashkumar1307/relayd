@@ -65,8 +65,21 @@ export function breadcrumbFor(pathname: string): string {
       }
     }
   }
+  // Pages the navigation does not list, because they are reached from
+  // somewhere else: the profile from the sidebar's user row, the segment
+  // builder from Segments, the connect wizard from Providers. Falling back to
+  // "Dashboard" put the wrong name above every one of them.
+  for (const [prefix, label] of OFF_NAV) {
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return label;
+  }
   return 'Dashboard';
 }
+
+const OFF_NAV: readonly (readonly [string, string])[] = [
+  ['/settings/profile', 'Settings / Profile & security'],
+  ['/providers/connect', 'Delivery / Connect provider'],
+  ['/get-started', 'Get started'],
+];
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',

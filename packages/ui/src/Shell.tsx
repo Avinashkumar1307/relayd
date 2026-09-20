@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 
 import { Drawer } from './Drawer.js';
 import { Icon, type IconName } from './icons.js';
 import type { Tone } from './states.js';
+import { ThemeControl } from './ThemeControl.js';
 
 /**
  * The application shell (design/Shell.dc.html; design/01 Shell + Dashboard
@@ -413,6 +414,12 @@ export function Shell({
                 <span className="block truncate text-ui font-medium text-white">{user.name}</span>
                 <span className="block text-label text-sidebar-muted">{workspace.role}</span>
               </span>
+              {/* Theme. The export draws no switch anywhere, so this is the
+                  owner's addition rather than a measured element; it lives
+                  beside Sign out because that is the only per-person row in
+                  the shell. Expanded only: the 64px rail has no room, and
+                  the setting is also on J5 Profile & security. */}
+              <ThemeControl variant="icon" />
               {onSignOut !== undefined ? (
                 <button
                   type="button"

@@ -9,6 +9,7 @@ import {
   Field,
   Icon,
   PageHeader,
+  ThemeControl,
 } from '@relayd/ui';
 import { ApiError } from '../../api/client.js';
 import { accountApi, workspaceKeys, type AccountProfile, type AccountSession } from '../../api/workspace.js';
@@ -68,6 +69,7 @@ export function ProfilePage() {
     <div className="max-w-[880px]">
       {header}
       <IdentityCard profile={profile.data} fallbackName={user?.name ?? ''} />
+      <Appearance />
       <ChangePassword />
       <ActiveSessions />
     </div>
@@ -157,6 +159,43 @@ function IdentityCard({ profile, fallbackName }: { profile: AccountProfile; fall
         </div>
       </Card>
     </form>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Appearance                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The only thing on this page that is not account data.
+ *
+ * J5 does not draw it — the export has dark variants of four frames (C2, G3d,
+ * G4b, F2c) and no control anywhere for reaching them — so this section is a
+ * deliberate addition at the owner's request, recorded in
+ * `docs/16-self-review-and-decisions.md`. It is built from the design's own
+ * segmented control rather than a new one.
+ *
+ * It reads and writes the preference itself, through `ThemeControl`, so it
+ * needs neither the shell nor the session: it works on a page rendered on its
+ * own, and it keeps working if `GET /me` never answers.
+ */
+function Appearance() {
+  return (
+    <div className="mt-6">
+      <SectionHeading title="Appearance" />
+
+      <Card flush className="flex flex-wrap items-start justify-between gap-4 p-6">
+        <div className="min-w-0 max-w-[520px]">
+          <div className="text-ui font-medium text-text">Theme</div>
+          <p className="mt-1 mb-0 text-caption text-text-2">
+            System follows your device&rsquo;s own light or dark setting and changes with it. Saved in this
+            browser only &mdash; it is not part of your account and will not follow you to another device.
+          </p>
+        </div>
+
+        <ThemeControl label="Theme" className="flex-none" />
+      </Card>
+    </div>
   );
 }
 

@@ -2125,6 +2125,48 @@ site rather than invented:
 The five in bold need backend work before those pages leave the preview.
 That list is for the owner to schedule; no backend code was written for them.
 
+### 2026-09-20 - a theme control the design never drew
+
+The export has dark variants of four frames - C2 dashboard, G3d campaign
+detail, G4b analytics, F2c template editor - and draws no control anywhere
+for reaching them. It shows what dark mode looks like without saying where
+you turn it on. On the owner's instruction a control was added, which makes
+it the one piece of UI in `apps/web` with no frame behind it; it is recorded
+here rather than left to be discovered. Nothing was invented visually: the
+segmented variant is the template editor's own Desktop / Mobile switcher
+(`design/F Templates.dc.html` line 167) reused verbatim, and the sidebar
+variant takes the same tokens as the collapse toggle and Sign out beside it.
+
+It lives in two places because the two uses are different. J5 Profile &
+security gets an "Appearance" section above "Change password" - the settled,
+labelled choice, on the page that already holds the rest of a person's own
+settings - and the shell's user row gets a one-click icon that cycles, for
+changing it from wherever you are. Both write the same preference.
+
+The control is three-way, System / Light / Dark, and System is the default
+because System is already what the code does when nothing is stored: it
+follows the device's own light or dark setting and changes when that changes.
+A two-way toggle would have had no way back to that state once either end was
+pressed. System is therefore stored as the *absence* of the key rather than
+as the word "system", so there is exactly one representation of "I have not
+chosen" and it is the one every build before this already produced.
+
+The preference is per-browser. It is `localStorage` under `relayd.theme`, it
+is never sent to the API and there is no column for it: signing in on another
+machine gets that machine's own setting. The UI says so in a clause, because
+somebody who assumes it is account data will otherwise report it as a bug.
+
+Adding it forced one behaviour change with consequences beyond the control.
+`applyTheme` used to persist as well as apply, and two existing callers turned
+a temporary theme into a permanent one: `apps/web/src/main.tsx` calls
+`applyTheme(initialTheme())` on boot, which froze the resolved value on the
+first page load and meant "System" could never survive a reload - the device
+could flip to dark forever after and the app would stay light; and the
+preview's `?theme=dark` screenshot flag, which exists so a frame can be shot
+in both themes, stuck that theme permanently in the reader's own browser.
+`applyTheme` now only sets the attribute, and persistence belongs to
+`setThemePreference`. That is a fix to two live bugs, not only groundwork.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

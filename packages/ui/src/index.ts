@@ -16,8 +16,18 @@ export { ICON_PATHS, Icon } from './icons.js';
 export type { IconName, IconProps } from './icons.js';
 export { CAMPAIGN_STATES, CONTACT_STATES, HEALTH, RECIPIENT_STATES, TONES, stateStyle } from './states.js';
 export type { CampaignState, ContactState, Health, RecipientState, StateStyle, Tone } from './states.js';
-export { applyTheme, currentTheme, initialTheme, readStoredTheme, toggleTheme } from './theme.js';
-export type { Theme } from './theme.js';
+export {
+  applyTheme,
+  currentTheme,
+  initialTheme,
+  readStoredPreference,
+  readStoredTheme,
+  resolveTheme,
+  setThemePreference,
+  toggleTheme,
+  useThemePreference,
+} from './theme.js';
+export type { Theme, ThemePreference, ThemePreferenceState } from './theme.js';
 
 // ---- layout: the shell and the auth frame ------------------------------
 export { BrandMark, NAV, Shell } from './Shell.js';
@@ -46,6 +56,8 @@ export { Switch } from './Switch.js';
 export type { SwitchProps } from './Switch.js';
 export { SearchInput } from './SearchInput.js';
 export type { SearchInputProps, SearchInputSize } from './SearchInput.js';
+export { ThemeControl } from './ThemeControl.js';
+export type { ThemeControlProps, ThemeControlVariant } from './ThemeControl.js';
 
 // ---- identity and secrets ----------------------------------------------
 export { Badge, StateBadge } from './Badge.js';

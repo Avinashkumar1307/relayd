@@ -686,3 +686,95 @@ describe('the date helpers', () => {
     expect(formatDate('2026-09-19T06:42:18.000Z', 'Mars/Olympus')).toBe('19 Sep 2026');
   });
 });
+
+/* ================================================================== */
+/* J5 — Appearance                                                     */
+/* ================================================================== */
+
+/**
+ * The one section on J5 with no frame behind it: the export has dark
+ * variants (C2, G3d, G4b, F2c) and draws no control for reaching them, so
+ * this was added deliberately — docs/16-self-review-and-decisions.md,
+ * 2026-09-20.
+ *
+ * What is asserted is what makes it a *device* preference rather than
+ * account data: three choices with System among them, System stored as the
+ * absence of the key, and the whole thing working with no shell mounted and
+ * no request in flight for it.
+ */
+describe('appearance on the profile page (J5)', () => {
+  const THEME_KEY = 'relayd.theme';
+
+  function profileStubs() {
+    responses.set('GET /me/sessions', SESSIONS);
+    responses.set('GET /me', {
+      id: 'usr_dana',
+      name: 'Dana Haddad',
+      email: 'dana@northwind.travel',
+      emailVerified: true,
+    });
+  }
+
+  function forget() {
+    window.localStorage.removeItem(THEME_KEY);
+    document.documentElement.removeAttribute('data-theme');
+  }
+
+  beforeEach(forget);
+  afterEach(forget);
+
+  /** The page on its own: no `Shell`, so no sidebar control and no session. */
+  async function group() {
+    profileStubs();
+    wrap(<ProfilePage />, '/settings/profile');
+    await screen.findByRole('heading', { name: 'Appearance' });
+    return screen.getByRole('radiogroup', { name: 'Theme' });
+  }
+
+  it('offers System, Light and Dark, and marks System when nothing is stored', async () => {
+    const options = within(await group()).getAllByRole('radio');
+
+    expect(options.map((option) => option.textContent)).toEqual(['System', 'Light', 'Dark']);
+    expect(options.map((option) => option.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
+  });
+
+  it('says that System follows the device and that the choice stays in this browser', async () => {
+    await group();
+
+    const explanation = screen.getByText(/System follows your device/);
+    expect(explanation.textContent).toContain('light or dark setting and changes with it');
+    expect(explanation.textContent).toContain('Saved in this browser only');
+    expect(explanation.textContent).toContain('not part of your account');
+  });
+
+  it('paints the app dark the moment Dark is chosen, and remembers it', async () => {
+    const control = await group();
+
+    await userEvent.click(within(control).getByRole('radio', { name: 'Dark' }));
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(window.localStorage.getItem(THEME_KEY)).toBe('dark');
+    expect(within(control).getByRole('radio', { name: 'Dark' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('stores System as no key at all, so an unset preference has one representation', async () => {
+    window.localStorage.setItem(THEME_KEY, 'dark');
+    const control = await group();
+
+    expect(within(control).getByRole('radio', { name: 'Dark' }).getAttribute('aria-checked')).toBe('true');
+
+    await userEvent.click(within(control).getByRole('radio', { name: 'System' }));
+
+    expect(window.localStorage.getItem(THEME_KEY)).toBeNull();
+    // jsdom reports no `prefers-color-scheme: dark`, so System resolves light.
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+  });
+
+  it('never asks the server about it', async () => {
+    const control = await group();
+
+    await userEvent.click(within(control).getByRole('radio', { name: 'Light' }));
+
+    expect(sent.some((request) => request.method !== 'GET')).toBe(false);
+  });
+});
