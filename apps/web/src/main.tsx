@@ -17,11 +17,15 @@ configureApi({ baseUrl: '/api/v1' });
 // Set before the first render so nothing flashes light then dark.
 applyTheme(initialTheme());
 
-// PREVIEW ONLY. With VITE_DEMO=1 a fake backend replaces window.fetch and
-// serves dummy data, so the shell and pages can be walked with no API. Off by
-// default; the import is dynamic so none of it reaches a normal build. Never
-// set this in a deployed environment.
-if (import.meta.env['VITE_DEMO'] === '1') {
+/**
+ * PREVIEW ONLY. With VITE_DEMO=1 a fake backend replaces `window.fetch` and
+ * answers from fixtures, so every page can be walked with no API behind it
+ * (CLAUDE.md section 16). Off by default, and the import is dynamic so none
+ * of it reaches a normal build. Never set this in a deployed environment.
+ */
+async function installPreviewBackend(): Promise<void> {
+  if (import.meta.env.VITE_DEMO !== '1') return;
+
   const { installDemoServer } = await import('./demo/server.js');
   installDemoServer();
 
@@ -31,19 +35,36 @@ if (import.meta.env['VITE_DEMO'] === '1') {
   if (requested === 'light' || requested === 'dark') applyTheme(requested);
 }
 
-const container = document.getElementById('root');
-if (container === null) {
-  throw new Error('Missing #root element');
+/**
+ * Boot.
+ *
+ * The await lives in here rather than at the top level on purpose: a
+ * top-level await compiles to nothing the build's browser targets accept
+ * (es2020 and Safari 14 among them), so `vite build` fails outright on it
+ * while the dev server is perfectly happy — the one shape that passes every
+ * local check and breaks only in CI. Rendering still waits for the preview
+ * backend, which it must: React starts fetching on its first paint, and a
+ * fake `fetch` installed after that races the first request.
+ */
+async function boot(): Promise<void> {
+  await installPreviewBackend();
+
+  const container = document.getElementById('root');
+  if (container === null) {
+    throw new Error('Missing #root element');
+  }
+
+  createRoot(container).render(
+    <StrictMode>
+      <QueryClientProvider client={createQueryClient()}>
+        <BrowserRouter>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </StrictMode>,
+  );
 }
 
-createRoot(container).render(
-  <StrictMode>
-    <QueryClientProvider client={createQueryClient()}>
-      <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
-  </StrictMode>,
-);
+void boot();
