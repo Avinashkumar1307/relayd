@@ -17,6 +17,15 @@ configureApi({ baseUrl: '/api/v1' });
 // Set before the first render so nothing flashes light then dark.
 applyTheme(initialTheme());
 
+// PREVIEW ONLY. With VITE_DEMO=1 a fake backend replaces window.fetch and
+// serves dummy data, so the shell and pages can be walked with no API. Off by
+// default; the import is dynamic so none of it reaches a normal build. Never
+// set this in a deployed environment.
+if (import.meta.env['VITE_DEMO'] === '1') {
+  const { installDemoServer } = await import('./demo/server.js');
+  installDemoServer();
+}
+
 const container = document.getElementById('root');
 if (container === null) {
   throw new Error('Missing #root element');
