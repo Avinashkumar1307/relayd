@@ -197,3 +197,36 @@ All Phase 0–12 gates in `BUILD-PLAN.md` ticked; every row of `INVARIANTS.md` h
 The finished UI lives in the Claude Design project and in `design/`. Every page built in `apps/web` must match its frame. `relayd-ui.js` is the single source of truth for tokens, state names, labels and tones — mirror it in the Tailwind config and in `packages/ui`; do not invent colours, type sizes, spacing or radii. Build the shell and the components on the design-system sheet once, as `packages/ui`, and reuse them on every page. Any element that cannot be reproduced with Tailwind core utilities: list it and ask, never approximate silently. Implement each page's UI in the phase that builds its backend, per `BUILD-PLAN.md` — never all pages at once.
 
 Frames are named *section letter + route*, e.g. `B4 Reset password /reset-password/:token`. `Relayd Index.dc.html` maps every section file to the routes it covers. `sample-data.js` is the fixture set (workspace "Northwind Voyages"); `support.js` is the export's runtime and is ignored by lint and by everything else.
+
+**Reading a frame.** The `.dc.html` files are not static documents. Most frames — the wizard steps, the detail states, every empty and error state, the banners — are generated at page load by `support.js` from the data arrays at the bottom of each file, and every page frame pulls the shell in through `<dc-import name="Shell">`, which resolves only over HTTP. Opening the raw file therefore shows a fraction of the design, and grepping it for a value finds a template, not the value. Render first:
+
+```
+python3 scripts/design/render-frames.py              # all sections, ~2 minutes
+python3 scripts/design/render-frames.py --only B,G   # while iterating
+```
+
+That writes the git-ignored `.design-rendered/`: `frames/<S>/<ID>.html` (one frame, self-contained, inline styles carrying the exact pixels, colours and copy), `frames/<S>/<ID>.png` (the same frame as an image), `sheet/<section>.html|png` (the component sheet, cut into its fourteen sections) and `index.json` (every frame with its id, route, variant, theme and size — 138 frames). Measure from the HTML; judge the whole from the PNG.
+
+**Checking a page against its frame.** With the mocked API running (`VITE_DEMO=1`, see §16), screenshot the app with the same browser the frames were rendered with:
+
+```
+python3 scripts/design/shoot-app.py /campaigns /audience/contacts
+python3 scripts/design/shoot-app.py --mobile /login          # 390px
+python3 scripts/design/shoot-app.py --theme dark /dashboard  # demo mode only
+```
+
+Then look at `.design-rendered/app/<slug>.png` beside `.design-rendered/frames/<S>/<ID>.png`. Both scripts are standard-library Python, drive headless Edge or Chrome (`RELAYD_BROWSER` overrides), and run in Bash on Windows, WSL and Linux CI.
+
+## 16. Preview mode
+
+`apps/web` can run with a fake backend so the UI can be built and looked at before an environment exists:
+
+```
+cd apps/web && VITE_DEMO=1 npx vite --port 5174 --strictPort --host 127.0.0.1
+```
+
+`VITE_DEMO=1` dynamically imports `src/demo/`, which replaces `window.fetch` and answers `/api/v1/*` from fixtures mirroring `design/sample-data.js`. The import is dynamic and the flag is off by default, so none of it reaches a normal build; **never set it in a deployed environment**.
+
+Its shape follows the section split: `demo/routes/<section>.ts` exports `routes` and `previewPaths`, `demo/data/<section>.ts` holds that section's fixtures, `demo/routes/index.ts` concatenates them. A section owns its two files and nothing else, which is what lets the UI be built section by section without merge conflicts. `apps/web/test/demo-smoke.test.tsx` renders every path in `PREVIEW_PATHS` and fails on any request the fake backend does not route — that is what catches an invented path or envelope, and it is why the fixtures are derived from the real client contracts in `src/api/*.ts` rather than written by hand.
+
+The preview is a preview. It proves the flow and the pixels, never the behaviour: entitlements, permissions, state machines and idempotency are only ever proven against the real API by the suites in §4.

@@ -2065,6 +2065,66 @@ the wording kept. `design/**` is excluded from ESLint in the same commit:
 `support.js` is a generated browser runtime and the frames are reference,
 never code that ships.
 
+### 2026-09-20 - the design export is rendered before it is read
+
+The `.dc.html` files in `design/` are programs, not documents: `support.js`
+generates most frames at load time from the data arrays at the foot of each
+file, and every page frame imports the shell through `<dc-import>`, which
+resolves only over HTTP. Reading the raw files shows a fraction of the design
+and grepping them finds templates rather than values - the first pass at this
+work measured a frame by reading its source and got the wrong numbers.
+
+`scripts/design/render-frames.py` renders every file in a headless Chromium,
+cuts the DOM into one self-contained HTML file per frame plus a screenshot,
+and writes an index: 138 frames, plus the component sheet cut into its
+fourteen sections. `scripts/design/shoot-app.py` screenshots the running app
+with the same browser so a page and its frame can be compared directly.
+Output goes to the git-ignored `.design-rendered/`. Both are standard-library
+Python and run in Bash on Windows, WSL and Linux CI, per the owner's rule
+about never assuming PowerShell. CLAUDE.md section 15 documents both.
+
+### 2026-09-20 - apps/web is split by section, not by the docs/09 tree
+
+docs/09 "Directory structure" has one `App.tsx` declaring every route. The UI
+was built by twelve teams working at once, so `App.tsx` now composes one
+exported JSX fragment per section (`authRoutes`, `campaignsRoutes`, ...),
+each living beside the pages it routes to, and the preview backend is split
+the same way (`demo/routes/<section>.ts`, `demo/data/<section>.ts`). Nothing
+about the routes themselves changed. The reason is mechanical rather than
+architectural: one file per section means no two teams ever edit the same
+file, and a section can be reverted on its own.
+
+Two contracts were created as stubs before the sections started, so that
+everything compiled against a fixed shape: `auth/workspace-state.tsx`
+(`useReadOnly()`, the K2 suspended-workspace rule) and
+`components/onboarding-checklist.tsx` (the B6b checklist the dashboard also
+renders).
+
+### 2026-09-20 - routes in the design that the written docs do not list
+
+The design covers pages docs/09's route map and docs/03's endpoint table do
+not mention. They are built, against the preview backend, and each one's
+missing endpoint is marked `// BACKEND PENDING: <method path>` at the call
+site rather than invented:
+
+| Route | Frame | Endpoint status |
+|---|---|---|
+| `/pricing` | A2 | no public plans endpoint; static marketing content |
+| `/verify` | B3a-c | `POST /auth/verify-email` exists; **no resend endpoint** |
+| `/invite/:token` | B5a, B5b | `POST /invitations/accept` exists; **no token preview** |
+| `/workspaces/new` | B6a | **no `POST /workspaces`** (registration creates the first one) |
+| `/get-started` | B6b | derived from existing endpoints; no endpoint of its own |
+| `/audience/segments`, `/new` | D5a, D5b | endpoints exist, no UI existed |
+| `/pools`, `/pools/:id` | H1a, H1b | endpoints exist, no UI existed |
+| `/billing/payment-method` | I8 | portal redirect; no endpoint of its own |
+| `/settings/team/permissions` | J2c | rendered from `packages/types` permissions |
+| `/settings/profile` | J5 | **no sessions list or revoke endpoint** |
+| `/settings/audit` | J6 | docs/03 lists `/audit-logs`; **not implemented** |
+| `/settings/webhooks` and children | J4a-c | endpoints exist, UI was inside `/settings/api` |
+
+The five in bold need backend work before those pages leave the preview.
+That list is for the owner to schedule; no backend code was written for them.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*
