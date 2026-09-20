@@ -24,6 +24,11 @@ applyTheme(initialTheme());
 if (import.meta.env['VITE_DEMO'] === '1') {
   const { installDemoServer } = await import('./demo/server.js');
   installDemoServer();
+
+  // ?theme=dark lets scripts/design/shoot-app.py screenshot both themes; a
+  // headless browser has no way to set the stored preference.
+  const requested = new URLSearchParams(window.location.search).get('theme');
+  if (requested === 'light' || requested === 'dark') applyTheme(requested);
 }
 
 const container = document.getElementById('root');

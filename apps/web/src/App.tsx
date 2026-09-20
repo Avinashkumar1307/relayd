@@ -1,69 +1,40 @@
-import { Link, Navigate, Route, Routes } from 'react-router';
+import { Route, Routes } from 'react-router';
 import { AppShell } from './components/app-shell.js';
-import { RequireAnonymous, RequireAuth } from './auth/guards.js';
-import {
-  ForgotPasswordPage,
-  LoginPage,
-  RegisterPage,
-  ResetPasswordPage,
-  VerifyEmailPage,
-} from './routes/auth-pages.js';
-import { TeamSettingsPage, WorkspaceSettingsPage } from './routes/settings-pages.js';
-import { ApiSettingsPage } from './routes/settings/api.js';
-import { ContactsPage } from './routes/audience/contacts.js';
-import { ListsPage, SuppressionsPage, TagsPage } from './routes/audience/collections.js';
-import { ImportsPage } from './routes/audience/imports.js';
-import {
-  CreateTemplatePage,
-  TemplateEditorPage,
-  TemplatesPage,
-} from './routes/templates/templates.js';
-import {
-  CampaignAnalyticsPage,
-  DashboardPage,
-} from './routes/analytics/analytics.js';
-import {
-  CampaignWizardPage,
-  CampaignsPage,
-  CreateCampaignPage,
-} from './routes/campaigns/campaigns.js';
-import { ProvidersPage } from './routes/providers/providers.js';
-import { SendersPage } from './routes/providers/senders.js';
-import {
-  BillingPage,
-  CancelSubscriptionPage,
-  CheckoutCancelPage,
-  CheckoutSuccessPage,
-  InvoicesPage,
-  PlansPage,
-} from './routes/billing/billing.js';
+import { RequireAuth } from './auth/guards.js';
+import { publicRoutes } from './routes/public/routes.js';
+import { authRoutes } from './routes/auth/routes.js';
+import { analyticsRoutes } from './routes/analytics/routes.js';
+import { audienceCollectionsRoutes } from './routes/audience/collections-routes.js';
+import { audiencePipelineRoutes } from './routes/audience/pipeline-routes.js';
+import { templatesRoutes } from './routes/templates/routes.js';
+import { campaignsRoutes } from './routes/campaigns/routes.js';
+import { poolsRoutes } from './routes/pools/routes.js';
+import { providersRoutes } from './routes/providers/routes.js';
+import { billingRoutes } from './routes/billing/routes.js';
+import { settingsWorkspaceRoutes } from './routes/settings/workspace-routes.js';
+import { settingsPlatformRoutes } from './routes/settings/platform-routes.js';
+import { systemRoutes } from './routes/system/routes.js';
 
 /**
- * Phases 1 to 8: authentication, workspace settings, audience, provider
- * connections, templates, campaigns, analytics and billing.
+ * The route table, composed from one fragment per section.
+ *
+ * Every <Route> used to be declared here, which made this file the one place
+ * ten teams all had to edit — and therefore the one place they all
+ * conflicted. Each section now owns a `routes.tsx` exporting a fragment of
+ * <Route> elements, and this file only says where each fragment sits
+ * relative to the others. React Router flattens fragments when it builds the
+ * route tree, so `{audienceRoutes}` behaves exactly as if the routes were
+ * written inline.
+ *
+ * Order is the only thing decided here, and only two parts of it matter:
+ * the authenticated sections sit inside the RequireAuth + AppShell layout
+ * route, and the system fragment's "*" comes last.
  */
 export function App() {
   return (
     <Routes>
-      <Route
-        path="/login"
-        element={
-          <RequireAnonymous>
-            <LoginPage />
-          </RequireAnonymous>
-        }
-      />
-      <Route
-        path="/register"
-        element={
-          <RequireAnonymous>
-            <RegisterPage />
-          </RequireAnonymous>
-        }
-      />
-      <Route path="/verify-email" element={<VerifyEmailPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      {publicRoutes}
+      {authRoutes}
 
       <Route
         element={
@@ -72,54 +43,19 @@ export function App() {
           </RequireAuth>
         }
       >
-        <Route path="/audience/contacts" element={<ContactsPage />} />
-        <Route path="/audience/lists" element={<ListsPage />} />
-        <Route path="/audience/tags" element={<TagsPage />} />
-        <Route path="/audience/imports" element={<ImportsPage />} />
-        <Route path="/audience/suppressions" element={<SuppressionsPage />} />
-
-        <Route path="/templates" element={<TemplatesPage />} />
-        <Route path="/templates/create" element={<CreateTemplatePage />} />
-        <Route path="/templates/:id" element={<TemplateEditorPage />} />
-
-        <Route path="/dashboard" element={<DashboardPage />} />
-
-        <Route path="/campaigns" element={<CampaignsPage />} />
-        <Route path="/campaigns/new" element={<CreateCampaignPage />} />
-        <Route path="/campaigns/:id" element={<CampaignWizardPage />} />
-        <Route path="/campaigns/:id/analytics" element={<CampaignAnalyticsPage />} />
-
-        <Route path="/providers" element={<ProvidersPage />} />
-        <Route path="/senders" element={<SendersPage />} />
-
-        <Route path="/billing" element={<BillingPage />} />
-        <Route path="/billing/plans" element={<PlansPage />} />
-        <Route path="/billing/success" element={<CheckoutSuccessPage />} />
-        <Route path="/billing/cancel" element={<CheckoutCancelPage />} />
-        <Route path="/billing/invoices" element={<InvoicesPage />} />
-        <Route path="/billing/subscription/cancel" element={<CancelSubscriptionPage />} />
-
-        <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
-        <Route path="/settings/team" element={<TeamSettingsPage />} />
-        <Route path="/settings/api" element={<ApiSettingsPage />} />
+        {analyticsRoutes}
+        {audienceCollectionsRoutes}
+        {audiencePipelineRoutes}
+        {templatesRoutes}
+        {campaignsRoutes}
+        {poolsRoutes}
+        {providersRoutes}
+        {billingRoutes}
+        {settingsWorkspaceRoutes}
+        {settingsPlatformRoutes}
       </Route>
 
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/audience" element={<Navigate to="/audience/contacts" replace />} />
-      <Route path="*" element={<NotFound />} />
+      {systemRoutes}
     </Routes>
-  );
-}
-
-function NotFound() {
-  return (
-    <main className="mx-auto max-w-lg px-6 py-16 text-center">
-      <h1 className="text-lg font-semibold text-slate-900">Page not found</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        <Link to="/" className="underline">
-          Go back
-        </Link>
-      </p>
-    </main>
   );
 }

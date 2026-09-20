@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router';
 import type { Permission } from '@relayd/types';
+import { DashboardSkeleton, DetailSkeleton, Skeleton, TableSkeleton } from '@relayd/ui';
 import { useAuth } from './AuthProvider.js';
+import { LockedPage } from '../routes/system/locked-page.js';
 
 /**
  * Route guards.
@@ -16,7 +18,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useAuth();
   const location = useLocation();
 
-  if (status === 'loading') return <FullPageSpinner />;
+  if (status === 'loading') return <RouteSkeleton pathname={location.pathname} />;
 
   if (status === 'anonymous') {
     // Remember where they were headed so login can return them there.
@@ -28,8 +30,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
 export function RequireAnonymous({ children }: { children: ReactNode }) {
   const { status } = useAuth();
+  const location = useLocation();
 
-  if (status === 'loading') return <FullPageSpinner />;
+  if (status === 'loading') return <RouteSkeleton pathname={location.pathname} />;
   if (status === 'authenticated') return <Navigate to="/settings/workspace" replace />;
 
   return <>{children}</>;
@@ -55,37 +58,69 @@ export function IfPermitted({
   return <>{can(permission) ? children : fallback}</>;
 }
 
+/**
+ * A whole page a role cannot open: K3, the locked page.
+ *
+ * Not a 404 — this user is a member of the workspace and the page exists;
+ * hiding it would leave them guessing. A *non-member* is the other case and
+ * gets A4 (CLAUDE.md section 11: 404, never 403).
+ */
 export function RequirePermission({
   permission,
   children,
+  fallback,
 }: {
   permission: Permission;
   children: ReactNode;
+  fallback?: ReactNode | undefined;
 }) {
   const { can, status } = useAuth();
+  const location = useLocation();
 
-  if (status === 'loading') return <FullPageSpinner />;
-  if (!can(permission)) return <NotPermitted permission={permission} />;
+  if (status === 'loading') return <RouteSkeleton pathname={location.pathname} />;
+  if (!can(permission)) return <>{fallback ?? <LockedPage permission={permission} />}</>;
 
   return <>{children}</>;
 }
 
-function FullPageSpinner() {
+/* ------------------------------------------------------------------ */
+/* K4a / K4b / K4c — the skeleton that matches where we are going      */
+/* ------------------------------------------------------------------ */
+
+/** Sections whose `/:id` route is a detail page (K4c), not another list. */
+const DETAIL_PARENTS = ['/campaigns', '/templates', '/pools', '/providers', '/audience/lists', '/audience/segments'];
+
+/**
+ * The right skeleton for the route being restored.
+ *
+ * The sheet's rule is "shapes match the final layout so nothing jumps", and
+ * the three compositions in `@relayd/ui` are the three shapes the app has.
+ * Picking by path is the only information available while the session is
+ * still being traded for — the page component has not mounted yet — and it
+ * is enough: the dashboard, a detail page and everything else.
+ */
+export function RouteSkeleton({ pathname }: { pathname: string }) {
   return (
-    <div className="flex min-h-screen items-center justify-center" role="status" aria-live="polite">
-      <span className="text-sm text-slate-500">Loading…</span>
+    <div className="min-h-screen bg-bg text-text">
+      <div className="mx-auto w-full max-w-[1280px] px-4 pt-7 pb-10 md:px-8">
+        <div className="mb-5 flex flex-col gap-2">
+          <Skeleton width={200} height={24} radius={6} />
+          <Skeleton width={280} height={14} />
+        </div>
+        <Body pathname={pathname} />
+      </div>
     </div>
   );
 }
 
-function NotPermitted({ permission }: { permission: Permission }) {
-  return (
-    <div className="mx-auto max-w-lg px-6 py-16 text-center">
-      <h1 className="text-lg font-semibold text-slate-900">You do not have access to this</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        This page needs the <code className="rounded bg-slate-100 px-1">{permission}</code>{' '}
-        permission. An owner or admin of this workspace can change your role.
-      </p>
-    </div>
-  );
+function Body({ pathname }: { pathname: string }) {
+  if (pathname === '/dashboard' || pathname === '/') return <DashboardSkeleton />;
+
+  const isDetail = DETAIL_PARENTS.some((parent) => {
+    if (!pathname.startsWith(`${parent}/`)) return false;
+    const rest = pathname.slice(parent.length + 1);
+    return rest !== '' && rest !== 'new';
+  });
+
+  return isDetail ? <DetailSkeleton /> : <TableSkeleton />;
 }

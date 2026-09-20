@@ -12,15 +12,36 @@ export interface Membership {
   role: WorkspaceRole;
 }
 
+/**
+ * Who is signed in.
+ *
+ * The shell's user row, J5 Profile & security and D6c's "Recorded as" line
+ * all need a name and an address, and three sections reached for it
+ * independently. It lives here so there is one answer.
+ *
+ * BACKEND PENDING: GET /auth/session (or a `user` on the refresh response).
+ * `POST /auth/refresh` currently returns only the token and the memberships,
+ * so this is absent against the real API and present against the preview
+ * backend. Everything that reads it degrades to the address or to "you"
+ * rather than rendering an empty name.
+ */
+export interface SessionUser {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export interface Session {
   accessToken: string;
   memberships: Membership[];
+  user?: SessionUser;
 }
 
 interface AuthState {
   status: 'loading' | 'authenticated' | 'anonymous';
   memberships: Membership[];
   currentWorkspaceId: string | null;
+  user: SessionUser | null;
 }
 
 interface AuthContextValue extends AuthState {
@@ -32,6 +53,18 @@ interface AuthContextValue extends AuthState {
   register: (input: RegisterInput) => Promise<void>;
   logout: () => Promise<void>;
   switchWorkspace: (workspaceId: string) => void;
+  /** B3a and B3c: send the verification link again. */
+  resendVerification: (email?: string) => Promise<void>;
+  /** B5a: join the workspace this token invites to, then adopt the new session. */
+  acceptInvitation: (token: string) => Promise<void>;
+  /** B6a: create a workspace and make it the current one. */
+  createWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
+}
+
+export interface CreateWorkspaceInput {
+  name: string;
+  slug: string;
+  timezone: string;
 }
 
 export interface RegisterInput {
@@ -60,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     status: 'loading',
     memberships: [],
     currentWorkspaceId: null,
+    user: null,
   });
 
   const adopt = useCallback((session: Session) => {
@@ -76,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status: 'authenticated',
       memberships: session.memberships,
       currentWorkspaceId: chosen,
+      user: session.user ?? null,
     });
   }, []);
 
@@ -95,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         if (!cancelled) {
           setAccessToken(null);
-          setState({ status: 'anonymous', memberships: [], currentWorkspaceId: null });
+          setState({ status: 'anonymous', memberships: [], currentWorkspaceId: null, user: null });
         }
       }
     })();
@@ -126,11 +161,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAccessToken(null);
       setCurrentWorkspaceId(null);
       rememberWorkspace(null);
-      setState({ status: 'anonymous', memberships: [], currentWorkspaceId: null });
+      setState({ status: 'anonymous', memberships: [], currentWorkspaceId: null, user: null });
       // Anything cached was fetched as the previous user.
       queryClient.clear();
     }
   }, [queryClient]);
+
+  /**
+   * Re-read the session from the refresh cookie.
+   *
+   * Accepting an invitation and creating a workspace both change the set of
+   * memberships, and the membership list is what the shell's switcher, the
+   * guards and every workspace-scoped request are built from. Re-adopting is
+   * how those learn about it without a reload.
+   */
+  const reload = useCallback(async () => {
+    adopt(await api.post<Session>('/auth/refresh', undefined, { unscoped: true }));
+  }, [adopt]);
+
+  const resendVerification = useCallback(async (email?: string) => {
+    // BACKEND PENDING: POST /auth/resend-verification
+    await api.post('/auth/resend-verification', email === undefined ? {} : { email }, {
+      unscoped: true,
+    });
+  }, []);
+
+  const acceptInvitation = useCallback(
+    async (token: string) => {
+      await api.post('/invitations/accept', { token }, { unscoped: true });
+      // The caller is now a member of a workspace it was not a member of a
+      // moment ago; nothing cached was fetched with that membership in scope.
+      queryClient.clear();
+      await reload();
+    },
+    [queryClient, reload],
+  );
+
+  const createWorkspace = useCallback(
+    async (input: CreateWorkspaceInput) => {
+      // BACKEND PENDING: POST /workspaces
+      const created = await api.post<{ id: string }>('/workspaces', input, { unscoped: true });
+      queryClient.clear();
+      await reload();
+      setCurrentWorkspaceId(created.id);
+      rememberWorkspace(created.id);
+      setState((previous) => ({ ...previous, currentWorkspaceId: created.id }));
+    },
+    [queryClient, reload],
+  );
 
   const switchWorkspace = useCallback(
     (workspaceId: string) => {
@@ -157,8 +235,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       logout,
       switchWorkspace,
+      resendVerification,
+      acceptInvitation,
+      createWorkspace,
     };
-  }, [state, login, register, logout, switchWorkspace]);
+  }, [
+    state,
+    login,
+    register,
+    logout,
+    switchWorkspace,
+    resendVerification,
+    acceptInvitation,
+    createWorkspace,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
