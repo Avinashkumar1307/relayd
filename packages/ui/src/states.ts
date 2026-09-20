@@ -60,7 +60,16 @@ export const TONES: Readonly<Record<Tone, { fg: string; bg: string; dot: string;
   },
 };
 
-export const CAMPAIGN_STATES = {
+/*
+ * The maps below are written `as const` so the key literals survive (the
+ * CampaignState / RecipientState / ContactState / Health types are their
+ * keys), then re-exported with the values widened to StateStyle. Without
+ * the widening each entry keeps only the properties it happens to set, so
+ * reading `HEALTH[key].pulse` is a type error on the entries that do not
+ * pulse - which is every consumer's first instinct and was a real error in
+ * two pages.
+ */
+const CAMPAIGN_STATES_ENTRIES = {
   draft: { label: 'Draft', tone: 'neutral' },
   scheduled: { label: 'Scheduled', tone: 'info' },
   validating: { label: 'Validating', tone: 'info', pulse: true },
@@ -73,10 +82,11 @@ export const CAMPAIGN_STATES = {
   completed: { label: 'Completed', tone: 'success' },
   completed_with_errors: { label: 'Completed with errors', tone: 'success', outline: true, dot: 'warning' },
   held: { label: 'Held', tone: 'warning', lock: true },
-  failed: { label: 'Failed', tone: 'danger' },
-} as const satisfies Record<string, StateStyle>;
+  failed: { label: 'Failed', tone: 'danger' },} as const satisfies Record<string, StateStyle>;
+export const CAMPAIGN_STATES: Record<keyof typeof CAMPAIGN_STATES_ENTRIES, StateStyle> =
+  CAMPAIGN_STATES_ENTRIES;
 
-export const RECIPIENT_STATES = {
+const RECIPIENT_STATES_ENTRIES = {
   pending: { label: 'Pending', tone: 'neutral' },
   queued: { label: 'Queued', tone: 'info' },
   sending: { label: 'Sending', tone: 'brand', pulse: true },
@@ -87,26 +97,29 @@ export const RECIPIENT_STATES = {
   complained: { label: 'Complained', tone: 'danger' },
   suppressed: { label: 'Suppressed', tone: 'neutral' },
   failed: { label: 'Failed', tone: 'danger' },
-  delivery_uncertain: { label: 'Delivery uncertain', tone: 'uncertain' },
-} as const satisfies Record<string, StateStyle>;
+  delivery_uncertain: { label: 'Delivery uncertain', tone: 'uncertain' },} as const satisfies Record<string, StateStyle>;
+export const RECIPIENT_STATES: Record<keyof typeof RECIPIENT_STATES_ENTRIES, StateStyle> =
+  RECIPIENT_STATES_ENTRIES;
 
-export const CONTACT_STATES = {
+const CONTACT_STATES_ENTRIES = {
   subscribed: { label: 'Subscribed', tone: 'success' },
   unsubscribed: { label: 'Unsubscribed', tone: 'neutral' },
   bounced: { label: 'Bounced', tone: 'danger' },
-  complained: { label: 'Complained', tone: 'danger' },
-} as const satisfies Record<string, StateStyle>;
+  complained: { label: 'Complained', tone: 'danger' },} as const satisfies Record<string, StateStyle>;
+export const CONTACT_STATES: Record<keyof typeof CONTACT_STATES_ENTRIES, StateStyle> =
+  CONTACT_STATES_ENTRIES;
 
-export const HEALTH = {
+const HEALTH_ENTRIES = {
   healthy: { label: 'Healthy', tone: 'success' },
   degraded: { label: 'Degraded', tone: 'warning' },
-  failed: { label: 'Failed', tone: 'danger' },
-} as const satisfies Record<string, StateStyle>;
+  failed: { label: 'Failed', tone: 'danger' },} as const satisfies Record<string, StateStyle>;
+export const HEALTH: Record<keyof typeof HEALTH_ENTRIES, StateStyle> =
+  HEALTH_ENTRIES;
 
-export type CampaignState = keyof typeof CAMPAIGN_STATES;
-export type RecipientState = keyof typeof RECIPIENT_STATES;
-export type ContactState = keyof typeof CONTACT_STATES;
-export type Health = keyof typeof HEALTH;
+export type CampaignState = keyof typeof CAMPAIGN_STATES_ENTRIES;
+export type RecipientState = keyof typeof RECIPIENT_STATES_ENTRIES;
+export type ContactState = keyof typeof CONTACT_STATES_ENTRIES;
+export type Health = keyof typeof HEALTH_ENTRIES;
 
 /**
  * Resolves a state key to its style, with the fallback relayd-ui.js uses: an

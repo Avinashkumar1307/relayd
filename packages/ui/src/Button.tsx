@@ -22,12 +22,12 @@ export type ButtonSize = 'md' | 'lg';
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
   children: ReactNode;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
+  variant?: ButtonVariant | undefined;
+  size?: ButtonSize | undefined;
   /** Shows a "working" state and blocks a second click. */
-  pending?: boolean;
+  pending?: boolean | undefined;
   /** Stretches to the container: the auth forms' submit. */
-  block?: boolean;
+  block?: boolean | undefined;
 }
 
 const VARIANT: Record<ButtonVariant, string> = {

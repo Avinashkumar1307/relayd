@@ -221,19 +221,31 @@
   }
 }
 
-/* Body defaults from every frame's root: Inter 14/1.5, antialiased. */
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: Inter, system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-}
-a {
-  color: var(--brand);
-}
-a:hover {
-  color: var(--brand-hover);
+/*
+ * Body defaults from every frame's root: Inter 14/1.5, antialiased.
+ *
+ * These live in `@layer base` deliberately. Tailwind v4 puts its utilities in
+ * a layer, and in the cascade an *unlayered* rule beats every layered one
+ * whatever the specificity — so a bare `a { color: var(--brand) }` here would
+ * defeat `text-sidebar-text` on the sidebar's links, `text-text-2` on the
+ * breadcrumb, and every other anchor the design colours by hand. Inside the
+ * base layer these are defaults that any utility can override, which is what
+ * a default means.
+ */
+@layer base {
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: var(--brand);
+  }
+  a:hover {
+    color: var(--brand-hover);
+  }
 }

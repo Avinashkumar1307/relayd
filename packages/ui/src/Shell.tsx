@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { Drawer } from './Drawer.js';
 import { Icon, type IconName } from './icons.js';
 import type { Tone } from './states.js';
 
@@ -25,7 +26,7 @@ export interface NavItem {
   href: string;
   icon: IconName;
   /** Shown with a lock and not navigable: billing for non-owners. */
-  locked?: boolean;
+  locked?: boolean | undefined;
 }
 
 export interface NavGroup {
@@ -127,17 +128,17 @@ export interface ShellProps {
   user: ShellUser;
   currentPath: string;
   breadcrumb: string;
-  Link?: ComponentType<LinkProps>;
-  nav?: readonly NavGroup[];
+  Link?: ComponentType<LinkProps> | undefined;
+  nav?: readonly NavGroup[] | undefined;
   usage?: ShellUsage | undefined;
   banner?: ShellBanner | null | undefined;
   /** Suspended workspaces: the top bar says so and creation is disabled. */
-  readOnly?: boolean;
+  readOnly?: boolean | undefined;
   /** Viewers cannot create campaigns; the button stays, with the reason. */
-  canCreate?: boolean;
-  onCreate?: () => void;
-  hasAlerts?: boolean;
-  onSignOut?: () => void;
+  canCreate?: boolean | undefined;
+  onCreate?: () => void | undefined;
+  hasAlerts?: boolean | undefined;
+  onSignOut?: () => void | undefined;
   children: ReactNode;
 }
 
@@ -187,6 +188,7 @@ export function Shell({
 }: ShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
   const expanded = !collapsed;
 
@@ -216,7 +218,7 @@ export function Shell({
     <div className="flex min-h-screen w-full items-stretch bg-bg text-body text-text">
       {/* ------------------------------------------------------------ sidebar */}
       <aside
-        className="relative z-[2] flex flex-none flex-col bg-sidebar text-sidebar-text"
+        className="relative z-[2] hidden flex-none flex-col bg-sidebar text-sidebar-text lg:flex"
         style={{ width: collapsed ? 64 : 260 }}
         aria-label="Primary"
       >
@@ -427,7 +429,111 @@ export function Shell({
 
       {/* ------------------------------------------------------------ content */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 flex-none items-center gap-3 border-b border-border bg-surface px-8">
+        {/* ------------------------------------------------ mobile top bar */}
+        {/* The frames' phone chrome (design C mobile, G1m, I1m): a 56px navy
+            bar with a hamburger, the page name, the bell and the workspace
+            monogram. The sidebar is a Drawer below 1024px because 260px of
+            navigation on a 390px screen is most of the screen. */}
+        <div className="flex h-14 flex-none items-center justify-between gap-3 bg-sidebar px-4 text-white lg:hidden">
+          <span className="flex min-w-0 items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setNavOpen(true)}
+              aria-label="Open navigation"
+              aria-expanded={navOpen}
+              className="grid h-[22px] w-[22px] flex-none cursor-pointer place-items-center bg-transparent text-white"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width={22}
+                height={22}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M3 12h18M3 6h18M3 18h18" />
+              </svg>
+            </button>
+            <span className="truncate text-card font-semibold">{breadcrumb}</span>
+          </span>
+
+          <span className="flex flex-none items-center gap-2.5">
+            {readOnly ? (
+              <span className="grid place-items-center text-white" title="Workspace is read-only">
+                <Icon name="lock" size={16} strokeWidth={2} />
+              </span>
+            ) : null}
+            <span className="relative grid">
+              <Icon name="bell" size={20} />
+              {hasAlerts ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-0 right-0 h-[7px] w-[7px] rounded-full border-[1.5px] border-sidebar bg-danger"
+                />
+              ) : null}
+            </span>
+            <span className="grid h-7 w-7 place-items-center rounded-badge bg-sidebar-chip text-label font-semibold">
+              {workspace.monogram}
+            </span>
+          </span>
+        </div>
+
+        <Drawer
+          open={navOpen}
+          onClose={() => setNavOpen(false)}
+          width={300}
+          closeLabel="Close navigation"
+          title={
+            <span className="flex items-center gap-2.5">
+              <BrandMark size={28} />
+              Relayd
+            </span>
+          }
+          subtitle={`${workspace.name} · ${workspace.plan} plan`}
+        >
+          <div className="-mx-2 flex flex-col">
+            {nav.map((group) => (
+              <div key={group.label}>
+                <div className="px-2 pt-3 pb-1 text-label font-semibold tracking-label text-text-3 uppercase">
+                  {group.label}
+                </div>
+                {group.items.map((item) =>
+                  item.locked === true ? (
+                    <span
+                      key={item.key}
+                      title="Owner only"
+                      aria-disabled="true"
+                      className="flex h-9 cursor-not-allowed items-center gap-2.5 rounded-control px-2 text-ui text-text-3"
+                    >
+                      <Icon name={item.icon} size={16} />
+                      <span className="flex-1">{item.label}</span>
+                      <Icon name="lock" size={12} strokeWidth={2} />
+                    </span>
+                  ) : (
+                    <Link
+                      key={item.key}
+                      href={item.href}
+                      onClick={() => setNavOpen(false)}
+                      className={[
+                        'flex h-9 items-center gap-2.5 rounded-control px-2 text-ui no-underline',
+                        isActive(item) ? 'bg-brand-soft font-medium text-brand' : 'text-text hover:bg-tint',
+                      ].join(' ')}
+                      aria-current={isActive(item) ? 'page' : undefined}
+                    >
+                      <Icon name={item.icon} size={16} />
+                      <span className="flex-1">{item.label}</span>
+                    </Link>
+                  ),
+                )}
+              </div>
+            ))}
+          </div>
+        </Drawer>
+
+        <header className="hidden h-14 flex-none items-center gap-3 border-b border-border bg-surface px-8 lg:flex">
           {/* Breadcrumb: monogram chip / workspace / page. */}
           <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-ui">
             <span className="grid h-[22px] w-[22px] flex-none place-items-center rounded-5 bg-brand-soft text-pill font-semibold text-brand">
@@ -442,6 +548,7 @@ export function Shell({
 
           {readOnly ? (
             <span className="inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-badge bg-danger-soft px-2 text-caption font-medium text-danger-text">
+              <Icon name="lock" size={12} strokeWidth={2} />
               Read-only
             </span>
           ) : null}
@@ -492,7 +599,7 @@ export function Shell({
         {banner !== null && banner !== undefined ? (
           <div
             role="status"
-            className="flex items-center gap-3 border-b px-8 py-2.5"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-2.5 lg:px-8"
             style={{ background: `var(--${banner.tone}-soft)`, borderColor: BANNER_LINE[banner.tone] }}
           >
             <span className="flex-none" style={{ color: `var(--${banner.tone}-text)` }}>
@@ -509,7 +616,7 @@ export function Shell({
           </div>
         ) : null}
 
-        <main className="mx-auto w-full max-w-[1280px] flex-1 px-8 pb-10 pt-7">{children}</main>
+        <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 pt-5 pb-10 lg:px-8 lg:pt-7">{children}</main>
       </div>
     </div>
   );

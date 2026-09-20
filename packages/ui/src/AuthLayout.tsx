@@ -17,13 +17,13 @@ import { BrandMark } from './Shell.js';
 export interface AuthLayoutProps {
   title: string;
   /** The line under the title, in secondary text. */
-  subtitle?: ReactNode;
+  subtitle?: ReactNode | undefined;
   children: ReactNode;
   /** Below the card, e.g. "New to Relayd? Create an account". */
-  after?: ReactNode;
-  width?: number;
+  after?: ReactNode | undefined;
+  width?: number | undefined;
   /** Replaces the brand mark row — B5 shows the inviting workspace's monogram. */
-  mark?: ReactNode;
+  mark?: ReactNode | undefined;
 }
 
 export function AuthLayout({ title, subtitle, children, after, width = 440, mark }: AuthLayoutProps) {

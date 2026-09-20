@@ -56,8 +56,8 @@ export type IconName = keyof typeof ICON_PATHS;
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
   name: IconName;
-  size?: number;
-  strokeWidth?: number;
+  size?: number | undefined;
+  strokeWidth?: number | undefined;
 }
 
 export function Icon({ name, size = 16, strokeWidth = 1.75, ...rest }: IconProps) {

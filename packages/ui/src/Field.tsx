@@ -24,10 +24,10 @@ export type FieldSize = 'md' | 'lg';
 export interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
   label: ReactNode;
   /** Shown to the right of the label — the "Forgot password?" link on B1. */
-  labelAside?: ReactNode;
-  help?: ReactNode;
+  labelAside?: ReactNode | undefined;
+  help?: ReactNode | undefined;
   error?: string | undefined;
-  size?: FieldSize;
+  size?: FieldSize | undefined;
 }
 
 const SIZE: Record<FieldSize, string> = {
