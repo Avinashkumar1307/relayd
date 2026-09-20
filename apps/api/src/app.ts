@@ -6,6 +6,7 @@ import { healthRoutes, type HealthDependencies } from './routes/health.js';
 import { metricsRoutes } from './routes/metrics.js';
 import { metrics } from './middleware/metrics.js';
 import { authRoutes, type AuthRouterOptions } from './routes/auth.js';
+import { meRoutes, type MeRouterOptions } from './routes/me.js';
 import {
   invitationRoutes,
   workspaceRoutes,
@@ -25,6 +26,7 @@ import {
   outboundWebhookRoutes,
   type OutboundWebhookRouterOptions,
 } from './routes/outbound-webhooks.js';
+import { auditRoutes, type AuditRouterOptions } from './routes/audit.js';
 
 /**
  * Express 5, with the guard rails docs/01 asks for: thin route handlers, one
@@ -43,6 +45,8 @@ export interface AppDependencies extends HealthDependencies {
    * no database to build repositories against.
    */
   auth?: AuthRouterOptions;
+  /** The signed-in person: /me. Not workspace-scoped, and never an API key. */
+  me?: MeRouterOptions;
   /** Absent in probe-only tests and in any process without a database. */
   workspaces?: WorkspaceRouterOptions;
   audience?: AudienceRouterOptions;
@@ -54,6 +58,7 @@ export interface AppDependencies extends HealthDependencies {
   billing?: BillingRouterOptions;
   apiKeys?: ApiKeyRouterOptions;
   outboundWebhooks?: OutboundWebhookRouterOptions;
+  audit?: AuditRouterOptions;
   operator?: OperatorRouterOptions;
 }
 
@@ -78,6 +83,10 @@ export function createApp(deps: AppDependencies): Express {
 
   if (deps.auth !== undefined) {
     app.use('/api/v1/auth', authRoutes(deps.auth));
+  }
+
+  if (deps.me !== undefined) {
+    app.use('/api/v1', meRoutes(deps.me));
   }
 
   if (deps.workspaces !== undefined) {
@@ -119,6 +128,10 @@ export function createApp(deps: AppDependencies): Express {
 
   if (deps.outboundWebhooks !== undefined) {
     app.use('/api/v1', outboundWebhookRoutes(deps.outboundWebhooks));
+  }
+
+  if (deps.audit !== undefined) {
+    app.use('/api/v1', auditRoutes(deps.audit));
   }
 
   // Cross-tenant by nature, and gated by an operator check that denies by

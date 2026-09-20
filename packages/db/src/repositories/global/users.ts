@@ -109,6 +109,62 @@ export class UserRepository {
       .set({ lastLoginAt: new Date(), updatedAt: new Date() })
       .where(eq(users.id, id));
   }
+
+  /** J5's "Full name". Returns the updated row, or null if the id is gone. */
+  async updateName(id: UserId, name: string): Promise<UserRow | null> {
+    const [row] = await this.db
+      .update(users)
+      .set({ name, updatedAt: new Date() })
+      .where(and(eq(users.id, id), ne(users.status, 'deleted')))
+      .returning();
+
+    return row === undefined ? null : toRow(row);
+  }
+
+  /**
+   * Moves the account to an address that has just been proved.
+   *
+   * `emailVerifiedAt` is set in the same statement, not left for a second
+   * write: the only caller is the redemption of a token that was emailed to
+   * this address and clicked, which is the proof. Leaving it null would put
+   * the account in the "unverified" state one click after verifying it.
+   *
+   * The partial unique index on `email` is the real guard against two people
+   * holding one address, and it is the reason this reports `taken` rather
+   * than throwing: the check the service does before calling is advisory, and
+   * the window between that check and this write is exactly where a race
+   * lives.
+   */
+  async updateEmail(id: UserId, email: string): Promise<'updated' | 'not_found' | 'taken'> {
+    try {
+      const rows = await this.db
+        .update(users)
+        .set({ email, emailVerifiedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(users.id, id), ne(users.status, 'deleted')))
+        .returning({ id: users.id });
+
+      return rows.length > 0 ? 'updated' : 'not_found';
+    } catch (error) {
+      if (isUniqueViolation(error)) return 'taken';
+      throw error;
+    }
+  }
+}
+
+/**
+ * A Postgres unique-index violation, and nothing else.
+ *
+ * Narrow on purpose. Treating any failure as "that address is taken" would
+ * report a connection loss as a user error, and the caller would show
+ * somebody a message about their email when the database is down.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code: unknown }).code === '23505'
+  );
 }
 
 function toRow(row: typeof users.$inferSelect): UserRow {

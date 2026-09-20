@@ -1,13 +1,30 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
 import { z } from 'zod';
-import { WORKSPACE_ROLES } from '@relayd/types';
+import { AppError, WORKSPACE_ROLES } from '@relayd/types';
 import type { UserId, WorkspaceInvitationId, WorkspaceRole } from '@relayd/types';
 import type { GlobalMembershipRepository } from '@relayd/db';
-import { emailSchema } from '@relayd/validation';
-import { requirePrincipal, requireScope, requireWorkspaceContext } from '../context.js';
+import {
+  createWorkspaceSchema,
+  emailSchema,
+  registerViaInvitationSchema,
+  transferOwnershipSchema,
+} from '@relayd/validation';
+import {
+  requirePrincipal,
+  requireScope,
+  requireWorkspaceContext,
+  tryGetApiKeyPrincipal,
+} from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
 import type { ApiKeyAuthOptions } from '../middleware/api-key-auth.js';
+import {
+  ipRateKey,
+  rateLimit,
+  RATE_LIMITS,
+  type RateLimitStore,
+} from '../middleware/rate-limit.js';
 import { validateBody } from '../middleware/validate.js';
+import type { SessionContext } from '../services/auth.js';
 import type { TokenService } from '../services/tokens.js';
 import type { WorkspaceService } from '../services/workspaces.js';
 
@@ -44,6 +61,22 @@ const inviteSchema = z
 
 const acceptInvitationSchema = z.object({ token: z.string().min(1).max(512) }).strict();
 
+/**
+ * Signs in the account the signed-out join path just created, exactly as
+ * `POST /auth/register` does: issue the session, set the refresh cookie,
+ * write the body.
+ *
+ * It is a callback rather than an `AuthService` reference because the refresh
+ * cookie's name, path and flags are defined in `routes/auth.ts` and must stay
+ * defined in one place — a second copy of them here is a second thing to get
+ * wrong the day `secure` or `sameSite` changes.
+ */
+export type SignInNewAccount = (
+  res: Response,
+  credentials: { email: string; password: string },
+  context: SessionContext,
+) => Promise<void>;
+
 export interface WorkspaceRouterOptions {
   workspaces: WorkspaceService;
   tokens: TokenService;
@@ -58,6 +91,71 @@ export interface WorkspaceRouterOptions {
   memberships: GlobalMembershipRepository;
   /** Resolves the caller's email, needed to match an invitation. */
   lookupUserEmail: (userId: UserId) => Promise<string | null>;
+  /**
+   * Signs the new account in on the signed-out join path.
+   *
+   * Absent in a deployment that has not wired it, and then the account and
+   * the membership are still created and the response says where they landed
+   * — the client has to sign in rather than arriving signed in.
+   */
+  signInNewAccount?: SignInNewAccount;
+  /**
+   * Backs the per-IP limit on the two unauthenticated invitation routes.
+   *
+   * Absent in tests that do not exercise it. Those routes take a bearer token
+   * in a URL from anyone at all, which is the one place in this router where
+   * an anonymous caller can make us do work.
+   */
+  rateLimitStore?: RateLimitStore;
+}
+
+/**
+ * Ownership transfer is the owner's alone, and no API key may do it.
+ *
+ * There is no permission in the matrix for it — docs/06 has no row — so this
+ * reads the role directly rather than inventing one. Only reachable after
+ * `requireWorkspace`, so the caller is already known to be a member and a 403
+ * tells them nothing they did not know.
+ */
+function requireOwner(_req: Request, _res: Response, next: NextFunction): void {
+  if (tryGetApiKeyPrincipal() !== undefined) {
+    next(
+      new AppError(
+        'insufficient_permission',
+        'Ownership can only be transferred by a signed-in owner, not by an API key',
+        403,
+      ),
+    );
+    return;
+  }
+
+  if (requireWorkspaceContext().role !== 'owner') {
+    next(
+      new AppError('insufficient_permission', 'Only the owner can transfer ownership', 403),
+    );
+    return;
+  }
+
+  next();
+}
+
+/** The user agent and address an audit row and a session record carry. */
+function sessionContext(req: Request): SessionContext {
+  const userAgent = req.get('user-agent');
+  return {
+    ...(userAgent === undefined ? {} : { userAgent }),
+    ...(req.ip === undefined ? {} : { ip: req.ip }),
+  };
+}
+
+/**
+ * A per-IP limit for the routes anyone can call, or nothing when no store is
+ * wired. Ten a minute, docs/06's budget for unauthenticated auth routes.
+ */
+function anonymousLimit(store: RateLimitStore | undefined, prefix: string): RequestHandler[] {
+  return store === undefined
+    ? []
+    : [rateLimit({ store, rule: RATE_LIMITS.auth, keyFor: ipRateKey(prefix) })];
 }
 
 export function workspaceRoutes(options: WorkspaceRouterOptions): Router {
@@ -66,6 +164,47 @@ export function workspaceRoutes(options: WorkspaceRouterOptions): Router {
 
   const auth = authenticate(options.tokens, options.apiKeys);
   const workspace = requireWorkspace({ memberships: options.memberships });
+
+  /**
+   * Creates a workspace and makes the caller its owner (B6a).
+   *
+   * Authenticated but NOT workspace-scoped: there is no workspace to resolve
+   * yet, and requiring one would make the second workspace impossible to
+   * create from the first.
+   *
+   * An API key cannot do this. A key is bound to one workspace and there is
+   * no user behind it to own a new one, so it is refused explicitly rather
+   * than left to fail further in as a missing principal.
+   */
+  router.post(
+    '/',
+    auth,
+    validateBody(createWorkspaceSchema),
+    async (req: Request, res: Response) => {
+      if (tryGetApiKeyPrincipal() !== undefined) {
+        throw new AppError(
+          'insufficient_permission',
+          'An API key belongs to one workspace and cannot create another',
+          403,
+        );
+      }
+
+      const principal = requirePrincipal();
+      const body = req.body as { name: string; slug: string; timezone?: string };
+
+      const created = await workspaces.createWorkspace({
+        ownerUserId: principal.userId,
+        name: body.name,
+        slug: body.slug,
+        ...(body.timezone === undefined ? {} : { timezone: body.timezone }),
+      });
+
+      // The caller's access token does not carry the new workspace in wsIds;
+      // the client refreshes to pick it up, as it does after accepting an
+      // invitation.
+      res.status(201).json({ data: created });
+    },
+  );
 
   router.get('/current', auth, workspace, requirePermission('workspace:read'), async (_req, res) => {
     const found = await workspaces.get(requireScope());
@@ -197,6 +336,57 @@ export function workspaceRoutes(options: WorkspaceRouterOptions): Router {
     },
   );
 
+  /**
+   * Sends the invitation again (J2's "Resend").
+   *
+   * No body: everything it needs is the invitation it names. The cooldown
+   * that keeps this from becoming a mail-bombing button lives in the service,
+   * against the invitation row, so two tabs cannot each spend it.
+   */
+  router.post(
+    '/current/invitations/:id/resend',
+    auth,
+    workspace,
+    requirePermission('member:invite'),
+    async (req: Request, res: Response) => {
+      const current = await workspaces.get(requireScope());
+
+      const resent = await workspaces.resendInvitation(
+        requireScope(),
+        req.params['id'] as WorkspaceInvitationId,
+        { workspaceName: current.name },
+      );
+
+      // The token is emailed, never returned.
+      res.json({ data: resent });
+    },
+  );
+
+  /**
+   * Hands ownership to another member (J2).
+   *
+   * Owner-only, and the service re-reads the caller's membership inside the
+   * transaction rather than trusting the role the middleware resolved a few
+   * milliseconds earlier.
+   */
+  router.post(
+    '/current/transfer-ownership',
+    auth,
+    workspace,
+    requireOwner,
+    validateBody(transferOwnershipSchema),
+    async (req: Request, res: Response) => {
+      const principal = requirePrincipal();
+
+      const result = await workspaces.transferOwnership(requireScope(), {
+        fromUserId: principal.userId,
+        toUserId: (req.body as { userId: string }).userId as UserId,
+      });
+
+      res.json({ data: result });
+    },
+  );
+
   return router;
 }
 
@@ -227,6 +417,61 @@ export function invitationRoutes(options: WorkspaceRouterOptions): Router {
       );
 
       res.json({ data: result });
+    },
+  );
+
+  /**
+   * Creates the invited account and joins the workspace, in one transaction
+   * (B5b, the signed-out half).
+   *
+   * Unauthenticated by necessity: the whole point is that the visitor has no
+   * account yet. The address is the invitation's, so the body carries a name
+   * and a password and nothing else — an email field here would be a way to
+   * register under someone else's invitation.
+   */
+  router.post(
+    '/:token/register',
+    ...anonymousLimit(options.rateLimitStore, 'invite'),
+    validateBody(registerViaInvitationSchema),
+    async (req: Request, res: Response) => {
+      const body = req.body as { name: string; password: string };
+
+      const joined = await options.workspaces.registerAndAcceptInvitation(
+        req.params['token'] as string,
+        body,
+      );
+
+      if (options.signInNewAccount !== undefined) {
+        // Same envelope and the same refresh cookie as POST /auth/register,
+        // so the client can adopt the session it just created rather than
+        // sending someone who has typed a password once to a sign-in form.
+        await options.signInNewAccount(
+          res,
+          { email: joined.email, password: body.password },
+          sessionContext(req),
+        );
+        return;
+      }
+
+      res.status(201).json({
+        data: { workspaceId: joined.workspaceId, role: joined.role, email: joined.email },
+      });
+    },
+  );
+
+  /**
+   * What the invitation says, without accepting it (B5).
+   *
+   * Declared last. `/accept` is also one segment, and although a GET cannot
+   * shadow that POST today, Express matches in declaration order and this
+   * order is the one that stays correct if either ever gains a sibling.
+   */
+  router.get(
+    '/:token',
+    ...anonymousLimit(options.rateLimitStore, 'invite'),
+    async (req: Request, res: Response) => {
+      const preview = await options.workspaces.previewInvitation(req.params['token'] as string);
+      res.json({ data: preview });
     },
   );
 

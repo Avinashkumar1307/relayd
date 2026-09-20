@@ -88,7 +88,6 @@ export function AcceptInvitationPage() {
   const { status } = useAuth();
 
   const preview = useQuery({
-    // BACKEND PENDING: GET /invitations/:token
     queryKey: ['invitations', token],
     queryFn: () => api.get<InvitationPreview>(`/invitations/${token}`, undefined, { unscoped: true }),
     retry: false,
@@ -247,8 +246,9 @@ function SignedOut({ token, invitation }: { token: string; invitation: Invitatio
         className="flex flex-col gap-5"
         onSubmit={form.handleSubmit(async (values) => {
           try {
-            // BACKEND PENDING: POST /invitations/:token/register — register
-            // against an invitation, with the address fixed by the token.
+            // Registers against the invitation, with the address fixed by
+            // the token. The server answers with the same session envelope
+            // and refresh cookie POST /auth/register writes.
             await api.post(`/invitations/${token}/register`, values, { unscoped: true });
             navigate('/get-started', { replace: true });
           } catch (error) {

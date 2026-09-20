@@ -11,6 +11,17 @@ export {
 } from './auth.js';
 export type { RegisterRequest, LoginRequest, ResetPasswordRequest } from './auth.js';
 export {
+  updateProfileSchema,
+  changePasswordSchema,
+  startEmailChangeSchema,
+  resendVerificationSchema,
+} from './profile.js';
+export type {
+  UpdateProfileRequest,
+  ChangePasswordRequest,
+  StartEmailChangeRequest,
+} from './profile.js';
+export {
   contactAttributesSchema,
   consentSchema,
   createContactSchema,
@@ -79,3 +90,26 @@ export type {
   CreatePoolInput,
   AddPoolMemberInput,
 } from './campaigns.js';
+export {
+  AUDIT_RANGE_VALUES,
+  AUDIT_RANGE_DAYS,
+  SYSTEM_ACTOR_ID,
+  MAX_AUDIT_PAGE,
+  auditRangeSchema,
+  auditCursorSchema,
+  isAuditCursor,
+  auditLogFiltersSchema,
+  listAuditLogsQuerySchema,
+  exportAuditLogsQuerySchema,
+} from './audit.js';
+export type { AuditRange, AuditLogFilters, ListAuditLogsQuery } from './audit.js';
+export {
+  createWorkspaceSchema,
+  registerViaInvitationSchema,
+  transferOwnershipSchema,
+} from './workspaces.js';
+export type {
+  CreateWorkspaceRequest,
+  RegisterViaInvitationRequest,
+  TransferOwnershipRequest,
+} from './workspaces.js';

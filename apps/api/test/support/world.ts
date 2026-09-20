@@ -46,21 +46,31 @@ interface FakeInvitation {
 interface FakeToken {
   id: string;
   userId: UserId;
-  purpose: 'email_verification' | 'password_reset';
+  purpose: 'email_verification' | 'password_reset' | 'email_change';
   tokenHash: Buffer;
   expiresAt: Date;
   consumedAt: Date | null;
+  /** Set on email_change rows only, matching the CHECK in migration 0019. */
+  newEmail: string | null;
+  createdAt: Date;
 }
 
-export function buildWorld() {
+/**
+ * @param clock The world's clock. Defaults to the frozen instant the existing
+ *   suites are written against; a caller that needs to watch a cooldown
+ *   expire passes its own and moves it, so the rows this world writes and the
+ *   service reading them agree about what "now" is.
+ */
+export function buildWorld(clock: () => Date = () => new Date('2026-09-17T12:00:00Z')) {
   const users: FakeUser[] = [];
   const sessions: FakeSession[] = [];
   const tokens: FakeToken[] = [];
-  const workspaces: { id: WorkspaceId; name: string; ownerUserId: UserId }[] = [];
+  const workspaces: { id: WorkspaceId; name: string; slug: string; ownerUserId: UserId }[] =
+    [];
   const members: { workspaceId: WorkspaceId; userId: UserId; role: string; joinedAt: Date }[] = [];
   const invitations: FakeInvitation[] = [];
   const auditEntries: (Record<string, unknown> & { workspaceId: WorkspaceId })[] = [];
-  const now = () => new Date('2026-09-17T12:00:00Z');
+  const now = clock;
 
   const repos: Repositories = {
     users: {
@@ -99,6 +109,26 @@ export function buildWorld() {
       async recordLogin(id: UserId) {
         const u = users.find((x) => x.id === id);
         if (u !== undefined) u.lastLoginAt = now();
+      },
+      async updateName(id: UserId, name: string) {
+        const u = users.find((x) => x.id === id && x.status !== 'deleted');
+        if (u === undefined) return null;
+        u.name = name;
+        return u;
+      },
+      /**
+       * Reports `taken` the way the partial unique index does, so a test can
+       * exercise the race the service is written to survive.
+       */
+      async updateEmail(id: UserId, email: string) {
+        const u = users.find((x) => x.id === id && x.status !== 'deleted');
+        if (u === undefined) return 'not_found';
+        if (users.some((x) => x.id !== id && x.email === email && x.status !== 'deleted')) {
+          return 'taken';
+        }
+        u.email = email;
+        u.emailVerifiedAt = now();
+        return 'updated';
       },
     } as unknown as Repositories['users'],
 
@@ -151,6 +181,13 @@ export function buildWorld() {
         for (const s of hit) s.revokedAt = now();
         return hit.length;
       },
+      async revokeAllForUserExcept(userId: UserId, keep: SessionId) {
+        const hit = sessions.filter(
+          (s) => s.userId === userId && s.id !== keep && s.revokedAt === null,
+        );
+        for (const s of hit) s.revokedAt = now();
+        return hit.length;
+      },
       async markReplacedBy(id: SessionId, successor: SessionId) {
         const s = sessions.find((x) => x.id === id);
         if (s !== undefined) {
@@ -161,8 +198,15 @@ export function buildWorld() {
     } as unknown as Repositories['sessions'],
 
     userTokens: {
-      async issue(input: Omit<FakeToken, 'consumedAt'>) {
-        tokens.push({ ...input, consumedAt: null });
+      async issue(input: Omit<FakeToken, 'consumedAt' | 'newEmail' | 'createdAt'> & { newEmail?: string }) {
+        tokens.push({
+          ...input,
+          newEmail: input.newEmail ?? null,
+          consumedAt: null,
+          // Advanced by a millisecond per row so "the latest one" is well
+          // defined under the world's frozen clock.
+          createdAt: new Date(now().getTime() + tokens.length),
+        });
       },
       async findLive(hash: Buffer, purpose: string) {
         return (
@@ -174,6 +218,19 @@ export function buildWorld() {
               t.expiresAt > now(),
           ) ?? null
         );
+      },
+      async findLiveByHash(hash: Buffer) {
+        return (
+          tokens.find(
+            (t) => t.tokenHash.equals(hash) && t.consumedAt === null && t.expiresAt > now(),
+          ) ?? null
+        );
+      },
+      async lastIssuedAt(userId: UserId, purpose: string) {
+        const matching = tokens
+          .filter((t) => t.userId === userId && t.purpose === purpose)
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        return matching[0]?.createdAt ?? null;
       },
       async consume(id: string) {
         const t = tokens.find((x) => x.id === id && x.consumedAt === null);
@@ -194,18 +251,29 @@ export function buildWorld() {
       async listForUser(userId: UserId) {
         return members
           .filter((m) => m.userId === userId)
-          .map((m) => ({
-            workspaceId: m.workspaceId,
-            workspaceName: '',
-            workspaceSlug: '',
-            role: m.role,
-          }));
+          .map((m) => {
+            const ws = workspaces.find((w) => w.id === m.workspaceId);
+            return {
+              workspaceId: m.workspaceId,
+              workspaceName: ws?.name ?? '',
+              workspaceSlug: ws?.slug ?? '',
+              role: m.role,
+            };
+          });
       },
     } as unknown as Repositories['memberships'],
 
     workspaces: {
-      async create(_scope: unknown, input: { id: WorkspaceId; name: string; ownerUserId: UserId }) {
-        workspaces.push({ id: input.id, name: input.name, ownerUserId: input.ownerUserId });
+      async create(
+        _scope: unknown,
+        input: { id: WorkspaceId; name: string; slug: string; ownerUserId: UserId },
+      ) {
+        workspaces.push({
+          id: input.id,
+          name: input.name,
+          slug: input.slug,
+          ownerUserId: input.ownerUserId,
+        });
         return { id: input.id } as never;
       },
       async findCurrent(scope: { workspaceId: WorkspaceId }) {

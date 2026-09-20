@@ -3,15 +3,14 @@ import { api } from './client.js';
 /**
  * The audit log (section J, frame J6).
  *
- * docs/03 lists `GET /audit-logs`, and `apps/api/src/routes/` has no such
- * router yet — the whole of this file is `BACKEND PENDING`, built against
- * the preview backend so the page exists and is reviewable. Every call site
- * repeats the marker.
+ * Served by `apps/api/src/routes/audit.ts`.
  *
  * The page asks for a page of events and a total, not a cursor: J6's footer
  * reads "1–10 of 3,412 events", and a cursor cannot say how many there are.
  * So the response carries `total` in `data` rather than in the envelope's
- * `meta`, which only models `hasMore` and `nextCursor`.
+ * `meta`, which only models `hasMore` and `nextCursor`. The API also accepts
+ * `?cursor=` and returns `meta.nextCursor`, which is the form docs/03
+ * documents; this page uses the numbered one its footer needs.
  */
 
 export type AuditActorKind = 'user' | 'system' | 'api_key';
@@ -72,7 +71,6 @@ export const auditKeys = {
 };
 
 export const auditApi = {
-  /** BACKEND PENDING: GET /audit-logs */
   list: (query: AuditQuery) =>
     api.get<AuditPage>('/audit-logs', {
       ...(query.actor === undefined ? {} : { actor: query.actor }),
@@ -84,11 +82,10 @@ export const auditApi = {
       ...(query.limit === undefined ? {} : { limit: query.limit }),
     }),
 
-  /** BACKEND PENDING: GET /audit-logs/filters */
   options: () => api.get<AuditFilterOptions>('/audit-logs/filters'),
 };
 
-/** BACKEND PENDING: GET /audit-logs.csv — J6's "Export CSV". */
+/** J6's "Export CSV". Streamed by the API, escaped against formula injection. */
 export function auditCsvHref(query: AuditQuery): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {

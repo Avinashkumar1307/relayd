@@ -21,6 +21,16 @@ export type {
 export { AuditLogRepository } from './audit-logs.js';
 export type { AuditEntry, AuditRow, ActorType } from './audit-logs.js';
 
+// Reading the audit log, as opposed to appending to it (J6, docs/03).
+export { AuditQueryRepository, MAX_EXPORT_ROWS } from './audit.js';
+export type {
+  AuditActorType,
+  AuditLogQuery,
+  AuditQueryRow,
+  AuditLogPage,
+  AuditFilterValues,
+} from './audit.js';
+
 // --- cross-tenant, named exceptions ---
 export { UserRepository } from './global/users.js';
 export type { UserRow, CreateUserInput, UserStatus } from './global/users.js';
@@ -35,7 +45,11 @@ export {
   GlobalMembershipRepository,
   GlobalInvitationRepository,
 } from './global/cross-tenant-lookups.js';
-export type { MembershipSummary, PendingInvitation } from './global/cross-tenant-lookups.js';
+export type {
+  MembershipSummary,
+  PendingInvitation,
+  InvitationPreviewRow,
+} from './global/cross-tenant-lookups.js';
 
 // --- audience (Phase 2) ---
 export { ContactRepository } from './contacts.js';

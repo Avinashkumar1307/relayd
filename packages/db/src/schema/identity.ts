@@ -217,7 +217,7 @@ export const auditLogs = pgTable(
 );
 
 /**
- * Single-use tokens for email verification and password reset.
+ * Single-use tokens for email verification, password reset and email change.
  *
  * Cross-tenant like users and sessions: a token belongs to a person, and
  * password reset runs before any workspace is in context. See migration
@@ -232,9 +232,18 @@ export const userTokens = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' })
       .$type<UserId>(),
-    purpose: text('purpose').notNull().$type<'email_verification' | 'password_reset'>(),
+    purpose: text('purpose')
+      .notNull()
+      .$type<'email_verification' | 'password_reset' | 'email_change'>(),
     /** sha256 of the emailed token; the token itself is never stored. */
     tokenHash: bytea('token_hash').notNull(),
+    /**
+     * The proposed address, for `email_change` only (migration 0019).
+     *
+     * A CHECK ties it to that purpose in both directions, so this is never
+     * null on an email_change row and never set on any other.
+     */
+    newEmail: citext('new_email'),
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
     /** Single use: set on redemption. */
     consumedAt: timestamp('consumed_at', { withTimezone: true, mode: 'date' }),

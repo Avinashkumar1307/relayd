@@ -63,6 +63,41 @@ export class WorkspaceRepository {
     return toRow(row);
   }
 
+  /**
+   * Creates the workspace, or reports that the slug is taken.
+   *
+   * The same insert as `create`, with the slug collision answered rather than
+   * thrown. `uq_workspaces_slug` is partial on `deleted_at IS NULL`, and
+   * `ON CONFLICT DO NOTHING` covers it without naming it, so a deleted
+   * workspace's slug is free again and a live one is not.
+   *
+   * Checking first and then inserting would be a lie: two requests can both
+   * read "free" and only one can insert. Letting the index decide and
+   * reporting zero rows is the same answer without the race.
+   */
+  async createIfSlugAvailable(
+    scope: WorkspaceScope,
+    input: CreateWorkspaceInput,
+  ): Promise<WorkspaceRow | null> {
+    if (input.id !== scope.workspaceId) {
+      throw new Error('createWorkspace: scope must name the workspace being created');
+    }
+
+    const [row] = await this.db
+      .insert(workspaces)
+      .values({
+        id: input.id,
+        name: input.name,
+        slug: input.slug,
+        ownerUserId: input.ownerUserId,
+        ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    return row === undefined ? null : toRow(row);
+  }
+
   async findById(scope: WorkspaceScope, id: WorkspaceId): Promise<WorkspaceRow | null> {
     const [row] = await this.db
       .select()
@@ -94,6 +129,36 @@ export class WorkspaceRepository {
       .returning();
 
     return row === undefined ? null : toRow(row);
+  }
+
+  /**
+   * Moves the `owner_user_id` pointer, guarded on who holds it now.
+   *
+   * The guard is what makes two concurrent transfers safe: the second one
+   * matches zero rows because the pointer no longer names the owner it read,
+   * and the caller turns that into a conflict rather than leaving the
+   * workspace row naming one owner while `workspace_members` names another.
+   *
+   * The membership rows are the other half of the same change and are written
+   * by the caller in the same transaction.
+   */
+  async transferOwnership(
+    scope: WorkspaceScope,
+    input: { fromUserId: UserId; toUserId: UserId },
+  ): Promise<boolean> {
+    const rows = await this.db
+      .update(workspaces)
+      .set({ ownerUserId: input.toUserId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(workspaces.id, scope.workspaceId),
+          eq(workspaces.ownerUserId, input.fromUserId),
+          isNull(workspaces.deletedAt),
+        ),
+      )
+      .returning({ id: workspaces.id });
+
+    return rows.length > 0;
   }
 
   /**

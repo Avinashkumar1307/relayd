@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, ne } from 'drizzle-orm';
 import type { SessionId, UserId } from '@relayd/types';
 import { sessions } from '../../schema/identity.js';
 import type { Executor } from '../executor.js';
@@ -72,6 +72,16 @@ export class SessionRepository {
     return row === undefined ? null : toRow(row);
   }
 
+  /**
+   * The live sessions of one user, newest first.
+   *
+   * Refresh rotates: the successor row is created and the predecessor revoked
+   * in the same transaction, so there is exactly one live row per rotation
+   * family and `created_at` on it is the moment of the last refresh — which
+   * is as close to "last seen" as this schema gets, and close enough, because
+   * an access token lives fifteen minutes and an open tab refreshes on that
+   * cadence. J5's "Last active" column is built from it.
+   */
   async listActiveForUser(userId: UserId): Promise<SessionRow[]> {
     const rows = await this.db
       .select()
@@ -82,7 +92,8 @@ export class SessionRepository {
           isNull(sessions.revokedAt),
           gt(sessions.expiresAt, new Date()),
         ),
-      );
+      )
+      .orderBy(desc(sessions.createdAt));
 
     return rows.map(toRow);
   }
@@ -112,6 +123,31 @@ export class SessionRepository {
       .update(sessions)
       .set({ revokedAt: new Date() })
       .where(and(eq(sessions.familyId, familyId), isNull(sessions.revokedAt)))
+      .returning({ id: sessions.id });
+
+    return rows.length;
+  }
+
+  /**
+   * Revokes every live session of a user except one.
+   *
+   * This is J5's "Sign out all other sessions", and it is also what a password
+   * change does. Keeping the caller's own session is the whole point: signing
+   * somebody out of the browser they just used to secure their account reads
+   * as a failure, and they would log straight back in — training them to
+   * ignore the thing that was supposed to be a security event.
+   *
+   * Excluding by id rather than deleting-then-recreating means the current
+   * session's refresh token is untouched, so there is no window where the
+   * caller holds a revoked credential.
+   */
+  async revokeAllForUserExcept(userId: UserId, keep: SessionId): Promise<number> {
+    const rows = await this.db
+      .update(sessions)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(eq(sessions.userId, userId), ne(sessions.id, keep), isNull(sessions.revokedAt)),
+      )
       .returning({ id: sessions.id });
 
     return rows.length;

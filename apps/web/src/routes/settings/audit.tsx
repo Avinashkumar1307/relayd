@@ -34,9 +34,6 @@ import { InlineSelect, formatDateTime } from './workspace-parts.js';
  * the Resource chip gets set: the campaign and provider pages link here with
  * `?resource=cmp_8f3k2a`, and the chip is the visible, removable form of
  * that parameter.
- *
- * The whole endpoint is BACKEND PENDING: docs/03 lists `GET /audit-logs` and
- * `apps/api/src/routes/` has no router for it yet.
  */
 
 const PAGE_SIZE = 10;
@@ -83,12 +80,10 @@ export function AuditLogPage() {
   });
   const options = useQuery({
     queryKey: auditKeys.options(workspaceId),
-    // BACKEND PENDING: GET /audit-logs/filters
     queryFn: () => auditApi.options(),
   });
   const events = useQuery({
     queryKey: auditKeys.list(workspaceId, query),
-    // BACKEND PENDING: GET /audit-logs
     queryFn: () => auditApi.list(query),
   });
 
@@ -124,7 +119,6 @@ export function AuditLogPage() {
       description={full ? long : 'Every change made by a person, an API key or Relayd itself.'}
       actions={
         full ? (
-          // BACKEND PENDING: GET /audit-logs.csv
           <a href={auditCsvHref(query)} className="no-underline">
             <Button variant="secondary">Export CSV</Button>
           </a>

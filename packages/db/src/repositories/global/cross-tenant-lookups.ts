@@ -1,6 +1,6 @@
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { UserId, WorkspaceId, WorkspaceInvitationId } from '@relayd/types';
-import { workspaceInvitations, workspaceMembers, workspaces } from '../../schema/identity.js';
+import { users, workspaceInvitations, workspaceMembers, workspaces } from '../../schema/identity.js';
 import type { Executor } from '../executor.js';
 
 /**
@@ -89,8 +89,62 @@ export interface PendingInvitation {
   role: 'admin' | 'editor' | 'viewer';
 }
 
+/**
+ * Everything the invitation page (B5) prints before anyone has signed in:
+ * which workspace, which role, who sent it and when it runs out.
+ */
+export interface InvitationPreviewRow {
+  workspaceId: WorkspaceId;
+  workspaceName: string;
+  email: string;
+  role: 'admin' | 'editor' | 'viewer';
+  inviterName: string;
+  invitedAt: Date;
+  expiresAt: Date;
+}
+
 export class GlobalInvitationRepository {
   constructor(private readonly db: Executor) {}
+
+  /**
+   * The same live-invitation lookup as `findLiveByTokenHash`, returning what
+   * the page needs to render rather than what acceptance needs to act.
+   *
+   * Cross-tenant for the same reason: whoever holds the token is not a member
+   * of anything yet, so there is no scope to look it up within.
+   *
+   * The `expires_at` predicate is deliberately repeated here rather than left
+   * to the caller to interpret. An expired invitation and an invented token
+   * must answer the same way, and the surest way to keep that true is for the
+   * query to return nothing in both cases.
+   */
+  async previewByTokenHash(tokenHash: Buffer): Promise<InvitationPreviewRow | null> {
+    const [row] = await this.db
+      .select({
+        workspaceId: workspaceInvitations.workspaceId,
+        workspaceName: workspaces.name,
+        email: workspaceInvitations.email,
+        role: workspaceInvitations.role,
+        inviterName: users.name,
+        invitedAt: workspaceInvitations.createdAt,
+        expiresAt: workspaceInvitations.expiresAt,
+      })
+      .from(workspaceInvitations)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceInvitations.workspaceId))
+      .innerJoin(users, eq(users.id, workspaceInvitations.invitedBy))
+      .where(
+        and(
+          eq(workspaceInvitations.tokenHash, tokenHash),
+          isNull(workspaceInvitations.acceptedAt),
+          isNull(workspaceInvitations.revokedAt),
+          gt(workspaceInvitations.expiresAt, new Date()),
+          isNull(workspaces.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    return row ?? null;
+  }
 
   /**
    * Resolves an invitation token to the workspace it grants access to.

@@ -5,8 +5,10 @@ import type {
   AuditLogRepository,
   GlobalInvitationRepository,
   GlobalMembershipRepository,
+  MembershipSummary,
   SessionRepository,
   UserRepository,
+  UserRow,
   UserTokenRepository,
   WorkspaceInvitationRepository,
   WorkspaceMemberRepository,
@@ -51,6 +53,8 @@ export interface AuthServiceOptions {
   refreshTtlDays: number;
   verificationTtlHours?: number;
   passwordResetTtlMinutes?: number;
+  /** Server-side floor between two verification emails. Defaults to 60 s. */
+  resendCooldownSeconds?: number;
 }
 
 export interface SessionContext {
@@ -58,10 +62,41 @@ export interface SessionContext {
   ip?: string;
 }
 
+/**
+ * Who is signed in, as the SPA's shell, J5 and D6c's "Recorded as" line all
+ * need it.
+ *
+ * Returned on every response that establishes a session rather than from a
+ * separate lookup: the browser asks "who am I" exactly when it has just
+ * logged in or refreshed, and answering then costs nothing. A second endpoint
+ * would cost a round trip on every page load, and the window between the two
+ * calls is a window in which the shell has a token and no name to render.
+ */
+export interface SessionUser {
+  id: UserId;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+}
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
   sessionId: SessionId;
+  user: SessionUser;
+  /**
+   * Every workspace the caller belongs to.
+   *
+   * Not authorization — `requireWorkspace` re-reads membership on every
+   * request for that. This is what the workspace switcher is drawn from.
+   */
+  memberships: MembershipSummary[];
+}
+
+/** What `GET /auth/session` answers: the same payload without the tokens. */
+export interface SessionSummary {
+  user: SessionUser;
+  memberships: MembershipSummary[];
 }
 
 export interface RegisterInput {
@@ -90,7 +125,7 @@ export class AuthService {
     const passwordHash = await hashPassword(input.password);
     const verificationToken = generateToken();
 
-    const { user, workspaceId } = await this.options.unitOfWork(async (repos) => {
+    const { user, membership } = await this.options.unitOfWork(async (repos) => {
       const existing = await repos.users.findByEmail(input.email);
       if (existing !== null) {
         // Registration is the one flow where the address must be revealed as
@@ -134,14 +169,22 @@ export class AuthService {
         ),
       });
 
-      return { user: created, workspaceId: newWorkspaceId };
+      return {
+        user: created,
+        membership: {
+          workspaceId: newWorkspaceId,
+          workspaceName: input.workspaceName,
+          workspaceSlug: input.workspaceSlug,
+          role: 'owner',
+        } satisfies MembershipSummary,
+      };
     });
 
     // Outside the transaction: an email provider is a network call, and
     // docs/03 is explicit that a transaction must never be held across one.
     await this.options.notifier.sendEmailVerification(user.email, verificationToken);
 
-    return this.#startSession(user.id, [workspaceId], context);
+    return this.#startSession(user, [membership], context);
   }
 
   /**
@@ -161,27 +204,26 @@ export class AuthService {
       throw new AppError('unauthenticated', 'Email or password is incorrect', 401);
     };
 
-    const { userId, workspaceIds } = await this.options.unitOfWork(async (repos) => {
-      const user = await repos.users.findByEmail(email);
+    const { user, memberships } = await this.options.unitOfWork(async (repos) => {
+      const found = await repos.users.findByEmail(email);
 
-      if (user === null || user.passwordHash === null) {
+      if (found === null || found.passwordHash === null) {
         // Spend comparable time so absence is not measurably faster.
         await verifyPassword(DUMMY_HASH, password);
         return invalid();
       }
 
-      if (!(await verifyPassword(user.passwordHash, password))) return invalid();
-      if (user.status !== 'active') {
+      if (!(await verifyPassword(found.passwordHash, password))) return invalid();
+      if (found.status !== 'active') {
         throw new AppError('unauthenticated', 'This account is not active', 401);
       }
 
-      await repos.users.recordLogin(user.id);
-      const memberships = await repos.memberships.listForUser(user.id);
+      await repos.users.recordLogin(found.id);
 
-      return { userId: user.id, workspaceIds: memberships.map((m) => m.workspaceId) };
+      return { user: found, memberships: await repos.memberships.listForUser(found.id) };
     });
 
-    return this.#startSession(userId, workspaceIds, context);
+    return this.#startSession(user, memberships, context);
   }
 
   /**
@@ -196,7 +238,7 @@ export class AuthService {
   async refresh(refreshToken: string, context: SessionContext = {}): Promise<AuthTokens> {
     const hash = hashToken(refreshToken);
 
-    const { userId, workspaceIds, familyId } = await this.options.unitOfWork(async (repos) => {
+    const { user, memberships, familyId } = await this.options.unitOfWork(async (repos) => {
       const session = await repos.sessions.findByRefreshTokenHash(hash);
 
       if (session === null) {
@@ -213,17 +255,44 @@ export class AuthService {
         throw new AppError('token_expired', 'Session has expired', 401);
       }
 
-      const memberships = await repos.memberships.listForUser(session.userId);
+      // Re-read rather than trusted from the session row: a name change, an
+      // email change or a suspension between two refreshes must be visible on
+      // the next one, not fifteen minutes later.
+      const found = await repos.users.findById(session.userId);
+      if (found === null || found.status !== 'active') {
+        throw new AppError('unauthenticated', 'Refresh token is not valid', 401);
+      }
 
       return {
-        userId: session.userId,
-        workspaceIds: memberships.map((m) => m.workspaceId),
+        user: found,
+        memberships: await repos.memberships.listForUser(session.userId),
         familyId: session.familyId,
-        previous: session.id,
       };
     });
 
-    return this.#startSession(userId, workspaceIds, context, familyId, hash);
+    return this.#startSession(user, memberships, context, familyId, hash);
+  }
+
+  /**
+   * Who is signed in, without rotating anything.
+   *
+   * `/auth/refresh` answers the same question, but it answers it by consuming
+   * one refresh token and minting another — which is correct when the browser
+   * needs a new access token and wasteful when it only wants to re-read who it
+   * is. A client that already holds a valid access token uses this.
+   */
+  async session(userId: UserId): Promise<SessionSummary> {
+    return this.options.unitOfWork(async (repos) => {
+      const user = await repos.users.findById(userId);
+      if (user === null || user.status !== 'active') {
+        throw new AppError('unauthenticated', 'Authentication required', 401);
+      }
+
+      return {
+        user: toSessionUser(user),
+        memberships: await repos.memberships.listForUser(userId),
+      };
+    });
   }
 
   async logout(refreshToken: string): Promise<void> {
@@ -236,17 +305,125 @@ export class AuthService {
     });
   }
 
-  async verifyEmail(token: string): Promise<void> {
-    await this.options.unitOfWork(async (repos) => {
-      const record = await repos.userTokens.findLive(hashToken(token), 'email_verification');
-      if (record === null) {
+  /**
+   * Redeems an emailed "prove you read this inbox" link.
+   *
+   * One endpoint, two meanings, decided by the purpose on the row: confirming
+   * the address an account registered with, and confirming an address it is
+   * moving to. The client cannot tell them apart — it has an opaque token from
+   * a query string — so the server must, and a second public endpoint would
+   * only move the guess to the browser.
+   *
+   * Returns the address that ended up verified, which is what B3b prints.
+   */
+  async verifyEmail(token: string): Promise<{ verified: true; email: string }> {
+    return this.options.unitOfWork(async (repos) => {
+      const record = await repos.userTokens.findLiveByHash(hashToken(token));
+      if (record === null || record.purpose === 'password_reset') {
+        // A reset token is refused here rather than treated as a verification:
+        // they are issued by different flows and one must never stand in for
+        // the other.
         throw new AppError('not_found', 'This verification link is not valid', 404);
       }
+
+      // Consumed first. Two clicks on the same link race here, and the guarded
+      // update is what makes exactly one of them do the work.
       if (!(await repos.userTokens.consume(record.id))) {
         throw new AppError('conflict', 'This verification link has already been used', 409);
       }
-      await repos.users.markEmailVerified(record.userId);
+
+      const user = await repos.users.findById(record.userId);
+      if (user === null) {
+        throw new AppError('not_found', 'This verification link is not valid', 404);
+      }
+
+      if (record.purpose === 'email_verification') {
+        await repos.users.markEmailVerified(record.userId);
+        return { verified: true as const, email: user.email };
+      }
+
+      // email_change. The CHECK on user_tokens guarantees the address is
+      // present; the null branch is here because the type cannot know that.
+      const newEmail = record.newEmail;
+      if (newEmail === null) {
+        throw new AppError('internal_error', 'Email change token has no address', 500);
+      }
+
+      const result = await repos.users.updateEmail(record.userId, newEmail);
+      if (result === 'taken') {
+        throw new AppError(
+          'conflict',
+          'That address now belongs to another account',
+          409,
+        );
+      }
+      if (result === 'not_found') {
+        throw new AppError('not_found', 'This verification link is not valid', 404);
+      }
+
+      // Every other outstanding change and every session but none: the address
+      // is the recovery channel, and a link issued before this one must not
+      // still be able to move the account somewhere else.
+      await repos.userTokens.consumeAllFor(record.userId, 'email_change');
+
+      return { verified: true as const, email: newEmail };
     });
+  }
+
+  /**
+   * Sends the verification link again.
+   *
+   * Two rules, both from docs/06. It never reveals whether an address has an
+   * account — the answer is the same 202 for a live address, an unknown one
+   * and an already-verified one — and it is throttled on the server, because
+   * B3a's 30-second countdown is a courtesy to the person, not a control on
+   * the caller.
+   *
+   * The throttle is a Postgres read, not the Redis limiter: that one fails
+   * open by design, and "unlimited resends whenever the cache blinks" is a
+   * mail cannon aimed at whichever inbox the caller names.
+   */
+  async resendEmailVerification(input: { userId?: UserId; email?: string }): Promise<void> {
+    const token = generateToken();
+    const cooldownMs = (this.options.resendCooldownSeconds ?? 60) * 1000;
+
+    const recipient = await this.options.unitOfWork(async (repos) => {
+      const user =
+        input.userId !== undefined
+          ? await repos.users.findById(input.userId)
+          : input.email === undefined
+            ? null
+            : await repos.users.findByEmail(input.email);
+
+      // Nothing to do, and the caller is told nothing either way.
+      if (user === null || user.status !== 'active' || user.emailVerifiedAt !== null) {
+        return null;
+      }
+
+      const last = await repos.userTokens.lastIssuedAt(user.id, 'email_verification');
+      if (last !== null && this.options.now().getTime() - last.getTime() < cooldownMs) {
+        // Silently declined. A 429 here would say "this address exists and is
+        // unverified", which is the thing this endpoint must not say.
+        return null;
+      }
+
+      await repos.userTokens.consumeAllFor(user.id, 'email_verification');
+      await repos.userTokens.issue({
+        id: this.options.newId(),
+        userId: user.id,
+        purpose: 'email_verification',
+        tokenHash: hashToken(token),
+        expiresAt: new Date(
+          this.options.now().getTime() + (this.options.verificationTtlHours ?? 24) * HOUR_MS,
+        ),
+      });
+
+      return user.email;
+    });
+
+    if (recipient !== null) {
+      await this.options.notifier.sendEmailVerification(recipient, token);
+    }
   }
 
   /**
@@ -308,34 +485,6 @@ export class AuthService {
     });
   }
 
-  async listSessions(userId: UserId): Promise<
-    { id: SessionId; createdAt: Date; expiresAt: Date; userAgent: string | null; ip: string | null }[]
-  > {
-    return this.options.unitOfWork(async (repos) => {
-      const sessions = await repos.sessions.listActiveForUser(userId);
-      return sessions.map((s) => ({
-        id: s.id,
-        createdAt: s.createdAt,
-        expiresAt: s.expiresAt,
-        userAgent: s.userAgent,
-        ip: s.ip,
-      }));
-    });
-  }
-
-  /** Revokes one session, but only if it belongs to the caller. */
-  async revokeSession(userId: UserId, sessionId: SessionId): Promise<boolean> {
-    return this.options.unitOfWork(async (repos) => {
-      const sessions = await repos.sessions.listActiveForUser(userId);
-      if (!sessions.some((s) => s.id === sessionId)) {
-        // Not theirs, or already gone. 404 either way: a member must not be
-        // able to probe for other users' session ids.
-        throw new AppError('not_found', 'Session not found', 404);
-      }
-      return repos.sessions.revoke(sessionId);
-    });
-  }
-
   /**
    * Issues a session and its token pair.
    *
@@ -344,8 +493,8 @@ export class AuthService {
    * no window in which both are live.
    */
   async #startSession(
-    userId: UserId,
-    workspaceIds: WorkspaceId[],
+    user: UserRow,
+    memberships: MembershipSummary[],
     context: SessionContext,
     familyId?: string,
     previousHash?: Buffer,
@@ -353,6 +502,7 @@ export class AuthService {
     const refreshToken = generateToken();
     const sessionId = this.options.newId() as SessionId;
     const family = familyId ?? this.options.newId();
+    const userId = user.id;
 
     await this.options.unitOfWork(async (repos) => {
       if (previousHash !== undefined) {
@@ -376,12 +526,34 @@ export class AuthService {
     const accessToken = await this.options.tokens.issueAccessToken({
       sub: userId,
       sid: sessionId,
-      wsIds: workspaceIds,
+      wsIds: memberships.map((m) => m.workspaceId),
       ver: 1,
     });
 
-    return { accessToken, refreshToken, sessionId };
+    return {
+      accessToken,
+      refreshToken,
+      sessionId,
+      user: toSessionUser(user),
+      memberships,
+    };
   }
+}
+
+/**
+ * The public shape of a user.
+ *
+ * Narrow deliberately: the row carries a password hash and an MFA envelope,
+ * and a serialiser that starts from the row and removes fields is one added
+ * column away from leaking one. This starts from nothing and adds four.
+ */
+function toSessionUser(user: UserRow): SessionUser {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    emailVerified: user.emailVerifiedAt !== null,
+  };
 }
 
 /**

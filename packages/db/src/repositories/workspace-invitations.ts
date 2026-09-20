@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, lte } from 'drizzle-orm';
 import type { UserId, WorkspaceId, WorkspaceInvitationId } from '@relayd/types';
 import { workspaceInvitations } from '../schema/identity.js';
 import type { WorkspaceScope } from '../scope.js';
@@ -86,6 +86,62 @@ export class WorkspaceInvitationRepository {
       );
 
     return rows.map(toRow);
+  }
+
+  /**
+   * Re-issues the token on an existing invitation, at most once per cooldown.
+   *
+   * ## One row, one live token
+   *
+   * A resend updates the invitation in place rather than creating a second
+   * one. Only the hash of a token is stored, so the emailed link cannot be
+   * reproduced — re-issuing is the only way to send a working link, and doing
+   * it on the same row means the previous link dies as the new one is born.
+   * Two rows would mean two live tokens for one offer, and revoking the
+   * invitation in the UI would leave one of them working.
+   *
+   * ## Where the cooldown comes from
+   *
+   * `expires_at` is the clock. Every send sets it to `now + ttl`, so the
+   * instant of the last send is exactly `expires_at - ttl`, and "has it been
+   * at least `cooldown` since the last send" is "is `expires_at` at or before
+   * `now + ttl - cooldown`". The caller passes that instant as
+   * `resendableIfExpiringAtOrBefore`.
+   *
+   * Doing it as part of this UPDATE rather than as a read followed by a write
+   * is what makes two simultaneous resends send one email: the second matches
+   * zero rows because the first already pushed `expires_at` out.
+   *
+   * A dedicated `last_sent_at` column would say this more plainly. It would
+   * also be a migration on a table the rest of this work does not need to
+   * change; the derivation above is exact for a fixed TTL, and the TTL is
+   * configuration, not data.
+   */
+  async resendIfCooledDown(
+    scope: WorkspaceScope,
+    id: WorkspaceInvitationId,
+    input: {
+      tokenHash: Buffer;
+      expiresAt: Date;
+      /** `now + ttl - cooldown`. See the note above. */
+      resendableIfExpiringAtOrBefore: Date;
+    },
+  ): Promise<InvitationRow | null> {
+    const [row] = await this.db
+      .update(workspaceInvitations)
+      .set({ tokenHash: input.tokenHash, expiresAt: input.expiresAt })
+      .where(
+        and(
+          eq(workspaceInvitations.id, id),
+          eq(workspaceInvitations.workspaceId, scope.workspaceId),
+          isNull(workspaceInvitations.acceptedAt),
+          isNull(workspaceInvitations.revokedAt),
+          lte(workspaceInvitations.expiresAt, input.resendableIfExpiringAtOrBefore),
+        ),
+      )
+      .returning();
+
+    return row === undefined ? null : toRow(row);
   }
 
   /**

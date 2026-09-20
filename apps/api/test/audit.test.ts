@@ -26,6 +26,7 @@ beforeEach(() => {
         sentTokens.push(token);
       },
     ),
+    sendEmailVerification: vi.fn(async () => undefined),
   };
 
   service = new WorkspaceService({
@@ -37,7 +38,7 @@ beforeEach(() => {
     currentContext: () => ({ ip: '203.0.113.7', userAgent: 'Mozilla/5.0' }),
   });
 
-  world.workspaces.push({ id: WS, name: 'Acme', ownerUserId: OWNER });
+  world.workspaces.push({ id: WS, name: 'Acme', slug: 'acme', ownerUserId: OWNER });
   world.members.push({ workspaceId: WS, userId: OWNER, role: 'owner', joinedAt: world.now() });
   world.members.push({ workspaceId: WS, userId: ADMIN, role: 'admin', joinedAt: world.now() });
 });

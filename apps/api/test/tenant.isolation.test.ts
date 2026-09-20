@@ -52,8 +52,8 @@ function build(roleInA: WorkspaceRole = 'owner') {
 
   // Two fully populated workspaces. Alice is in A, Bob is in B, and neither
   // is in the other.
-  world.workspaces.push({ id: WS_A, name: 'Workspace A', ownerUserId: ALICE });
-  world.workspaces.push({ id: WS_B, name: 'Workspace B', ownerUserId: BOB });
+  world.workspaces.push({ id: WS_A, name: 'Workspace A', slug: 'workspace-a', ownerUserId: ALICE });
+  world.workspaces.push({ id: WS_B, name: 'Workspace B', slug: 'workspace-b', ownerUserId: BOB });
   world.members.push({ workspaceId: WS_A, userId: ALICE, role: roleInA, joinedAt: world.now() });
   world.members.push({ workspaceId: WS_B, userId: BOB, role: 'owner', joinedAt: world.now() });
   world.users.push({
@@ -90,7 +90,10 @@ function build(roleInA: WorkspaceRole = 'owner') {
   let counter = 0;
   const workspaces = new WorkspaceService({
     unitOfWork: async (fn) => fn(world.repos),
-    notifier: { sendWorkspaceInvitation: vi.fn(async () => undefined) },
+    notifier: {
+      sendWorkspaceInvitation: vi.fn(async () => undefined),
+      sendEmailVerification: vi.fn(async () => undefined),
+    },
     newId: () => `gen-${++counter}`,
     now: world.now,
     currentActor: () => ({ type: 'user', id: ALICE }),

@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import type { UserId } from '@relayd/types';
 import { userTokens } from '../../schema/identity.js';
 import type { Executor } from '../executor.js';
@@ -6,19 +6,21 @@ import type { Executor } from '../executor.js';
 /**
  * CROSS-TENANT BY NECESSITY.
  *
- * Email verification and password reset act on a person, not a workspace, and
- * both run before any workspace is in context — a password reset is performed
- * by someone who cannot log in at all. See global/users.ts for the full
- * reasoning on this exception.
+ * Email verification, password reset and email change act on a person, not a
+ * workspace, and all three run before or outside any workspace context — a
+ * password reset is performed by someone who cannot log in at all. See
+ * global/users.ts for the full reasoning on this exception.
  */
 
-export type TokenPurpose = 'email_verification' | 'password_reset';
+export type TokenPurpose = 'email_verification' | 'password_reset' | 'email_change';
 
 export interface UserTokenRow {
   id: string;
   userId: UserId;
   purpose: TokenPurpose;
   expiresAt: Date;
+  /** The proposed address, on an `email_change` row and nowhere else. */
+  newEmail: string | null;
 }
 
 export interface IssueTokenInput {
@@ -27,6 +29,8 @@ export interface IssueTokenInput {
   purpose: TokenPurpose;
   tokenHash: Buffer;
   expiresAt: Date;
+  /** Required for `email_change`, refused by a CHECK for anything else. */
+  newEmail?: string;
 }
 
 export class UserTokenRepository {
@@ -39,6 +43,7 @@ export class UserTokenRepository {
       purpose: input.purpose,
       tokenHash: input.tokenHash,
       expiresAt: input.expiresAt,
+      ...(input.newEmail === undefined ? {} : { newEmail: input.newEmail }),
     });
   }
 
@@ -65,7 +70,71 @@ export class UserTokenRepository {
 
     return row === undefined
       ? null
-      : { id: row.id, userId: row.userId, purpose: row.purpose, expiresAt: row.expiresAt };
+      : {
+          id: row.id,
+          userId: row.userId,
+          purpose: row.purpose,
+          expiresAt: row.expiresAt,
+          newEmail: row.newEmail,
+        };
+  }
+
+  /**
+   * A live token by hash, whatever it is for.
+   *
+   * One emailed link, two things it can mean: confirming the address an
+   * account registered with, and confirming an address it is moving to. Both
+   * arrive at /auth/verify-email because both are "prove you read this
+   * inbox", and the purpose on the row is what decides which happened. The
+   * alternative — a second public endpoint whose only job is to be told apart
+   * from this one by a client that cannot tell them apart either — is worse.
+   *
+   * Still live-only, for the same reason `findLive` is: expired, consumed and
+   * never-existed must be one answer.
+   */
+  async findLiveByHash(tokenHash: Buffer): Promise<UserTokenRow | null> {
+    const [row] = await this.db
+      .select()
+      .from(userTokens)
+      .where(
+        and(
+          eq(userTokens.tokenHash, tokenHash),
+          isNull(userTokens.consumedAt),
+          gt(userTokens.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+
+    return row === undefined
+      ? null
+      : {
+          id: row.id,
+          userId: row.userId,
+          purpose: row.purpose,
+          expiresAt: row.expiresAt,
+          newEmail: row.newEmail,
+        };
+  }
+
+  /**
+   * When this user last had a token of this purpose issued.
+   *
+   * The durable half of the resend cooldown. A Redis rate limiter is the
+   * wrong instrument here: this one fails open by design (see the note in
+   * apps/api middleware/rate-limit.ts), and a resend button that becomes
+   * unlimited whenever the cache blinks is a free mail cannon pointed at
+   * somebody else's inbox. `created_at` on the last issued row costs one
+   * indexed read and cannot fail open.
+   */
+  async lastIssuedAt(userId: UserId, purpose: TokenPurpose): Promise<Date | null> {
+    const [row] = await this.db
+      .select({ createdAt: userTokens.createdAt })
+      .from(userTokens)
+      .where(and(eq(userTokens.userId, userId), eq(userTokens.purpose, purpose)))
+      .orderBy(desc(userTokens.createdAt))
+      .limit(1);
+
+    return row?.createdAt ?? null;
   }
 
   /**

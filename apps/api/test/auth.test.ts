@@ -1,6 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { UserId } from '@relayd/types';
 import { hashPassword, hashToken } from '@relayd/utils';
 import { AuthService } from '../src/services/auth.js';
 import { buildWorld } from './support/world.js';
@@ -283,30 +282,13 @@ describe('password reset', () => {
   });
 });
 
-describe('session management', () => {
-  it('lists only live sessions', async () => {
-    const a = await service.register(REGISTRATION);
-    await service.login(REGISTRATION.email, REGISTRATION.password);
-    await service.logout(a.refreshToken);
-
-    const listed = await service.listSessions(world.users[0]!.id);
-    expect(listed).toHaveLength(1);
-  });
-
-  it('refuses to revoke a session belonging to someone else', async () => {
-    await service.register(REGISTRATION);
-    const otherUserId = 'someone-else' as UserId;
-    await expect(
-      service.revokeSession(otherUserId, world.sessions[0]!.id),
-    ).rejects.toMatchObject({ status: 404 });
-    expect(world.sessions[0]?.revokedAt).toBeNull();
-  });
-
-  it('revokes a session the caller owns', async () => {
-    const a = await service.register(REGISTRATION);
-    await expect(service.revokeSession(world.users[0]!.id, a.sessionId)).resolves.toBe(true);
-  });
-});
+/*
+ * Session management — listing, revoking one, revoking the rest — moved to
+ * `ProfileService` when /me was built, because it is a property of the person
+ * rather than of the login flow. Its tests moved with it and are in
+ * `profile.test.ts` under "sessions", including the 404-not-403 rule for
+ * somebody else's session id.
+ */
 
 describe('password hashing cost', () => {
   it('is applied even for an account that does not exist', async () => {

@@ -14,8 +14,10 @@ import { api } from './client.js';
  * Every field the frames need and the server does not send yet is optional
  * here and marked `BACKEND PENDING`, so the same page renders against the
  * preview backend (which supplies them) and the real one (which does not) —
- * degraded, never broken. The profile and session endpoints do not exist at
- * all; they are marked at their call sites too.
+ * degraded, never broken.
+ *
+ * The account half — `/me` and its sessions — is served for real now, so it
+ * carries no pending markers.
  */
 
 export interface WorkspaceDetails {
@@ -81,6 +83,8 @@ export interface AccountProfile {
   name: string;
   email: string;
   emailVerified: boolean;
+  /** When the account was created. ISO 8601. */
+  createdAt?: string | undefined;
 }
 
 export type SessionDevice = 'desktop' | 'mobile' | 'unknown';
@@ -92,9 +96,19 @@ export interface AccountSession {
   deviceKind: SessionDevice;
   /** "Chrome 129 · macOS 15". */
   client: string;
+  /**
+   * City and country, when the server can say.
+   *
+   * It cannot today — nothing in the system does GeoIP — so the real API
+   * sends an empty string and this line renders as nothing above the IP,
+   * rather than as a fabricated place.
+   */
   location: string;
   ip: string;
+  /** "Active now", "2 hours ago". Rendered server-side, against its clock. */
   lastActiveLabel: string;
+  /** The instant behind the label, for a client that wants to reformat. */
+  lastActiveAt?: string | undefined;
   current: boolean;
 }
 
@@ -132,11 +146,17 @@ export const workspaceApi = {
 
   revokeInvitation: (id: string) => api.delete<void>(`/workspaces/current/invitations/${id}`),
 
-  /** BACKEND PENDING: POST /workspaces/current/invitations/:id/resend */
+  /**
+   * Sends the invitation again with a fresh link and a fresh expiry.
+   *
+   * At most once an hour per invitation: a second call inside that window is
+   * a 429, which J2 should show as "just sent — try again shortly" rather
+   * than as a failure.
+   */
   resendInvitation: (id: string) =>
     api.post<WorkspaceInvitation>(`/workspaces/current/invitations/${id}/resend`),
 
-  /** BACKEND PENDING: POST /workspaces/current/transfer-ownership */
+  /** Owner-only. The caller becomes an Admin in the same transaction. */
   transferOwnership: (userId: string) =>
     api.post<void>('/workspaces/current/transfer-ownership', { userId }),
 
@@ -144,24 +164,32 @@ export const workspaceApi = {
   senders: () => api.get<DefaultSenderOption[]>('/senders'),
 };
 
+/**
+ * The signed-in person, across every workspace (J5).
+ *
+ * Every call is `unscoped`: none of this belongs to a workspace, and the
+ * server's `/me` router has no workspace middleware for the same reason. A
+ * suspended workspace must not stop somebody changing their own password.
+ */
 export const accountApi = {
-  /** BACKEND PENDING: GET /me */
   profile: () => api.get<AccountProfile>('/me', undefined, { unscoped: true }),
 
-  /** BACKEND PENDING: PATCH /me */
   updateProfile: (input: { name: string }) =>
     api.patch<AccountProfile>('/me', input, { unscoped: true }),
 
-  /** BACKEND PENDING: POST /me/password */
   changePassword: (input: { currentPassword: string; newPassword: string }) =>
     api.post<void>('/me/password', input, { unscoped: true }),
 
-  /** BACKEND PENDING: GET /me/sessions */
+  /**
+   * Starts an email change. The address does not move until the link sent to
+   * it is opened, so this answers `pending`, never the new profile.
+   */
+  changeEmail: (input: { newEmail: string; currentPassword: string }) =>
+    api.post<{ pending: true; email: string }>('/me/email-change', input, { unscoped: true }),
+
   sessions: () => api.get<AccountSession[]>('/me/sessions', undefined, { unscoped: true }),
 
-  /** BACKEND PENDING: DELETE /me/sessions/:id */
   revokeSession: (id: string) => api.delete<void>(`/me/sessions/${id}`, { unscoped: true }),
 
-  /** BACKEND PENDING: DELETE /me/sessions */
   revokeOtherSessions: () => api.delete<void>('/me/sessions', { unscoped: true }),
 };

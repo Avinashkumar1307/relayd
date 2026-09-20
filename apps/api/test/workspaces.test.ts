@@ -40,7 +40,7 @@ beforeEach(() => {
     currentContext: () => ({ ip: '203.0.113.7', userAgent: 'test-agent' }),
   });
 
-  world.workspaces.push({ id: WS, name: 'Acme', ownerUserId: OWNER });
+  world.workspaces.push({ id: WS, name: 'Acme', slug: 'acme', ownerUserId: OWNER });
   world.members.push({ workspaceId: WS, userId: OWNER, role: 'owner', joinedAt: world.now() });
 });
 

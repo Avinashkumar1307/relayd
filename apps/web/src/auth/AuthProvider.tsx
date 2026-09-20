@@ -19,16 +19,21 @@ export interface Membership {
  * all need a name and an address, and three sections reached for it
  * independently. It lives here so there is one answer.
  *
- * BACKEND PENDING: GET /auth/session (or a `user` on the refresh response).
- * `POST /auth/refresh` currently returns only the token and the memberships,
- * so this is absent against the real API and present against the preview
- * backend. Everything that reads it degrades to the address or to "you"
- * rather than rendering an empty name.
+ * Served on register, login and refresh, alongside the token and the
+ * memberships — one response, no second round trip, and no window in which
+ * the shell holds a token and has no name to render. `GET /auth/session`
+ * answers the same payload without rotating the refresh cookie, for a caller
+ * that already has a valid access token.
+ *
+ * Still optional on the type: everything that reads it degrades to the
+ * address or to "you" rather than rendering an empty name, which is what
+ * keeps these screens working against a fixture that omits it.
  */
 export interface SessionUser {
   id: string;
   name: string;
   email: string;
+  emailVerified?: boolean | undefined;
 }
 
 export interface Session {
@@ -179,8 +184,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     adopt(await api.post<Session>('/auth/refresh', undefined, { unscoped: true }));
   }, [adopt]);
 
+  /**
+   * B3a's "Resend".
+   *
+   * The address is sent when the page has one and left out when it does not:
+   * a signed-in caller is identified by the bearer token instead. The server
+   * answers 202 either way and throttles on its own clock, so the 30-second
+   * countdown in the UI is a courtesy and never the control.
+   */
   const resendVerification = useCallback(async (email?: string) => {
-    // BACKEND PENDING: POST /auth/resend-verification
     await api.post('/auth/resend-verification', email === undefined ? {} : { email }, {
       unscoped: true,
     });
@@ -199,7 +211,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const createWorkspace = useCallback(
     async (input: CreateWorkspaceInput) => {
-      // BACKEND PENDING: POST /workspaces
+      // Unscoped deliberately: there is no workspace to name yet, and the
+      // access token will not carry the new one until the refresh below.
       const created = await api.post<{ id: string }>('/workspaces', input, { unscoped: true });
       queryClient.clear();
       await reload();
