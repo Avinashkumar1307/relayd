@@ -1,403 +1,468 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router';
+import {
+  Badge,
+  Button,
+  ConfirmDestructive,
+  EmptyState,
+  ErrorState,
+  Icon,
+  Modal,
+  PageHeader,
+  Skeleton,
+} from '@relayd/ui';
 import {
   PROVIDER_INFO,
   providerApi,
   providerKeys,
   type Connection,
-  type ConnectionStatus,
-  type Credentials,
-  type ProviderType,
+  type Sender,
 } from '../../api/providers.js';
+import { ApiError } from '../../api/client.js';
+import { useAuth } from '../../auth/AuthProvider.js';
 import { IfPermitted } from '../../auth/guards.js';
-import { Badge, Button, EmptyState, LoadError, Loading, Page, formatDate } from '../../components/ui.js';
+import { useReadOnly } from '../../auth/workspace-state.js';
+import { CredentialFields } from './credential-fields.js';
+import {
+  BestEffortBadge,
+  CONNECTION_STATES,
+  ProviderTile,
+  credentialsFrom,
+  fmtNumber,
+  formatDay,
+  initialCredentialValues,
+  quotaBarClass,
+  quotaOf,
+  webhookOf,
+} from './provider-ui.js';
 
 /**
- * Provider connections.
+ * E1a — Providers.
  *
- * Cards rather than a table: a connection has a health story — status, last
- * verified, quota, last error — and a row of cells reads as five unrelated
- * facts. The card is also where the two things a customer cannot discover
- * elsewhere are shown: the one-time ingest URL, and the warnings from
- * verification.
+ * One card per connection rather than a table row: a connection has a health
+ * story (quota, throttle, webhook, last 24 hours) and a row of cells reads as
+ * four unrelated facts. The card is also where the two things a customer
+ * cannot discover anywhere else live — whether events are actually arriving,
+ * and what Relayd is throttling them to.
+ *
+ * A provider secret is never shown after entry. The database stores a Secrets
+ * Manager ARN, never the secret (CLAUDE.md section 11), so the only credential
+ * affordance here is "Rotate credentials", which writes and never reads.
  */
 
-const STATUS_TONE: Record<ConnectionStatus, 'neutral' | 'good' | 'warn' | 'bad'> = {
-  pending: 'neutral',
-  verifying: 'neutral',
-  active: 'good',
-  degraded: 'warn',
-  disabled: 'neutral',
-  revoked: 'bad',
-  error: 'bad',
-};
+const READ_ONLY_TITLE = 'Workspace is read-only';
 
 export function ProvidersPage() {
-  const queryClient = useQueryClient();
-  const [connecting, setConnecting] = useState(false);
-  const [justConnected, setJustConnected] = useState<{ name: string; ingestUrl: string; warnings: string[] } | null>(
-    null,
-  );
+  const navigate = useNavigate();
+  const { currentWorkspaceId } = useAuth();
+  const readOnly = useReadOnly();
+  const workspaceId = currentWorkspaceId ?? 'none';
 
+  // BACKEND PENDING: GET /providers does not return quotaNote, webhook or
+  // last24h yet. `quotaOf` and `webhookOf` derive a fallback from what it
+  // does return, so this call needs no change when they arrive.
   const connections = useQuery({
-    queryKey: providerKeys.connections,
+    queryKey: providerKeys.connections(workspaceId),
     queryFn: providerApi.list,
   });
 
-  const invalidate = (): void => {
-    void queryClient.invalidateQueries({ queryKey: providerKeys.connections });
-  };
+  // The card's "2 senders" line. Counted here rather than asked for, because
+  // /senders is a list the sender page needs anyway and the cache is shared.
+  const senders = useQuery({
+    queryKey: providerKeys.senders(workspaceId),
+    queryFn: () => providerApi.listSenders(),
+  });
+
+  const connect = (
+    <IfPermitted permission="provider:write">
+      <Button
+        onClick={() => void navigate('/providers/connect')}
+        disabled={readOnly}
+        title={readOnly ? READ_ONLY_TITLE : undefined}
+      >
+        <Icon name="plus" size={15} strokeWidth={2.25} />
+        Connect provider
+      </Button>
+    </IfPermitted>
+  );
 
   return (
-    <Page
-      title="Providers"
-      description="Relayd sends through your own provider accounts. We never hold your sending reputation."
-      action={
-        <IfPermitted permission="provider:write">
-          <Button onClick={() => setConnecting(true)}>Connect a provider</Button>
-        </IfPermitted>
-      }
-    >
-      {justConnected !== null && (
-        <OneTimeIngestUrl details={justConnected} onDismiss={() => setJustConnected(null)} />
-      )}
-
-      {connecting && (
-        <ConnectForm
-          onCancel={() => setConnecting(false)}
-          onConnected={(result) => {
-            setConnecting(false);
-            setJustConnected({
-              name: result.name,
-              ingestUrl: result.ingestUrl,
-              warnings: result.warnings,
-            });
-            invalidate();
-          }}
-        />
-      )}
+    <>
+      <PageHeader
+        title="Providers"
+        description="Your own email provider accounts. Relayd sends through them and never carries delivery reputation itself."
+        actions={connect}
+      />
 
       {connections.isPending ? (
-        <Loading />
+        <ConnectionsSkeleton />
       ) : connections.isError ? (
-        <LoadError error={connections.error} onRetry={() => void connections.refetch()} />
+        <ErrorState
+          size="table"
+          className="py-18"
+          title="We couldn't load provider connections"
+          description="Sending continues through the saved connections. Send support the request ID if it keeps happening."
+          requestId={requestIdOf(connections.error)}
+          actions={
+            <Button variant="secondary" onClick={() => void navigate('/support')}>
+              Contact support
+            </Button>
+          }
+          onRetry={() => void connections.refetch()}
+          retryLabel="Retry"
+        />
       ) : connections.data.length === 0 ? (
-        <EmptyState title="No providers connected">
-          Connect an SES, SendGrid or SMTP account to start sending.
-        </EmptyState>
+        <EmptyState
+          icon="plug"
+          title="No provider connected"
+          description="Relayd sends through your Amazon SES, SendGrid or SMTP account. Connect one to verify a sender and start sending."
+          action={connect}
+        />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-4">
           {connections.data.map((connection) => (
-            <ConnectionCard key={connection.id} connection={connection} onChanged={invalidate} />
+            <ConnectionCard
+              key={connection.id}
+              connection={connection}
+              senders={senders.data ?? []}
+              workspaceId={workspaceId}
+            />
           ))}
         </div>
       )}
-    </Page>
+    </>
   );
 }
 
-/**
- * The ingest URL, shown once.
- *
- * Deliberately loud and deliberately not dismissible by accident. The token in
- * it can write delivery events into this workspace, so it is never readable
- * again — losing it means rotating the connection.
- */
-function OneTimeIngestUrl({
-  details,
-  onDismiss,
-}: {
-  details: { name: string; ingestUrl: string; warnings: string[] };
-  onDismiss: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  return (
-    <section className="space-y-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-5">
-      <h2 className="text-base font-semibold text-amber-900">
-        Copy this webhook URL now — it is not shown again
-      </h2>
-      <p className="text-sm text-amber-900">
-        Paste it into {details.name}&apos;s webhook settings so delivery, bounce and complaint
-        events reach Relayd. It is unique to this connection; anyone who has it can send events to
-        your workspace, so treat it as a secret. If you lose it, rotate the connection to get a new
-        one.
-      </p>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <code className="min-w-0 flex-1 overflow-x-auto rounded border border-amber-300 bg-white px-3 py-2 text-xs text-slate-900">
-          {details.ingestUrl}
-        </code>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            void navigator.clipboard?.writeText(details.ingestUrl);
-            setCopied(true);
-          }}
-        >
-          {copied ? 'Copied' : 'Copy'}
-        </Button>
-      </div>
-
-      {details.warnings.length > 0 && (
-        <ul className="list-disc space-y-1 pl-5 text-sm text-amber-900">
-          {details.warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
-      )}
-
-      <Button variant="secondary" onClick={onDismiss}>
-        I have copied it
-      </Button>
-    </section>
-  );
+function requestIdOf(error: unknown): string | undefined {
+  return error instanceof ApiError ? error.requestId : undefined;
 }
+
+// ------------------------------------------------------------------- card
 
 function ConnectionCard({
   connection,
-  onChanged,
+  senders,
+  workspaceId,
 }: {
   connection: Connection;
-  onChanged: () => void;
+  senders: readonly Sender[];
+  workspaceId: string;
 }) {
   const info = PROVIDER_INFO[connection.providerType];
+  const quota = quotaOf(connection);
+  const webhook = webhookOf(connection);
+  const state = CONNECTION_STATES[connection.status];
+  const attached = senders.filter((sender) => sender.providerId === connection.id).length;
 
-  const disconnect = useMutation({
-    mutationFn: () => providerApi.disconnect(connection.id),
-    onSuccess: onChanged,
-  });
-
-  const quota = connection.quotaSnapshot;
+  const [rotating, setRotating] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   return (
-    <article className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-900">{connection.name}</h2>
-          <p className="text-xs text-slate-500">{info.label}</p>
+    <article
+      className={[
+        'overflow-hidden rounded-card border bg-surface',
+        connection.status === 'degraded' ? 'border-warning' : 'border-border',
+      ].join(' ')}
+    >
+      <div className="flex flex-wrap items-start gap-4 border-b border-border px-5 py-4.5">
+        <ProviderTile type={connection.providerType} />
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="text-card font-semibold leading-heading">{info.label}</span>
+            <span className="text-ui text-text-2">{connection.name}</span>
+            <Badge tone={state.tone} pulse={state.pulse}>
+              {state.label}
+            </Badge>
+            {info.bestEffort === true ? <BestEffortBadge /> : null}
+          </div>
+
+          <div className="mt-1 flex flex-wrap gap-3 text-ui text-text-2">
+            <span>Verified {formatDay(connection.lastVerifiedAt)}</span>
+            <span aria-hidden="true">·</span>
+            <span className="font-mono text-caption">{connection.id}</span>
+            <span aria-hidden="true">·</span>
+            <span>{attached === 1 ? '1 sender' : `${attached} senders`}</span>
+          </div>
+
+          {connection.lastError === null ? null : (
+            <p role="alert" className="mt-2 text-ui text-danger-text">
+              {connection.lastError.message ?? 'The last check with the provider failed.'}
+            </p>
+          )}
         </div>
-        <Badge tone={STATUS_TONE[connection.status]}>{connection.status}</Badge>
+
+        <IfPermitted permission="provider:write">
+          <CardActions
+            connection={connection}
+            onRotate={() => setRotating(true)}
+            onDisconnect={() => setDisconnecting(true)}
+          />
+        </IfPermitted>
       </div>
 
-      {info.bestEffort === true && (
-        // D4. Shown on every SMTP card, not only at connect time: the person
-        // reading this page a month later is the one planning a campaign.
-        <p className="rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-700">{info.note}</p>
-      )}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)]">
+        <Cell>
+          <div className="flex justify-between gap-2 text-caption text-text-2">
+            <span>Daily quota</span>
+            <span className="text-text tabular-nums">
+              {quota.limit === null
+                ? `${fmtNumber(quota.used)} sent`
+                : `${fmtNumber(quota.used)} / ${fmtNumber(quota.limit)}`}
+            </span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-2 bg-neutral-soft">
+            <div
+              className={`h-full rounded-2 ${quotaBarClass(quota.percent)}`}
+              style={{ width: `${quota.percent}%` }}
+            />
+          </div>
+          <div className="mt-1.5 text-caption text-text-2">{quota.note}</div>
+        </Cell>
 
-      {connection.lastError !== null && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-800">
-          {connection.lastError.message ?? 'The last check failed.'}
-        </p>
-      )}
+        <Cell>
+          <div className="text-caption text-text-2">Per-second limit</div>
+          <div className="mt-1 text-section font-semibold leading-heading tabular-nums">
+            {connection.quotaSnapshot?.maxSendRate ?? '—'}
+            <span className="text-ui font-normal text-text-2"> /s</span>
+          </div>
+          <div className="mt-1 text-caption text-text-2">Relayd throttles to this</div>
+        </Cell>
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-        <dt className="text-slate-500">Last checked</dt>
-        <dd className="text-slate-900">{formatDate(connection.lastVerifiedAt)}</dd>
+        <Cell>
+          <div className="text-caption text-text-2">Inbound webhook</div>
+          <div className="mt-1.5 flex items-center gap-2">
+            <Badge tone={webhook.state.tone} pulse={webhook.state.pulse}>
+              {webhook.state.label}
+            </Badge>
+          </div>
+          <div className="mt-1.5 text-caption text-text-2">{webhook.detail}</div>
+        </Cell>
 
-        <dt className="text-slate-500">Webhook events</dt>
-        <dd className="text-slate-900">
-          {connection.capabilities.supportsWebhooks === false
-            ? 'Not supported'
-            : connection.hasWebhookSecret
-              ? 'Configured'
-              : 'Not configured'}
-        </dd>
+        <Cell last>
+          <div className="text-caption text-text-2">Last 24 h</div>
+          <div className="mt-1 text-section font-semibold leading-heading tabular-nums">
+            {connection.last24h === undefined ? fmtNumber(quota.used) : fmtNumber(connection.last24h.accepted)}
+          </div>
+          <div className="mt-1 text-caption text-text-2">
+            {connection.last24h?.note ?? 'accepted by the provider'}
+          </div>
+        </Cell>
+      </div>
 
-        {quota != null && quota.max24Hour != null && (
-          <>
-            <dt className="text-slate-500">Provider daily cap</dt>
-            <dd className="text-slate-900">
-              {(quota.sentLast24Hours ?? 0).toLocaleString()} / {quota.max24Hour.toLocaleString()}
-            </dd>
-          </>
-        )}
-      </dl>
+      <RotateDialog
+        connection={connection}
+        workspaceId={workspaceId}
+        open={rotating}
+        onClose={() => setRotating(false)}
+      />
 
-      <IfPermitted permission="provider:write">
-        <div className="flex gap-2">
-          <Button
-            variant="danger"
-            disabled={disconnect.isPending}
-            onClick={() => disconnect.mutate()}
-          >
-            {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
-          </Button>
-        </div>
-        {disconnect.isError && <LoadError error={disconnect.error} />}
-      </IfPermitted>
+      <DisconnectDialog
+        connection={connection}
+        workspaceId={workspaceId}
+        open={disconnecting}
+        onClose={() => setDisconnecting(false)}
+      />
     </article>
   );
 }
 
-/**
- * The connect form.
- *
- * The credential fields are per provider, and every one is type="password":
- * these are pasted in shared screens and captured in screen recordings more
- * often than anyone admits.
- */
-function ConnectForm({
-  onCancel,
-  onConnected,
+function CardActions({
+  connection,
+  onRotate,
+  onDisconnect,
 }: {
-  onCancel: () => void;
-  onConnected: (result: { name: string; ingestUrl: string; warnings: string[] }) => void;
+  connection: Connection;
+  onRotate: () => void;
+  onDisconnect: () => void;
 }) {
-  const [providerType, setProviderType] = useState<ProviderType>('ses');
-
-  const connect = useMutation({
-    mutationFn: (input: { providerType: ProviderType; name: string; credentials: Credentials }) =>
-      providerApi.connect(input),
-    onSuccess: (result) =>
-      onConnected({ name: result.name, ingestUrl: result.ingestUrl, warnings: result.warnings }),
-  });
-
-  const info = PROVIDER_INFO[providerType];
+  const readOnly = useReadOnly();
+  const title = readOnly ? READ_ONLY_TITLE : undefined;
 
   return (
-    <section className="space-y-4 rounded-lg border border-slate-300 bg-white p-5">
-      <h2 className="text-base font-semibold text-slate-900">Connect a provider</h2>
-
-      <div className="space-y-1">
-        <label htmlFor="provider-type" className="block text-sm font-medium text-slate-800">
-          Provider
-        </label>
-        <select
-          id="provider-type"
-          value={providerType}
-          onChange={(event) => setProviderType(event.target.value as ProviderType)}
-          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-        >
-          {(Object.keys(PROVIDER_INFO) as ProviderType[])
-            .filter((type) => PROVIDER_INFO[type].available)
-            .map((type) => (
-              <option key={type} value={type}>
-                {PROVIDER_INFO[type].label}
-              </option>
-            ))}
-        </select>
-      </div>
-
-      {info.note !== undefined && (
-        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{info.note}</p>
-      )}
-
-      <form
-        className="space-y-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const data = new FormData(event.currentTarget);
-          const name = String(data.get('name') ?? '').trim();
-          const credentials = credentialsFrom(providerType, data);
-          if (name === '' || credentials === null) return;
-
-          connect.mutate({ providerType, name, credentials });
-        }}
+    <div className="flex flex-none flex-wrap gap-2">
+      <Button
+        variant="secondary"
+        className="h-8 px-2.5 text-caption"
+        disabled={readOnly}
+        title={title}
+        onClick={onRotate}
       >
-        <Field name="name" label="A name for this connection" placeholder="Production SES" />
-
-        {providerType === 'ses' && (
-          <>
-            <Field name="accessKeyId" label="Access key ID" secret />
-            <Field name="secretAccessKey" label="Secret access key" secret />
-            <Field name="region" label="Region" placeholder="eu-west-1" />
-          </>
-        )}
-
-        {providerType === 'sendgrid' && <Field name="apiKey" label="API key" secret />}
-
-        {providerType === 'smtp' && (
-          <>
-            <Field name="host" label="Host" placeholder="smtp.example.com" />
-            <Field name="port" label="Port" type="number" defaultValue="587" />
-            <Field name="user" label="Username" />
-            <Field name="pass" label="Password" secret />
-            <label className="flex items-center gap-2 text-sm text-slate-800">
-              <input type="checkbox" name="secure" />
-              Use TLS from the start (port 465)
-            </label>
-          </>
-        )}
-
-        <div className="flex gap-2">
-          <Button type="submit" disabled={connect.isPending}>
-            {connect.isPending ? 'Checking with the provider…' : 'Connect'}
-          </Button>
-          <Button variant="secondary" onClick={onCancel}>
-            Cancel
-          </Button>
-        </div>
-
-        {connect.isError && <LoadError error={connect.error} />}
-      </form>
-    </section>
-  );
-}
-
-function Field({
-  name,
-  label,
-  type = 'text',
-  placeholder,
-  defaultValue,
-  secret,
-}: {
-  name: string;
-  label: string;
-  type?: string;
-  placeholder?: string;
-  defaultValue?: string;
-  secret?: boolean;
-}) {
-  return (
-    <div className="space-y-1">
-      <label htmlFor={`field-${name}`} className="block text-sm font-medium text-slate-800">
-        {label}
-      </label>
-      <input
-        id={`field-${name}`}
-        name={name}
-        // Secrets are masked and kept out of autofill and password managers'
-        // save prompts: this is a customer's provider credential, not a login.
-        type={secret === true ? 'password' : type}
-        autoComplete={secret === true ? 'new-password' : 'off'}
-        placeholder={placeholder}
-        defaultValue={defaultValue}
-        required
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-      />
+        Rotate credentials
+      </Button>
+      <Button
+        variant="secondary"
+        className="h-8 px-2.5 text-caption text-danger-text"
+        disabled={readOnly}
+        title={title ?? `Disconnect ${connection.name}`}
+        onClick={onDisconnect}
+      >
+        Disconnect
+      </Button>
     </div>
   );
 }
 
-function credentialsFrom(providerType: ProviderType, data: FormData): Credentials | null {
-  const text = (key: string): string => String(data.get(key) ?? '').trim();
+function Cell({ children, last = false }: { children: ReactNode; last?: boolean }) {
+  return (
+    <div
+      className={[
+        'px-5 py-3.5',
+        'border-b border-border last:border-b-0',
+        last ? 'lg:border-b-0' : 'lg:border-r lg:border-b-0',
+      ].join(' ')}
+    >
+      {children}
+    </div>
+  );
+}
 
-  switch (providerType) {
-    case 'ses':
-      return {
-        type: 'ses',
-        accessKeyId: text('accessKeyId'),
-        secretAccessKey: text('secretAccessKey'),
-        region: text('region'),
-      };
-    case 'sendgrid':
-      return { type: 'sendgrid', apiKey: text('apiKey') };
-    case 'smtp': {
-      const port = Number(text('port'));
-      if (!Number.isInteger(port)) return null;
-      return {
-        type: 'smtp',
-        host: text('host'),
-        port,
-        secure: data.get('secure') !== null,
-        user: text('user'),
-        pass: text('pass'),
-      };
-    }
-    default:
-      return null;
-  }
+// ---------------------------------------------------------------- dialogs
+
+/**
+ * Rotate credentials.
+ *
+ * The old secret is never shown, so this is an entry form, not an edit form.
+ * The provider is fixed: rotating is replacing the key behind a connection,
+ * and changing the provider would be a different connection with a different
+ * ingest token.
+ */
+function RotateDialog({
+  connection,
+  workspaceId,
+  open,
+  onClose,
+}: {
+  connection: Connection;
+  workspaceId: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [values, setValues] = useState(() => initialCredentialValues(connection.providerType));
+  const credentials = credentialsFrom(connection.providerType, values);
+
+  const rotate = useMutation({
+    mutationFn: () => {
+      if (credentials === null) throw new Error('Incomplete credentials');
+      return providerApi.rotate(connection.id, credentials);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: providerKeys.connections(workspaceId) });
+      setValues(initialCredentialValues(connection.providerType));
+      onClose();
+    },
+  });
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="lg"
+      title={`Rotate credentials for ${PROVIDER_INFO[connection.providerType].label}`}
+      description="We verify the new credentials with a dry-run call before saving them. The old ones stop working the moment the new ones are accepted."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => rotate.mutate()}
+            disabled={credentials === null}
+            pending={rotate.isPending}
+          >
+            Verify and save
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <CredentialFields
+          type={connection.providerType}
+          values={values}
+          disabled={rotate.isPending}
+          onChange={(name, value) => setValues((previous) => ({ ...previous, [name]: value }))}
+        />
+        {rotate.isError ? (
+          <p role="alert" className="text-ui text-danger-text">
+            {rotate.error instanceof ApiError
+              ? rotate.error.message
+              : 'The provider rejected these credentials.'}
+          </p>
+        ) : null}
+      </div>
+    </Modal>
+  );
+}
+
+function DisconnectDialog({
+  connection,
+  workspaceId,
+  open,
+  onClose,
+}: {
+  connection: Connection;
+  workspaceId: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const disconnect = useMutation({
+    mutationFn: () => providerApi.disconnect(connection.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: providerKeys.connections(workspaceId) });
+      void queryClient.invalidateQueries({ queryKey: providerKeys.senders(workspaceId) });
+      onClose();
+    },
+  });
+
+  return (
+    <ConfirmDestructive
+      open={open}
+      onClose={onClose}
+      onConfirm={() => disconnect.mutate()}
+      pending={disconnect.isPending}
+      title={`Disconnect ${PROVIDER_INFO[connection.providerType].label} · ${connection.name}?`}
+      confirmLabel="Disconnect"
+      confirmPhrase={connection.name}
+    >
+      Senders on this connection stop working and its inbound webhook URL is
+      revoked. Campaigns already sending through it will fail. Reconnecting
+      mints a new URL, so you will have to update the provider console again.
+    </ConfirmDestructive>
+  );
+}
+
+// --------------------------------------------------------------- skeleton
+
+function ConnectionsSkeleton() {
+  return (
+    <div role="status" aria-busy="true" aria-label="Loading providers" className="flex flex-col gap-4">
+      <span className="sr-only">Loading providers</span>
+      {[0, 1, 2].map((index) => (
+        <div key={index} className="overflow-hidden rounded-card border border-border bg-surface">
+          <div className="flex items-start gap-4 border-b border-border px-5 py-4.5">
+            <Skeleton width={44} height={44} radius={10} />
+            <div className="flex flex-1 flex-col gap-2">
+              <Skeleton width={220} height={16} />
+              <Skeleton width={300} height={12} />
+            </div>
+            <Skeleton width={230} height={32} radius={8} />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((cell) => (
+              <div key={cell} className="flex flex-col gap-2 px-5 py-3.5">
+                <Skeleton width={96} height={12} />
+                <Skeleton width="70%" height={20} />
+                <Skeleton width="55%" height={12} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }

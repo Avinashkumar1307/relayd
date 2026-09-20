@@ -191,6 +191,8 @@ describe('role-aware gating', () => {
   });
 
   it('explains rather than 404s when a page needs a permission the role lacks', async () => {
+    // K3: not a 404 and not a bare 403 — this user is a member and the page
+    // exists, so it names the role that can open it.
     mockSession(VIEWER);
     renderWithAuth(
       <RequireAuth>
@@ -201,10 +203,49 @@ describe('role-aware gating', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/do not have access/iu)).toBeDefined();
+      expect(screen.getByText(/This page needs the Admin role/u)).toBeDefined();
     });
     expect(screen.queryByText('Settings form')).toBeNull();
     // Names the missing permission, so the user can ask for the right thing.
     expect(screen.getByText('workspace:update')).toBeDefined();
+  });
+
+  it('names the Owner alone when only the Owner holds the permission', async () => {
+    // I1c: Billing reached by an Editor. billing:write is owner-only
+    // (CLAUDE.md section 11), so the page cannot suggest asking an Admin.
+    mockSession([
+      { workspaceId: 'ws-1', workspaceName: 'Acme', workspaceSlug: 'acme', role: 'editor' },
+    ]);
+    renderWithAuth(
+      <RequireAuth>
+        <RequirePermission permission="billing:write">
+          <p>Plan and payment</p>
+        </RequirePermission>
+      </RequireAuth>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/This page needs the Owner role/u)).toBeDefined();
+    });
+    // The other roles that see this same page, the signed-in one excluded —
+    // "The same page appears for Admins and Viewers" is the frame's line.
+    expect(document.body.textContent).toContain('You are signed in as an Editor.');
+    expect(document.body.textContent).toContain('The same page appears for Admins and Viewers');
+    expect(screen.queryByText('Plan and payment')).toBeNull();
+  });
+
+  it('takes a caller’s own fallback when it has a better page to show', async () => {
+    mockSession(VIEWER);
+    renderWithAuth(
+      <RequireAuth>
+        <RequirePermission permission="billing:write" fallback={<p>Ask your owner</p>}>
+          <p>Plan and payment</p>
+        </RequirePermission>
+      </RequireAuth>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Ask your owner')).toBeDefined();
+    });
   });
 });

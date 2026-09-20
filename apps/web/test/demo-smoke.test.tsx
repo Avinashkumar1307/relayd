@@ -7,6 +7,7 @@ import { App } from '../src/App.js';
 import { AuthProvider } from '../src/auth/AuthProvider.js';
 import { configureApi } from '../src/api/client.js';
 import { installDemoServer } from '../src/demo/server.js';
+import { PREVIEW_PATHS } from '../src/demo/routes/index.js';
 
 /** Throwaway: does the demo actually render? */
 
@@ -30,15 +31,11 @@ function wrap(path: string) {
   );
 }
 
-const PAGES = [
-  '/dashboard', '/campaigns', '/audience/contacts', '/audience/lists',
-  '/audience/tags', '/audience/imports', '/audience/suppressions',
-  '/templates', '/providers', '/senders', '/billing', '/billing/plans',
-  '/billing/invoices', '/settings/workspace', '/settings/team', '/settings/api',
-];
-
+// The pages come from the sections themselves: each demo route file names
+// the paths it expects to render, so a section that adds a page adds it to
+// this test without editing this file.
 describe('demo renders', () => {
-  for (const path of PAGES) {
+  for (const path of PREVIEW_PATHS) {
     it(`renders ${path}`, async () => {
       const view = wrap(path);
       await waitFor(() => {

@@ -7,23 +7,48 @@ import type { Campaign } from '../../api/campaigns.js';
  * testable without rendering anything, and so there is exactly one answer to
  * "can this campaign be launched" rather than one per component that asks.
  *
- * The step order follows docs/00: audience before content, because the merge
- * tags an author can use depend on what the audience actually has, and
- * sender before review because an unverified sender is the most common reason
- * a review fails.
+ * The order and the labels are the design's, from the `STEPS` table at the
+ * foot of `design/G Campaigns.dc.html`:
+ *
+ *   Details · Audience · Sender & pool · Content · Tracking & compliance ·
+ *   Schedule · Review
+ *
+ * Audience comes before content because the merge tags an author can use
+ * depend on what the audience actually has, and sender comes before content
+ * because an unverified sender is the most common reason a review fails —
+ * finding that out after writing the email is the expensive order.
+ *
+ * `slug` is what appears in the URL. docs/09 wants the wizard linkable and
+ * refresh-safe, so the step lives at `/campaigns/:id/edit/:step` rather than
+ * in component state that a reload throws away.
  */
 
 export const WIZARD_STEPS = [
-  { key: 'details', label: 'Details' },
-  { key: 'audience', label: 'Audience' },
-  { key: 'template', label: 'Content' },
-  { key: 'sender', label: 'Sender' },
-  { key: 'tracking', label: 'Tracking' },
-  { key: 'schedule', label: 'Schedule' },
-  { key: 'review', label: 'Review' },
+  { key: 'details', slug: 'details', label: 'Details' },
+  { key: 'audience', slug: 'audience', label: 'Audience' },
+  { key: 'sender', slug: 'sender', label: 'Sender & pool' },
+  { key: 'template', slug: 'content', label: 'Content' },
+  { key: 'tracking', slug: 'tracking', label: 'Tracking & compliance' },
+  { key: 'schedule', slug: 'schedule', label: 'Schedule' },
+  { key: 'review', slug: 'review', label: 'Review' },
 ] as const;
 
 export type WizardStepKey = (typeof WIZARD_STEPS)[number]['key'];
+export type WizardStepSlug = (typeof WIZARD_STEPS)[number]['slug'];
+
+/** The first step, which is where `/campaigns/new` opens. */
+export const FIRST_STEP = WIZARD_STEPS[0];
+
+/**
+ * The index of a step named in the URL, or 0 for a slug that means nothing.
+ *
+ * A bad slug lands on step one rather than on an error page: the URL is
+ * shareable, so a truncated paste is a normal way to arrive here.
+ */
+export function stepIndexFor(slug: string | undefined): number {
+  const at = WIZARD_STEPS.findIndex((step) => step.slug === slug);
+  return at === -1 ? 0 : at;
+}
 
 export interface PreflightIssue {
   step: WizardStepKey;
@@ -149,4 +174,64 @@ export function stepsWithIssues(issues: readonly PreflightIssue[]): Set<WizardSt
  */
 export function isEditable(status: Campaign['status']): boolean {
   return status === 'draft' || status === 'scheduled';
+}
+
+/* ------------------------------------------------------- pre-flight checks */
+
+/**
+ * One row of G2s7's pre-flight list.
+ *
+ * Three outcomes, not two. A warning that blocked would make the quota check
+ * unusable — leaning on one pool member is normal — and a warning that read
+ * as a pass would hide the one thing worth reading before a 48,000-recipient
+ * send.
+ */
+export type CheckOutcome = 'pass' | 'warn' | 'fail';
+
+export interface PreflightCheck {
+  key: string;
+  outcome: CheckOutcome;
+  title: string;
+  detail: string;
+  /** The link or button at the right of the row: "Review pool". */
+  action?: { label: string; href?: string } | undefined;
+}
+
+/** "1 fail · 1 warning · 5 pass" — the badge beside the Review heading. */
+export function preflightSummary(checks: readonly PreflightCheck[]): {
+  label: string;
+  tone: 'danger' | 'warning' | 'success';
+} {
+  const fail = checks.filter((check) => check.outcome === 'fail').length;
+  const warn = checks.filter((check) => check.outcome === 'warn').length;
+  const pass = checks.filter((check) => check.outcome === 'pass').length;
+
+  const plural = (n: number, word: string) => `${n} ${word}${word === 'pass' || n === 1 ? '' : 's'}`;
+
+  return {
+    label: `${fail} fail · ${plural(warn, 'warning')} · ${pass} pass`,
+    tone: fail > 0 ? 'danger' : warn > 0 ? 'warning' : 'success',
+  };
+}
+
+/**
+ * Why the launch button is disabled, in the words G2s7 puts in its tooltip.
+ *
+ * `null` means it is enabled. Returning the reason rather than a boolean is
+ * the point: docs/09's rule is that a control which says no says why, and a
+ * disabled button with no title is the commonest way that rule is broken.
+ */
+export function launchBlockedReason(input: {
+  checks: readonly PreflightCheck[];
+  consentAttested: boolean;
+  canLaunchPermission: boolean;
+  readOnly: boolean;
+}): string | null {
+  if (!input.canLaunchPermission) {
+    return 'Editors cannot launch. Ask an Owner or Admin to approve this campaign.';
+  }
+  if (input.readOnly) return 'Workspace is read-only';
+  if (input.checks.some((check) => check.outcome === 'fail')) return 'Clear the failing check first';
+  if (!input.consentAttested) return 'Confirm consent in step 5';
+  return null;
 }

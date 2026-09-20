@@ -50,6 +50,24 @@ export interface CampaignAnalytics {
   computedAt: string;
   /** Which pass produced these: a live 30-second figure, or the hourly one. */
   computedBy: 'incremental' | 'hourly';
+
+  // ---- BACKEND PENDING: GET /analytics/campaigns/{id} returns none of these
+  // G4a draws three sentences the rollup does not answer today. Each is
+  // optional rather than faked: without it the line is simply absent, and
+  // the page still renders every number it does have.
+  /** G4a's green line: "+0.8 pts vs your last 5 newsletters". */
+  comparison?: { points: number; label: string } | null;
+  /**
+   * "Sent 8 Sep 2026, 10:00 GST" — the campaign's own launch instant, in the
+   * campaign's own timezone. Rendered by the server because the timestamp
+   * that matters is the one the campaign was scheduled against, not the one
+   * the reader's browser is in. Falls back to the launch time we hold.
+   */
+  sentLabel?: string;
+  /** The header chip: how many events the bot filter took out of every number. */
+  botExcluded?: number;
+  /** "61% from Apple Mail proxies" — the share of opens a proxy reported. */
+  proxyShare?: number | null;
 }
 
 export interface LinkRow {
@@ -60,6 +78,16 @@ export interface LinkRow {
   clicksUnique: number;
   clicksUniqueNonbot: number;
   clickRate: Rate;
+  /**
+   * What to print instead of the URL.
+   *
+   * G4a's last two rows are "View in browser" and "Unsubscribe" — links the
+   * template owns rather than links the customer wrote, and printing the
+   * signed unsubscribe URL in a table would be noise at best.
+   *
+   * BACKEND PENDING: `GET /analytics/campaigns/{id}/links` has no label.
+   */
+  label?: string;
 }
 
 export interface DeviceBreakdown {
@@ -75,27 +103,182 @@ export interface DeviceBreakdown {
   unknownShare: number | null;
 }
 
+/**
+ * The dashboard's composition (frames C1–C4).
+ *
+ * `/analytics/overview` answers every *rate* the dashboard shows, and it is
+ * what the four stat cards and the activity chart are drawn from. The rest
+ * of the page — the plan-usage band, the provider strip, the recent-campaign
+ * rows with their segment counts, the "Needs attention" column and the
+ * suppression footnote — is a composition across billing, providers,
+ * campaigns and anti-abuse that no endpoint answers today. It is one request
+ * here rather than five from the browser because the page is one screen and
+ * five round trips would each need their own loading, empty and error state.
+ *
+ * BACKEND PENDING (docs/16): `GET /analytics/dashboard`.
+ */
+export interface DashboardProvider {
+  connectionId: string;
+  /** The 3–4 character chip: "SES", "SG", "SMTP". */
+  code: string;
+  name: string;
+  /** "eu-west-1 · production". */
+  label: string;
+  health: 'healthy' | 'degraded' | 'failed';
+  sentToday: number;
+  /** Null when the provider does not report a quota (SMTP, usually). */
+  dailyLimit: number | null;
+}
+
+/** The segment counts behind one row's progress bar. */
+export interface DashboardCampaignCounts {
+  delivered?: number;
+  pending?: number;
+  queued?: number;
+  sending?: number;
+  soft?: number;
+  hard?: number;
+  complaint?: number;
+  failed?: number;
+  uncertain?: number;
+}
+
+export interface DashboardCampaign {
+  id: string;
+  name: string;
+  /** A `CAMPAIGN_STATES` key. */
+  state: string;
+  /** "Started today, 09:00", "Paused 16 Sep, 11:12 · Complaint rate 0.34%". */
+  when: string;
+  recipients: number | null;
+  counts: DashboardCampaignCounts;
+  /** Null before anything has been delivered — never zero. */
+  clickRate: number | null;
+}
+
+export interface AttentionItem {
+  id: string;
+  tone: 'danger' | 'warning' | 'info';
+  title: string;
+  detail: string;
+  action: { label: string; href: string } | null;
+}
+
+export interface DashboardSummary {
+  period: {
+    /** "1–19 Sep 2026". */
+    label: string;
+    /** The workspace's zone, shown beside the period: "Asia/Dubai". */
+    timezone: string;
+    /** What the deltas compare against: "Aug". */
+    comparedTo: string;
+  };
+  usage: {
+    sent: number;
+    limit: number;
+    /** "74% · renews 1 Oct (12 days)" — the server owns the arithmetic. */
+    renewsLabel: string;
+    /** "Renews 1 Oct": the same fact at 390px, where the long one wraps (Cm). */
+    renewsShort: string;
+    /** D3: accepted but unconfirmed. Never billed, never hidden. */
+    uncertain: number;
+  };
+  /** Movement in percentage points against the previous period. */
+  deltas: { click: number | null; open: number | null };
+  /** The bounce meter's two tones, as rates. */
+  bounceSplit: { soft: number; hard: number } | null;
+  /** Where the complaint meter draws its auto-pause mark. 0.003 = 0.3%. */
+  complaintThreshold: number;
+  providers: DashboardProvider[];
+  campaigns: DashboardCampaign[];
+  attention: AttentionItem[];
+  /** The line under "Needs attention". Null when nothing was suppressed. */
+  suppressions: { applied: number; note: string } | null;
+}
+
+/**
+ * Per-connection delivery for one campaign (G4a, "Provider breakdown").
+ *
+ * BACKEND PENDING: `GET /analytics/campaigns/{id}/providers`.
+ */
+export interface CampaignProviderRow {
+  connectionId: string;
+  code: string;
+  name: string;
+  delivered: number;
+  bounceRate: number | null;
+  clickRate: number | null;
+  /** D3 again: shown per provider, because that is where the cause is. */
+  uncertain: number;
+}
+
+export interface CampaignProviderBreakdown {
+  /** "EU marketing pool", or null when one sender did the whole campaign. */
+  poolLabel: string | null;
+  /** "round-robin" — the pool's strategy, printed after its name. */
+  routing: string | null;
+  providers: CampaignProviderRow[];
+  /** The sentence under the list explaining an uncertain count. */
+  note: string | null;
+}
+
+/**
+ * Delivery per connection over a range — the Reports page's lower half.
+ *
+ * `provider_stats` is per connection and per day, so this is the one place
+ * in the product that can answer "is one of my providers dragging the rest
+ * down". The connection's *name* is not in it: the page joins `GET
+ * /providers` for that rather than have two services own one label.
+ */
+export interface ProviderStatsRow {
+  providerConnectionId: string;
+  sent: number;
+  delivered: number;
+  bouncedHard: number;
+  complained: number;
+  deliveryRate: Rate;
+  bounceRate: Rate;
+  complaintRate: Rate;
+}
+
+export interface ProviderBreakdown {
+  from: string;
+  to: string;
+  providers: ProviderStatsRow[];
+}
+
 export const analyticsApi = {
   overview: (range: { from?: string; to?: string } = {}) =>
     api.get<Overview>('/analytics/overview', range),
 
   campaign: (id: string) => api.get<CampaignAnalytics>(`/analytics/campaigns/${id}`),
 
-  timeseries: (id: string, range: { from?: string; to?: string } = {}) =>
-    api.get<{ from: string; to: string; points: DayPoint[] }>(
+  /**
+   * The campaign's buckets.
+   *
+   * `bucket: 'hour'` is what G4a's "Clicks over time · first 48 hours ·
+   * hourly" needs; the server buckets by day and ignores it today.
+   * BACKEND PENDING: `GET /analytics/campaigns/{id}/timeseries?bucket=hour`.
+   */
+  timeseries: (id: string, range: { from?: string; to?: string; bucket?: 'day' | 'hour' } = {}) =>
+    api.get<{ from: string; to: string; bucket?: 'day' | 'hour'; points: DayPoint[] }>(
       `/analytics/campaigns/${id}/timeseries`,
       range,
     ),
+
+  /** BACKEND PENDING: `GET /analytics/campaigns/{id}/providers`. */
+  campaignProviders: (id: string) =>
+    api.get<CampaignProviderBreakdown>(`/analytics/campaigns/${id}/providers`),
+
+  /** BACKEND PENDING: `GET /analytics/dashboard`. */
+  dashboard: () => api.get<DashboardSummary>('/analytics/dashboard'),
 
   links: (id: string) => api.get<{ links: LinkRow[] }>(`/analytics/campaigns/${id}/links`),
 
   devices: (id: string) => api.get<DeviceBreakdown>(`/analytics/campaigns/${id}/devices`),
 
   providers: (range: { from?: string; to?: string } = {}) =>
-    api.get<{ providers: { providerConnectionId: string; deliveryRate: Rate; bounceRate: Rate; complaintRate: Rate }[] }>(
-      '/analytics/providers',
-      range,
-    ),
+    api.get<ProviderBreakdown>('/analytics/providers', range),
 
   /** The export URL, for an anchor rather than a fetch. */
   exportUrl: (id: string, range: { from?: string; to?: string } = {}) => {
@@ -108,13 +291,26 @@ export const analyticsApi = {
   },
 };
 
+/**
+ * Query keys, prefixed with the workspace so a switch cannot serve one
+ * tenant's numbers to another from cache (docs/09).
+ */
 export const analyticsKeys = {
-  overview: (range: unknown) => ['analytics', 'overview', range] as const,
-  campaign: (id: string) => ['analytics', 'campaign', id] as const,
-  timeseries: (id: string, range: unknown) => ['analytics', 'timeseries', id, range] as const,
-  links: (id: string) => ['analytics', 'links', id] as const,
-  devices: (id: string) => ['analytics', 'devices', id] as const,
-  providers: (range: unknown) => ['analytics', 'providers', range] as const,
+  scoped: (workspaceId: string | null) => [workspaceId, 'analytics'] as const,
+  overview: (workspaceId: string | null, range: unknown) =>
+    [workspaceId, 'analytics', 'overview', range] as const,
+  dashboard: (workspaceId: string | null) => [workspaceId, 'analytics', 'dashboard'] as const,
+  campaign: (workspaceId: string | null, id: string) =>
+    [workspaceId, 'analytics', 'campaign', id] as const,
+  timeseries: (workspaceId: string | null, id: string, range: unknown) =>
+    [workspaceId, 'analytics', 'timeseries', id, range] as const,
+  links: (workspaceId: string | null, id: string) => [workspaceId, 'analytics', 'links', id] as const,
+  devices: (workspaceId: string | null, id: string) =>
+    [workspaceId, 'analytics', 'devices', id] as const,
+  campaignProviders: (workspaceId: string | null, id: string) =>
+    [workspaceId, 'analytics', 'campaign-providers', id] as const,
+  providers: (workspaceId: string | null, range: unknown) =>
+    [workspaceId, 'analytics', 'providers', range] as const,
 };
 
 /**
@@ -124,9 +320,33 @@ export const analyticsKeys = {
  * nothing has no click rate, and 0% says it performed badly when in fact it
  * has not been measured.
  */
-export function formatRate(rate: Rate | undefined): string {
+export function formatRate(rate: Rate | undefined, digits = 1): string {
   if (rate?.value == null) return '—';
-  return `${(rate.value * 100).toFixed(1)}%`;
+  return `${(rate.value * 100).toFixed(digits)}%`;
+}
+
+/**
+ * The same, for a rate that is small on purpose.
+ *
+ * One decimal turns a 0.08% complaint rate into "0.1%" — a third of the way
+ * to the 0.3% auto-pause threshold drawn right beneath it. The dashboard
+ * complaint card (C1) prints two decimals for exactly that reason.
+ */
+export function formatSmallRate(rate: Rate | undefined): string {
+  return formatRate(rate, 2);
+}
+
+/** A percentage from a plain fraction, for the derived numbers on a card. */
+export function formatFraction(value: number | null | undefined, digits = 1): string {
+  if (value == null) return '—';
+  return `${(value * 100).toFixed(digits)}%`;
+}
+
+/** "+0.4 pts vs Aug" / "−1.1 pts vs Aug". A true minus sign, as the frames draw. */
+export function formatDelta(points: number | null, comparedTo: string): string | null {
+  if (points === null) return null;
+  const sign = points < 0 ? '−' : '+';
+  return `${sign}${Math.abs(points).toFixed(1)} pts vs ${comparedTo}`;
 }
 
 /**

@@ -4,27 +4,84 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
+import { AuthProvider } from '../src/auth/AuthProvider.js';
 import { configureApi } from '../src/api/client.js';
 import { analyticsApi, formatRate, rateFootnote, type Rate } from '../src/api/analytics.js';
-import {
-  CampaignAnalyticsPage,
-  DashboardPage,
-  rangeFor,
-} from '../src/routes/analytics/analytics.js';
+import { DashboardPage, rangeFor } from '../src/routes/analytics/dashboard.js';
+import { CampaignAnalyticsPage } from '../src/routes/analytics/campaign.js';
+import { ReportsPage } from '../src/routes/analytics/reports.js';
 
 /**
- * The analytics pages.
+ * Section C — the dashboard (C1–C4, Cm), the campaign report (G4a, G4b) and
+ * the workspace report.
  *
  * docs/06 §13 is a product decision with engineering consequences, and these
- * are the consequences: the headline is the click rate, the open rate is
- * always labelled approximate, the bot-filtered count is text rather than a
- * tooltip, and the unknown device share is shown rather than apportioned.
+ * are the consequences, each tested where a customer would notice it being
+ * removed:
  *
- * All four are things a redesign would quietly remove, which is why they are
- * tested rather than left to review.
+ *   the click rate is the headline, and it is the only headline;
+ *   the open rate always says "approximate" and always carries a tilde;
+ *   the bot exclusions are stated in the interface, not in a tooltip;
+ *   delivery uncertain (D3) is its own number and never a bounce;
+ *   a rate with no denominator is an em dash, never 0%.
  */
 
-const responses = new Map<string, unknown>();
+const fetchMock = vi.fn();
+
+const MEMBERSHIPS = [
+  { workspaceId: 'ws-1', workspaceName: 'Northwind Voyages', workspaceSlug: 'northwind', role: 'owner' },
+];
+
+interface Stub {
+  path: string;
+  body: unknown;
+  status?: number;
+}
+
+/** Answers the stubs; anything unstubbed gets an empty list, never a 404. */
+function mockApi(stubs: Stub[]) {
+  // Longest path first, so `/campaigns/c1` cannot swallow
+  // `/analytics/campaigns/c1/links` and hand a page the wrong shape.
+  const ordered = [...stubs].sort((a, b) => b.path.length - a.path.length);
+
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.includes('/auth/refresh')) {
+      return json({ data: { accessToken: 't', memberships: MEMBERSHIPS } });
+    }
+
+    const stub = ordered.find((candidate) => url.includes(candidate.path));
+    if (stub === undefined) return json({ data: [] });
+
+    return json(stub.body, stub.status ?? 200);
+  });
+}
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function renderAt(ui: ReactNode, path: string) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[path]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/dashboard" element={<>{ui}</>} />
+            <Route path="/reports" element={<>{ui}</>} />
+            <Route path="/campaigns/:id/analytics" element={<>{ui}</>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/* ------------------------------------------------------------- fixtures -- */
 
 function rate(over: Partial<Rate> = {}): Rate {
   return {
@@ -38,69 +95,22 @@ function rate(over: Partial<Rate> = {}): Rate {
   };
 }
 
-beforeEach(() => {
-  configureApi({ baseUrl: '/api/v1' });
-  responses.clear();
-
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? 'GET';
-
-      // Longest first, so `/analytics/campaigns/c1` does not swallow
-      // `/analytics/campaigns/c1/links`.
-      const match = [...responses.entries()]
-        .filter(([pattern]) => {
-          const [patternMethod, patternPath] = pattern.split(' ');
-          return method === patternMethod && url.includes(String(patternPath));
-        })
-        .sort((a, b) => b[0].length - a[0].length)[0];
-
-      if (match === undefined) {
-        return new Response(
-          JSON.stringify({ error: { code: 'not_found', message: 'no stub', requestId: 'r' } }),
-          { status: 404, headers: { 'content-type': 'application/json' } },
-        );
-      }
-
-      return new Response(JSON.stringify({ data: match[1] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }),
-  );
-});
-
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
-
-function wrap(children: ReactNode, path = '/campaigns/c1/analytics') {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
-
-  return render(
-    <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route path="/dashboard" element={children} />
-          <Route path="/campaigns/:id/analytics" element={children} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
-}
+const POINT = {
+  day: '2026-09-17',
+  sent: 500,
+  delivered: 480,
+  bounced: 10,
+  complained: 1,
+  opensUniqueNonbot: 200,
+  clicksUnique: 90,
+  unsubscribed: 2,
+};
 
 const OVERVIEW = {
   from: '2026-08-19',
   to: '2026-09-18',
-  points: [
-    { day: '2026-09-17', sent: 500, delivered: 480, bounced: 10, complained: 1, opensUniqueNonbot: 200, clicksUnique: 90, unsubscribed: 2 },
-  ],
-  totals: { sent: 500, delivered: 480, bounced: 10, complained: 1, opensUniqueNonbot: 200, clicksUnique: 90, unsubscribed: 2 },
+  points: [POINT],
+  totals: { ...POINT, day: undefined },
   rates: {
     click: rate({ value: 0.1875 }),
     open: rate({ kind: 'open', value: 0.4167, confidence: 'directional', caveat: 'Privacy features inflate this.', botFiltered: 180 }),
@@ -110,46 +120,201 @@ const OVERVIEW = {
   headline: 'click',
 };
 
-const CAMPAIGN = {
-  campaignId: 'c1',
-  counts: {
-    recipients: 1000, sent: 950, failed: 40, suppressed: 8, deliveryUncertain: 12,
-    delivered: 900, bouncedHard: 20, bouncedSoft: 30, complained: 2, unsubscribed: 5,
-    opensTotal: 1200, opensUnique: 600, opensUniqueNonbot: 420,
-    clicksTotal: 300, clicksUnique: 180, clicksUniqueNonbot: 175,
-  },
+/** The overview of a workspace that has never sent: rates with no denominator. */
+const NOTHING_SENT = {
+  ...OVERVIEW,
+  points: [],
   rates: {
-    click: rate({ value: 0.1944 }),
-    open: rate({ kind: 'open', value: 0.4667, confidence: 'directional', caveat: 'Privacy features inflate this.', botFiltered: 180 }),
-    bounce: rate({ kind: 'bounce', value: 0.021 }),
-    complaint: rate({ kind: 'complaint', value: 0.002 }),
-    unsubscribe: rate({ kind: 'unsubscribe', value: 0.005 }),
-    delivery: rate({ kind: 'delivery', value: 0.947 }),
+    click: rate({ value: null, numerator: 0, denominator: 0 }),
+    open: rate({ kind: 'open', value: null, numerator: 0, denominator: 0, confidence: 'directional' }),
+    bounce: rate({ kind: 'bounce', value: null, numerator: 0, denominator: 0 }),
+    complaint: rate({ kind: 'complaint', value: null, numerator: 0, denominator: 0 }),
   },
-  headline: 'click',
-  computedAt: '2026-09-18T12:00:00.000Z',
-  computedBy: 'hourly',
 };
 
+const SUMMARY = {
+  period: { label: '1–19 Sep 2026', timezone: 'Asia/Dubai', comparedTo: 'Aug' },
+  usage: {
+    sent: 184_320,
+    limit: 250_000,
+    renewsLabel: '74% · renews 1 Oct (12 days)',
+    renewsShort: 'Renews 1 Oct',
+    uncertain: 412,
+  },
+  deltas: { click: 0.4, open: -1.1 },
+  bounceSplit: { soft: 0.006, hard: 0.003 },
+  complaintThreshold: 0.003,
+  providers: [
+    {
+      connectionId: 'prv_ses_eu1',
+      code: 'SES',
+      name: 'Amazon SES',
+      label: 'eu-west-1 · production',
+      health: 'healthy',
+      sentToday: 41_200,
+      dailyLimit: 50_000,
+    },
+  ],
+  campaigns: [
+    {
+      id: 'cmp_8f3k2a',
+      name: 'Autumn Escapes: Dubai → Santorini',
+      state: 'sending',
+      when: 'Started today, 09:00',
+      recipients: 48_213,
+      counts: { delivered: 29_876, pending: 16_595, sending: 1_240, uncertain: 180 },
+      clickRate: 0.04,
+    },
+  ],
+  attention: [
+    {
+      id: 'att_webhook',
+      tone: 'danger',
+      title: 'SendGrid · marketing webhook failing',
+      detail: 'No events received since 08:40 GST.',
+      action: { label: 'Fix connection', href: '/providers/prv_sg_mkt' },
+    },
+  ],
+  suppressions: { applied: 2_318, note: 'consent attested on all 4 imports' },
+};
+
+/** Onboarding is finished, so the dashboard shows no checklist (C1, C4). */
+const ONBOARDED: Stub[] = [
+  { path: '/providers', body: { data: [{ id: 'prv_ses_eu1', name: 'Amazon SES', status: 'active', createdAt: '2026-03-12T08:20:00.000Z', hasWebhookSecret: true }] } },
+  { path: '/senders', body: { data: [{ id: 'snd_hello', email: 'hello@northwind.travel', status: 'active' }] } },
+  { path: '/imports', body: { data: [{ id: 'imp_1', status: 'completed' }] } },
+  { path: '/campaigns', body: { data: { items: [{ id: 'cmp_8f3k2a', launchedAt: '2026-09-19T05:00:00.000Z' }] } } },
+];
+
+const CAMPAIGN = {
+  campaignId: 'cmp_7q1m9z',
+  counts: {
+    recipients: 22_870, sent: 22_870, failed: 0, suppressed: 246, deliveryUncertain: 335,
+    delivered: 22_241, bouncedHard: 87, bouncedSoft: 198, complained: 9, unsubscribed: 41,
+    opensTotal: 14_602, opensUnique: 11_124, opensUniqueNonbot: 9_920,
+    clicksTotal: 1_540, clicksUnique: 1_023, clicksUniqueNonbot: 1_023,
+  },
+  rates: {
+    click: rate({ value: 0.046, numerator: 1_023, denominator: 22_241 }),
+    open: rate({ kind: 'open', value: 0.446, confidence: 'directional', caveat: 'Privacy features inflate this.' }),
+    bounce: rate({ kind: 'bounce', value: 0.0125 }),
+    complaint: rate({ kind: 'complaint', value: 0.0004 }),
+    unsubscribe: rate({ kind: 'unsubscribe', value: 0.0018 }),
+    delivery: rate({ kind: 'delivery', value: 0.972 }),
+  },
+  headline: 'click',
+  computedAt: '2026-09-20T06:00:00.000Z',
+  computedBy: 'hourly',
+  comparison: { points: 0.8, label: 'your last 5 newsletters' },
+  botExcluded: 1_204,
+  proxyShare: 0.61,
+  sentLabel: 'Sent 8 Sep 2026, 10:00 GST',
+};
+
+const CAMPAIGN_ROW = {
+  campaign: {
+    id: 'cmp_7q1m9z',
+    name: 'September newsletter — EU edition',
+    status: 'completed',
+    recipientCount: 22_870,
+    timezone: 'Asia/Dubai',
+    launchedAt: '2026-09-08T06:00:00.000Z',
+    audience: {},
+    scheduledAt: null,
+    completedAt: null,
+    createdAt: '2026-09-01T06:00:00.000Z',
+    updatedAt: '2026-09-08T06:00:00.000Z',
+    subjectOverride: null,
+    templateVersionId: null,
+    senderAccountId: null,
+    sendingPoolId: null,
+  },
+  counters: null,
+};
+
+const CAMPAIGN_STUBS: Stub[] = [
+  { path: '/analytics/campaigns/cmp_7q1m9z/timeseries', body: { data: { from: '2026-09-08T06:00:00.000Z', to: '2026-09-10T05:00:00.000Z', bucket: 'hour', points: [{ ...POINT, day: '2026-09-08T06:00:00.000Z', clicksUnique: 292 }] } } },
+  {
+    path: '/analytics/campaigns/cmp_7q1m9z/links',
+    body: {
+      data: {
+        links: [
+          { linkId: 'lnk_santorini', url: 'https://northwind.travel/offers/santorini', position: 0, clicksTotal: 640, clicksUnique: 512, clicksUniqueNonbot: 512, clickRate: rate({ value: 0.023 }) },
+          { linkId: 'lnk_unsub', url: 'https://mail.northwind.travel/u/9f2c', label: 'Unsubscribe', position: 1, clicksTotal: 44, clicksUnique: 44, clicksUniqueNonbot: 44, clickRate: rate({ value: 0.002 }) },
+        ],
+      },
+    },
+  },
+  {
+    path: '/analytics/campaigns/cmp_7q1m9z/devices',
+    body: {
+      data: {
+        total: 9_920,
+        breakdown: [
+          { deviceType: 'mobile', clientFamily: 'Apple Mail', opens: 3_800, clicks: 430, share: 0.28, isUnknown: false },
+          { deviceType: 'desktop', clientFamily: 'Gmail', opens: 1_100, clicks: 120, share: 0.08, isUnknown: false },
+          { deviceType: 'desktop', clientFamily: 'unknown', opens: 900, clicks: 100, share: 0.06, isUnknown: true },
+        ],
+        unknownShare: 0.15,
+      },
+    },
+  },
+  {
+    path: '/analytics/campaigns/cmp_7q1m9z/providers',
+    body: {
+      data: {
+        poolLabel: 'EU marketing pool',
+        routing: 'round-robin',
+        providers: [
+          { connectionId: 'prv_ses_eu1', code: 'SES', name: 'Amazon SES · eu-west-1', delivered: 14_120, bounceRate: 0.008, clickRate: 0.048, uncertain: 0 },
+          { connectionId: 'prv_sg_mkt', code: 'SG', name: 'SendGrid · marketing', delivered: 8_121, bounceRate: 0.011, clickRate: 0.042, uncertain: 335 },
+        ],
+        note: "SendGrid's webhook was down for 22 minutes on 8 Sep; 335 sends could not be confirmed and are counted as delivery uncertain, not delivered.",
+      },
+    },
+  },
+  { path: '/campaigns/cmp_7q1m9z', body: { data: CAMPAIGN_ROW } },
+  { path: '/analytics/campaigns/cmp_7q1m9z', body: { data: CAMPAIGN } },
+];
+
+beforeEach(() => {
+  vi.stubGlobal('fetch', fetchMock);
+  fetchMock.mockReset();
+  configureApi({ baseUrl: '/api/v1' });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+/* ------------------------------------------------------------ dashboard -- */
+
 describe('the dashboard', () => {
+  function dashboardStubs(overview: unknown = OVERVIEW, summary: unknown = SUMMARY): Stub[] {
+    return [
+      { path: '/analytics/overview', body: { data: overview } },
+      { path: '/analytics/dashboard', body: { data: summary } },
+      ...ONBOARDED,
+    ];
+  }
+
   it('leads with the click rate', async () => {
-    responses.set('GET /analytics/overview', OVERVIEW);
+    mockApi(dashboardStubs());
+    renderAt(<DashboardPage />, '/dashboard');
 
-    wrap(<DashboardPage />, '/dashboard');
-
-    expect(await screen.findByText('Click rate')).toBeTruthy();
+    expect(await screen.findAllByText('Click rate')).toBeTruthy();
     expect(screen.getByText('18.8%')).toBeTruthy();
   });
 
   it('gives the click rate the headline treatment and nothing else', async () => {
-    // docs/06: click rate is what a campaign should be judged by. A dashboard
-    // where the open rate is equally prominent invites the decision that
-    // section exists to prevent.
-    responses.set('GET /analytics/overview', OVERVIEW);
+    // docs/06: the click rate is what a campaign should be judged by. A
+    // dashboard where the open rate is equally prominent invites the decision
+    // that section exists to prevent.
+    mockApi(dashboardStubs());
+    const { container } = renderAt(<DashboardPage />, '/dashboard');
 
-    const { container } = wrap(<DashboardPage />, '/dashboard');
-
-    await screen.findByText('Click rate');
+    await screen.findAllByText('Click rate');
 
     const headlines = container.querySelectorAll('[data-headline="true"]');
     expect(headlines).toHaveLength(1);
@@ -159,127 +324,282 @@ describe('the dashboard', () => {
   it('labels the open rate approximate, every time', async () => {
     // Not on hover. A customer who makes a decision on a number wrong by
     // 30-60% was misled by us, and a tooltip nobody opens is not a
-    // disclosure.
-    responses.set('GET /analytics/overview', OVERVIEW);
-
-    wrap(<DashboardPage />, '/dashboard');
+    // disclosure. The tilde says the same thing in the number itself.
+    mockApi(dashboardStubs());
+    renderAt(<DashboardPage />, '/dashboard');
 
     expect(await screen.findByText('approximate')).toBeTruthy();
+    expect(screen.getByText('~41.7%')).toBeTruthy();
+    expect(screen.getByText(/privacy proxies inflate this/u)).toBeTruthy();
   });
 
-  it('shows how many events the bot filter removed', async () => {
-    // The number that answers "why is this lower than my old tool".
-    responses.set('GET /analytics/overview', OVERVIEW);
+  it('shows the plan usage band with the uncertain sends beside it', async () => {
+    // D3: accepted but never confirmed. Unbilled, and never hidden — it is
+    // the number that explains a gap between "sent" and "delivered".
+    mockApi(dashboardStubs());
+    renderAt(<DashboardPage />, '/dashboard');
 
-    wrap(<DashboardPage />, '/dashboard');
-
-    expect(await screen.findByText(/180 automated events excluded/u)).toBeTruthy();
+    expect(await screen.findByText('Emails sent this period')).toBeTruthy();
+    expect(screen.getByText(/412 delivery uncertain · not billed/u)).toBeTruthy();
   });
 
-  it('offers a way in when nothing was sent', async () => {
-    responses.set('GET /analytics/overview', { ...OVERVIEW, points: [] });
+  it('shows an em dash rather than 0% before the first campaign', async () => {
+    // C3. A workspace that has sent nothing has no click rate; 0% says it
+    // performed badly rather than "not measured yet".
+    mockApi(dashboardStubs(NOTHING_SENT));
+    renderAt(<DashboardPage />, '/dashboard');
 
-    wrap(<DashboardPage />, '/dashboard');
+    await screen.findAllByText('Click rate');
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+    expect(screen.queryByText('0.0%')).toBeNull();
+    expect(screen.getAllByText(/Appears after your first campaign/u).length).toBeGreaterThan(0);
+  });
 
-    expect(await screen.findByText(/Nothing sent in this period/u)).toBeTruthy();
+  it('lists what needs attention, each with its way out', async () => {
+    mockApi(dashboardStubs());
+    renderAt(<DashboardPage />, '/dashboard');
+
+    expect(await screen.findByText('Needs attention')).toBeTruthy();
+    expect(screen.getByText('SendGrid · marketing webhook failing')).toBeTruthy();
+
+    const action = screen.getByText(/Fix connection/u).closest('a');
+    expect(action?.getAttribute('href')).toBe('/providers/prv_sg_mkt');
+  });
+
+  it('collapses the right-hand column when nothing needs attention', async () => {
+    // C4. A permanent "all clear" panel trains people to stop reading the
+    // place warnings appear.
+    mockApi(dashboardStubs(OVERVIEW, { ...SUMMARY, attention: [] }));
+    renderAt(<DashboardPage />, '/dashboard');
+
+    await screen.findAllByText('Click rate');
+    expect(screen.queryByText('Needs attention')).toBeNull();
+  });
+
+  it('shows the setup checklist until every step is done', async () => {
+    // C3. The checklist is the right-hand column of a workspace that has not
+    // finished connecting a provider and verifying a sender.
+    mockApi([
+      { path: '/analytics/overview', body: { data: NOTHING_SENT } },
+      { path: '/analytics/dashboard', body: { data: { ...SUMMARY, attention: [], campaigns: [] } } },
+      { path: '/providers', body: { data: [] } },
+      { path: '/senders', body: { data: [] } },
+      { path: '/imports', body: { data: [] } },
+      { path: '/campaigns', body: { data: { items: [] } } },
+    ]);
+    renderAt(<DashboardPage />, '/dashboard');
+
+    expect(await screen.findByText('Get set up')).toBeTruthy();
+    expect(screen.getByText(/This checklist stays here until all four steps are done/u)).toBeTruthy();
+  });
+
+  it('names what the recent-campaign bars count, and points at the campaign list', async () => {
+    mockApi(dashboardStubs());
+    renderAt(<DashboardPage />, '/dashboard');
+
+    expect(await screen.findAllByText('Recent campaigns')).toBeTruthy();
+    expect(screen.getAllByText('Autumn Escapes: Dubai → Santorini').length).toBeGreaterThan(0);
+    // The chart is about acceptance, never delivery (CLAUDE.md section 12).
+    expect(screen.getByText(/emails accepted by provider/u)).toBeTruthy();
+  });
+
+  it('offers a way in when there are no campaigns yet', async () => {
+    mockApi(dashboardStubs(NOTHING_SENT, { ...SUMMARY, campaigns: [] }));
+    renderAt(<DashboardPage />, '/dashboard');
+
+    expect(await screen.findAllByText('No campaigns yet')).toBeTruthy();
+  });
+
+  it('renders the whole page when the pending composition is missing', async () => {
+    // Only `/analytics/overview` is real today. The rates and the chart come
+    // from it, so a 404 on the pending half must cost the page its extras,
+    // not its numbers.
+    mockApi([
+      { path: '/analytics/overview', body: { data: OVERVIEW } },
+      { path: '/analytics/dashboard', body: { error: { code: 'not_found', message: 'no', requestId: 'req_1' } }, status: 404 },
+      ...ONBOARDED,
+    ]);
+    renderAt(<DashboardPage />, '/dashboard');
+
+    expect(await screen.findAllByText('Click rate')).toBeTruthy();
+    expect(screen.getByText('18.8%')).toBeTruthy();
+    expect(screen.queryByText('Emails sent this period')).toBeNull();
+  });
+
+  it('shows the request id when the overview itself fails', async () => {
+    mockApi([
+      { path: '/analytics/overview', body: { error: { code: 'internal', message: 'boom', requestId: 'req_7' } }, status: 500 },
+      ...ONBOARDED,
+    ]);
+    renderAt(<DashboardPage />, '/dashboard');
+
+    expect(await screen.findByText('req_7')).toBeTruthy();
   });
 });
 
-describe('the campaign analytics page', () => {
-  function stubAll() {
-    responses.set('GET /analytics/campaigns/c1', CAMPAIGN);
-    responses.set('GET /analytics/campaigns/c1/timeseries', { from: '2026-08-19', to: '2026-09-18', points: OVERVIEW.points });
-    responses.set('GET /analytics/campaigns/c1/links', {
-      links: [
-        {
-          linkId: 'l1', url: 'https://example.com/offer', position: 0,
-          clicksTotal: 200, clicksUnique: 120, clicksUniqueNonbot: 110,
-          clickRate: rate({ value: 0.122, botFiltered: 10 }),
-        },
-      ],
-    });
-    responses.set('GET /analytics/campaigns/c1/devices', {
-      total: 500,
-      breakdown: [
-        { deviceType: 'mobile', clientFamily: 'Apple Mail', opens: 300, clicks: 50, share: 0.6, isUnknown: false },
-        { deviceType: 'unknown', clientFamily: 'unknown', opens: 200, clicks: 5, share: 0.4, isUnknown: true },
-      ],
-      unknownShare: 0.4,
-    });
-  }
+/* ---------------------------------------------------- campaign analytics -- */
 
-  it('shows delivery uncertain as its own number', async () => {
-    stubAll();
-    wrap(<CampaignAnalyticsPage />);
+describe('the campaign report', () => {
+  it('states the bot exclusions in the interface', async () => {
+    // The number that answers "why is this lower than my old tool". G4a puts
+    // it in the header, beside the export, rather than in a footnote nobody
+    // scrolls to.
+    mockApi(CAMPAIGN_STUBS);
+    renderAt(<CampaignAnalyticsPage />, '/campaigns/cmp_7q1m9z/analytics');
 
-    expect(await screen.findByText('Delivery uncertain')).toBeTruthy();
-    expect(screen.getByText('12')).toBeTruthy();
-    expect(screen.getByText(/Not charged/u)).toBeTruthy();
+    expect(await screen.findByText(/Excluded: 1,204 bot events/u)).toBeTruthy();
   });
 
-  it('says which rollup pass produced the numbers', async () => {
-    stubAll();
-    wrap(<CampaignAnalyticsPage />);
+  it('shows delivery uncertain against the provider that caused it', async () => {
+    // D3: unbilled, terminal, and never folded into the bounce count.
+    mockApi(CAMPAIGN_STUBS);
+    renderAt(<CampaignAnalyticsPage />, '/campaigns/cmp_7q1m9z/analytics');
 
-    expect(await screen.findByText(/Last recomputed/u)).toBeTruthy();
+    expect(await screen.findByText('SendGrid · marketing')).toBeTruthy();
+    expect(screen.getByText('335 uncertain')).toBeTruthy();
+    expect(screen.getByText('0 uncertain')).toBeTruthy();
+    expect(screen.getByText(/counted as delivery uncertain, not delivered/u)).toBeTruthy();
   });
 
-  it('says so differently while a send is live', async () => {
-    stubAll();
-    responses.set('GET /analytics/campaigns/c1', { ...CAMPAIGN, computedBy: 'incremental' });
+  it('draws the funnel from sent to clicked', async () => {
+    mockApi(CAMPAIGN_STUBS);
+    renderAt(<CampaignAnalyticsPage />, '/campaigns/cmp_7q1m9z/analytics');
 
-    wrap(<CampaignAnalyticsPage />);
-
-    expect(await screen.findByText(/Updating live/u)).toBeTruthy();
+    expect(await screen.findByText('Funnel')).toBeTruthy();
+    expect(screen.getByText('Sent')).toBeTruthy();
+    expect(screen.getByText('Delivered')).toBeTruthy();
+    expect(screen.getByText('Clicked')).toBeTruthy();
+    expect(screen.getByText('22,241')).toBeTruthy();
   });
 
-  it('shows the automated clicks removed per link', async () => {
-    stubAll();
-    wrap(<CampaignAnalyticsPage />);
+  it('says where the open rate comes from, every time', async () => {
+    mockApi(CAMPAIGN_STUBS);
+    renderAt(<CampaignAnalyticsPage />, '/campaigns/cmp_7q1m9z/analytics');
 
-    const links = await screen.findByText('https://example.com/offer');
-    expect(links).toBeTruthy();
-    expect(screen.getByText(/10 automated/u)).toBeTruthy();
+    expect(await screen.findByText('approximate')).toBeTruthy();
+    expect(screen.getByText('~44.6%')).toBeTruthy();
+    expect(screen.getByText(/61% from Apple Mail proxies/u)).toBeTruthy();
   });
 
-  it('warns when a large share of opens came through a privacy proxy', async () => {
+  it('prints the campaign, its state and when it was sent', async () => {
+    mockApi(CAMPAIGN_STUBS);
+    renderAt(<CampaignAnalyticsPage />, '/campaigns/cmp_7q1m9z/analytics');
+
+    expect(await screen.findByText('September newsletter — EU edition')).toBeTruthy();
+    expect(screen.getByText('Completed')).toBeTruthy();
+    expect(screen.getByText(/Sent 8 Sep 2026, 10:00 GST · 22,870 recipients · EU marketing pool/u)).toBeTruthy();
+  });
+
+  it('names a template link rather than printing its signed URL', async () => {
+    mockApi(CAMPAIGN_STUBS);
+    renderAt(<CampaignAnalyticsPage />, '/campaigns/cmp_7q1m9z/analytics');
+
+    expect(await screen.findByText('Unsubscribe')).toBeTruthy();
+    expect(screen.queryByText(/mail.northwind.travel\/u\/9f2c/u)).toBeNull();
+    expect(screen.getByText('northwind.travel/offers/santorini')).toBeTruthy();
+  });
+
+  it('keeps the proxied share of clients as its own row', async () => {
     // Shown rather than apportioned away. A chart that hides it flatters us
     // in proportion to how private the audience is.
-    stubAll();
-    wrap(<CampaignAnalyticsPage />);
+    mockApi(CAMPAIGN_STUBS);
+    renderAt(<CampaignAnalyticsPage />, '/campaigns/cmp_7q1m9z/analytics');
 
-    expect(await screen.findByText(/privacy proxy/u)).toBeTruthy();
-    expect(screen.getByText(/is normal and is not an error/u)).toBeTruthy();
-  });
-
-  it('does not warn when the unknown share is small', async () => {
-    stubAll();
-    responses.set('GET /analytics/campaigns/c1/devices', {
-      total: 500,
-      breakdown: [
-        { deviceType: 'mobile', clientFamily: 'Apple Mail', opens: 495, clicks: 50, share: 0.99, isUnknown: false },
-        { deviceType: 'unknown', clientFamily: 'unknown', opens: 5, clicks: 0, share: 0.01, isUnknown: true },
-      ],
-      unknownShare: 0.01,
-    });
-
-    wrap(<CampaignAnalyticsPage />);
-
-    await screen.findByText('Devices and clients');
-    expect(screen.queryByText(/privacy proxy/u)).toBeNull();
+    expect(await screen.findByText('Email client')).toBeTruthy();
+    expect(screen.getByText('Unknown or proxied')).toBeTruthy();
   });
 
   it('offers a CSV export as a link, not a fetch', async () => {
     // The browser handles Content-Disposition and the filename; a blob would
     // lose both.
-    stubAll();
-    wrap(<CampaignAnalyticsPage />);
+    mockApi(CAMPAIGN_STUBS);
+    renderAt(<CampaignAnalyticsPage />, '/campaigns/cmp_7q1m9z/analytics');
 
-    const link = await screen.findByText('Export CSV');
-    expect(link.getAttribute('href')).toContain('/export.csv');
-    expect(link.hasAttribute('download')).toBe(true);
+    const link = (await screen.findByText('Export CSV')).closest('a');
+    expect(link?.getAttribute('href')).toContain('/export.csv');
+    expect(link?.hasAttribute('download')).toBe(true);
+  });
+
+  it('shows the request id when the report fails', async () => {
+    mockApi([
+      { path: '/analytics/campaigns/cmp_7q1m9z', body: { error: { code: 'internal', message: 'boom', requestId: 'req_9' } }, status: 500 },
+    ]);
+    renderAt(<CampaignAnalyticsPage />, '/campaigns/cmp_7q1m9z/analytics');
+
+    expect(await screen.findByText('req_9')).toBeTruthy();
   });
 });
+
+/* -------------------------------------------------------------- reports -- */
+
+describe('the reports page', () => {
+  const REPORT_STUBS: Stub[] = [
+    { path: '/analytics/overview', body: { data: OVERVIEW } },
+    { path: '/analytics/dashboard', body: { data: SUMMARY } },
+    {
+      path: '/analytics/providers',
+      body: {
+        data: {
+          from: '2026-08-19',
+          to: '2026-09-18',
+          providers: [
+            {
+              providerConnectionId: 'prv_ses_eu1',
+              sent: 128_410, delivered: 127_190, bouncedHard: 612, complained: 96,
+              deliveryRate: rate({ kind: 'delivery', value: 0.99 }),
+              bounceRate: rate({ kind: 'bounce', value: 0.005 }),
+              complaintRate: rate({ kind: 'complaint', value: 0.0008 }),
+            },
+          ],
+        },
+      },
+    },
+    { path: '/providers', body: { data: [{ id: 'prv_ses_eu1', name: 'eu-west-1 · production', status: 'active' }] } },
+  ];
+
+  it('names each connection rather than showing its id', async () => {
+    mockApi(REPORT_STUBS);
+    renderAt(<ReportsPage />, '/reports');
+
+    expect(await screen.findByText('Delivery by provider')).toBeTruthy();
+    expect(screen.getByText('eu-west-1 · production')).toBeTruthy();
+    expect(screen.queryByText('prv_ses_eu1')).toBeNull();
+  });
+
+  it('calls an accepted email accepted, not delivered', async () => {
+    // A provider's accept is an accept (CLAUDE.md section 12), and the two
+    // numbers on the row are deliberately different things.
+    mockApi(REPORT_STUBS);
+    renderAt(<ReportsPage />, '/reports');
+
+    expect(await screen.findByText('128,410 accepted')).toBeTruthy();
+    expect(screen.getByText(/99.0% delivered · 0.5% bounce · 0.08% complaint/u)).toBeTruthy();
+    expect(screen.getByText(/Accepted by the provider, not delivered to a mailbox/u)).toBeTruthy();
+  });
+
+  it('offers a way in when nothing was sent in the period', async () => {
+    mockApi([
+      { path: '/analytics/overview', body: { data: NOTHING_SENT } },
+      ...REPORT_STUBS.slice(1),
+    ]);
+    renderAt(<ReportsPage />, '/reports');
+
+    expect(await screen.findByText('Nothing sent in this period')).toBeTruthy();
+    expect(screen.getByText('Create campaign').getAttribute('href')).toBe('/campaigns/new');
+  });
+
+  it('shows the request id when the overview fails', async () => {
+    mockApi([
+      { path: '/analytics/overview', body: { error: { code: 'internal', message: 'boom', requestId: 'req_3' } }, status: 500 },
+      ...REPORT_STUBS.slice(1),
+    ]);
+    renderAt(<ReportsPage />, '/reports');
+
+    expect(await screen.findByText('req_3')).toBeTruthy();
+  });
+});
+
+/* ------------------------------------------------------------ formatting -- */
 
 describe('formatting a rate', () => {
   it('shows a percentage to one decimal', () => {

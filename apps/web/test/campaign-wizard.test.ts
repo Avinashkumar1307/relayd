@@ -4,8 +4,12 @@ import {
   WIZARD_STEPS,
   canLaunch,
   isEditable,
+  launchBlockedReason,
   preflight,
+  preflightSummary,
+  stepIndexFor,
   stepsWithIssues,
+  type PreflightCheck,
   type PreflightInput,
 } from '../src/routes/campaigns/wizard-steps.js';
 
@@ -323,5 +327,123 @@ describe('what the UI says about each state', () => {
 
   it('does not call a partial failure a success', () => {
     expect(STATUS_LABELS.completed_with_errors.label).not.toBe('Completed');
+  });
+});
+
+/* ------------------------------------------------- the step in the URL -- */
+
+describe('the step named in the URL', () => {
+  it('resolves every slug the wizard links to', () => {
+    for (const [index, step] of WIZARD_STEPS.entries()) {
+      expect(stepIndexFor(step.slug), step.slug).toBe(index);
+    }
+  });
+
+  it('lands on step one for a slug that means nothing', () => {
+    // The URL is shareable, so a truncated paste is a normal way to arrive.
+    // An error page here would lose a half-written campaign to a bad link.
+    expect(stepIndexFor('audienec')).toBe(0);
+    expect(stepIndexFor(undefined)).toBe(0);
+  });
+
+  it('gives every step a distinct slug', () => {
+    const slugs = WIZARD_STEPS.map((step) => step.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+  });
+
+  it("uses the design's labels, in the design's order", () => {
+    expect(WIZARD_STEPS.map((step) => step.label)).toEqual([
+      'Details',
+      'Audience',
+      'Sender & pool',
+      'Content',
+      'Tracking & compliance',
+      'Schedule',
+      'Review',
+    ]);
+  });
+});
+
+/* -------------------------------------------------- the pre-flight badge -- */
+
+function check(outcome: PreflightCheck['outcome'], key: string = outcome): PreflightCheck {
+  return { key, outcome, title: key, detail: '' };
+}
+
+describe('the pre-flight summary badge', () => {
+  it("counts each outcome, in the design's wording", () => {
+    const label = preflightSummary([
+      check('fail'),
+      check('warn'),
+      check('pass', 'a'),
+      check('pass', 'b'),
+    ]).label;
+
+    expect(label).toBe('1 fail · 1 warning · 2 pass');
+  });
+
+  it('pluralises warnings but never "pass"', () => {
+    expect(preflightSummary([check('warn', 'a'), check('warn', 'b')]).label).toContain('2 warnings');
+    expect(preflightSummary([check('pass')]).label).toContain('1 pass');
+  });
+
+  it('is danger while anything fails, warning while anything warns', () => {
+    expect(preflightSummary([check('fail'), check('warn')]).tone).toBe('danger');
+    expect(preflightSummary([check('warn'), check('pass')]).tone).toBe('warning');
+    expect(preflightSummary([check('pass')]).tone).toBe('success');
+  });
+});
+
+/* ------------------------------------------------------ why launch is off -- */
+
+describe('why the launch button is disabled', () => {
+  const ready = {
+    checks: [check('pass'), check('warn')],
+    consentAttested: true,
+    canLaunchPermission: true,
+    readOnly: false,
+  };
+
+  it('is enabled when every check passes and consent is attested', () => {
+    // A warning does not block: leaning on one pool member is normal, and a
+    // pre-flight that refused every imperfect send would be turned off.
+    expect(launchBlockedReason(ready)).toBeNull();
+  });
+
+  it('names the failing check first', () => {
+    expect(launchBlockedReason({ ...ready, checks: [check('fail')] })).toBe(
+      'Clear the failing check first',
+    );
+  });
+
+  it('names the missing attestation', () => {
+    expect(launchBlockedReason({ ...ready, consentAttested: false })).toBe(
+      'Confirm consent in step 5',
+    );
+  });
+
+  it('tells an Editor what happens instead of just refusing', () => {
+    // campaign:launch is separate from campaign:write (CLAUDE.md §11). An
+    // editor who is only told "no" opens a ticket; one who is told the
+    // request goes to an Owner asks the Owner.
+    const reason = launchBlockedReason({ ...ready, canLaunchPermission: false });
+    expect(reason).toContain('Editors cannot launch');
+    expect(reason).toContain('Owner');
+  });
+
+  it('puts permission before everything else', () => {
+    // An editor looking at a failing check should still be told the thing
+    // they cannot change, not the thing they can.
+    const reason = launchBlockedReason({
+      ...ready,
+      canLaunchPermission: false,
+      checks: [check('fail')],
+      consentAttested: false,
+    });
+    expect(reason).toContain('Editors cannot launch');
+  });
+
+  it('refuses a read-only workspace in its own words', () => {
+    expect(launchBlockedReason({ ...ready, readOnly: true })).toBe('Workspace is read-only');
   });
 });

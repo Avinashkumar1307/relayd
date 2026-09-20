@@ -1,4 +1,5 @@
 import { api } from './client.js';
+import type { SegmentCounts } from '@relayd/ui';
 
 /** Campaign and sending-pool endpoints. */
 
@@ -17,6 +18,16 @@ export type CampaignStatus =
   | 'held'
   | 'failed';
 
+/** The banner G3b and G3c draw above the campaign, when it has one. */
+export interface CampaignHold {
+  tone: 'warning' | 'danger';
+  icon: 'lock' | 'alert';
+  title: string;
+  body: string;
+  actionLabel: string;
+  actionHref: string;
+}
+
 export interface Campaign {
   id: string;
   name: string;
@@ -33,6 +44,27 @@ export interface Campaign {
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+
+  // ---- BACKEND PENDING: GET /campaigns returns none of these yet ---------
+  // G1 draws one row per campaign with its segmented bar, its click rate and
+  // the sentence under the name. Every one of those is a counter or a label
+  // the list endpoint does not carry today; computing them in the browser
+  // would mean a progress call per row, which is the `COUNT(*)`-in-a-request
+  // problem wearing a different hat (CLAUDE.md section 12).
+  /** The segmented bar's buckets, from `campaign_counters`. Never a COUNT(*). */
+  counts?: SegmentCounts;
+  /** Unique clickers. `null` while nothing has been delivered. */
+  clicks?: number | null;
+  /** G1's "Scheduled / sent" cell: "Started today, 09:00", "Held since 17 Sep". */
+  whenLabel?: string;
+  /** G1's "Sender" cell: the from address, or the pool's name. */
+  senderLabel?: string;
+  /** The second line under the name when there is one: "Held by billing". */
+  note?: string | null;
+  /** G3's meta line: "Launched 19 Sep 2026, 09:00 GST by Farah Al-Mansoori · …". */
+  metaLabel?: string;
+  /** The banner above a held or auto-paused campaign (G3b, G3c). */
+  hold?: CampaignHold | null;
 }
 
 export interface CampaignProgress {
@@ -48,6 +80,15 @@ export interface CampaignProgress {
   complete: boolean;
   /** D3: terminal, unbilled, and its own number — never folded into failures. */
   deliveryUncertain: number;
+
+  // ---- BACKEND PENDING: GET /campaigns/:id/progress ----------------------
+  // G3's progress card and its six stat tiles read delivered, bounced and
+  // complained separately; `sent` alone cannot draw them.
+  counts?: SegmentCounts;
+  /** Unique clickers, for the headline click rate. */
+  clicks?: number | null;
+  /** "~38.1%" — always rendered with the approximate marker beside it. */
+  openRate?: number | null;
 }
 
 export interface AudiencePreview {
@@ -70,6 +111,23 @@ export interface Recipient {
   attemptCount: number;
   errorCode: string | null;
   sentAt: string | null;
+
+  // ---- BACKEND PENDING: GET /campaigns/:id/recipients --------------------
+  /** G3's "Provider message ID" column — the join to the provider's own log. */
+  providerMessageId?: string | null;
+  /** G3's "Last event" column: "Mailbox full · retry 13:15". */
+  lastEvent?: string | null;
+  /** G3's "Sender used" column: "offers@ · SendGrid". */
+  senderUsed?: string | null;
+}
+
+export interface TimelineEvent {
+  id: string;
+  title: string;
+  /** "11:02", "18 Sep, 16:20" — already in the workspace's timezone. */
+  time: string;
+  detail: string;
+  tone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral';
 }
 
 export interface PoolMemberHealth {
@@ -90,6 +148,20 @@ export interface PoolHealth {
   wouldHold: boolean;
 }
 
+/** A row of `GET /pools`, as the wizard's step 3 needs to draw it. */
+export interface PoolSummary {
+  id: string;
+  name: string;
+  strategy: string;
+
+  // ---- BACKEND PENDING: GET /pools --------------------------------------
+  /** "Round-robin · hello@ (SES) + offers@ (SendGrid) · 64 emails/s combined". */
+  detail?: string;
+  /** Today's remaining provider quota across the members, and its ceiling. */
+  headroomLeft?: number | null;
+  headroomTotal?: number | null;
+}
+
 export const campaignsApi = {
   list: (query: { state?: string; search?: string } = {}) =>
     api.get<{ items: Campaign[]; nextCursor: string | null }>('/campaigns', query),
@@ -102,16 +174,24 @@ export const campaignsApi = {
   recipients: (id: string, query: { state?: string; search?: string } = {}) =>
     api.get<{ items: Recipient[]; nextCursor: string | null }>(`/campaigns/${id}/recipients`, query),
 
+  /** BACKEND PENDING: GET /campaigns/:id/timeline — G3's "Event timeline". */
+  timeline: (id: string) => api.get<TimelineEvent[]>(`/campaigns/${id}/timeline`),
+
   create: (input: { name: string }) => api.post<Campaign>('/campaigns', input),
 
   update: (id: string, input: Record<string, unknown>) =>
     api.patch<Campaign>(`/campaigns/${id}`, input),
 
-  previewAudience: (input: { listIds: string[]; segmentIds?: string[] }) =>
+  remove: (id: string) => api.delete<void>(`/campaigns/${id}`),
+
+  clone: (id: string, name?: string) =>
+    api.post<Campaign>(`/campaigns/${id}/clone`, name === undefined ? {} : { name }),
+
+  previewAudience: (input: { listIds: string[]; segmentIds?: string[]; excludeListIds?: string[] }) =>
     api.post<AudiencePreview>('/campaigns/audience-preview', {
       listIds: input.listIds,
       segmentIds: input.segmentIds ?? [],
-      excludeListIds: [],
+      excludeListIds: input.excludeListIds ?? [],
     }),
 
   schedule: (id: string, input: { scheduledAt: string; timezone: string }) =>
@@ -123,6 +203,10 @@ export const campaignsApi = {
    * The key is minted here rather than by the server precisely because a
    * retry has to reuse it — a server-minted key would be a new key on every
    * attempt, which is the same as having none (F29).
+   *
+   * An API key can never reach this: the route carries `refuseApiKey()` on
+   * top of `campaign:launch`, because a consent attestation has to be
+   * attributable to a person (CLAUDE.md section 11).
    */
   launch: (id: string, idempotencyKey: string, consent: { source: string; detail?: string }) =>
     api.post<LaunchResult>(`/campaigns/${id}/launch`, { consent }, {
@@ -140,17 +224,36 @@ export const campaignsApi = {
 };
 
 export const poolsApi = {
-  list: () => api.get<{ id: string; name: string; strategy: string }[]>('/pools'),
+  list: () => api.get<PoolSummary[]>('/pools'),
   health: (id: string) => api.get<PoolHealth>(`/pools/${id}/health`),
 };
 
+/**
+ * Query keys, prefixed with the workspace so a switch cannot serve one
+ * tenant's campaigns to another from cache.
+ */
 export const campaignKeys = {
+  /**
+   * Unscoped, and deliberately still a tuple: `components/onboarding-checklist`
+   * spreads it (`[...campaignKeys.all, …]`) and is a shared contract this
+   * section does not own. Every key below is workspace-prefixed; this one is
+   * the checklist's own namespace and is invalidated alongside them.
+   */
   all: ['campaigns'] as const,
-  one: (id: string) => ['campaigns', id] as const,
-  progress: (id: string) => ['campaigns', id, 'progress'] as const,
-  recipients: (id: string, query: unknown) => ['campaigns', id, 'recipients', query] as const,
-  audiencePreview: (listIds: string[]) => ['campaigns', 'audience-preview', listIds] as const,
-  poolHealth: (id: string) => ['pools', id, 'health'] as const,
+  scoped: (workspaceId: string | null) => [workspaceId, 'campaigns'] as const,
+  list: (workspaceId: string | null, query: unknown) =>
+    [workspaceId, 'campaigns', 'list', query] as const,
+  one: (workspaceId: string | null, id: string) => [workspaceId, 'campaigns', id] as const,
+  progress: (workspaceId: string | null, id: string) =>
+    [workspaceId, 'campaigns', id, 'progress'] as const,
+  recipients: (workspaceId: string | null, id: string, query: unknown) =>
+    [workspaceId, 'campaigns', id, 'recipients', query] as const,
+  timeline: (workspaceId: string | null, id: string) =>
+    [workspaceId, 'campaigns', id, 'timeline'] as const,
+  audiencePreview: (workspaceId: string | null, selection: unknown) =>
+    [workspaceId, 'campaigns', 'audience-preview', selection] as const,
+  pools: (workspaceId: string | null) => [workspaceId, 'pools'] as const,
+  poolHealth: (workspaceId: string | null, id: string) => [workspaceId, 'pools', id, 'health'] as const,
 };
 
 /**
@@ -185,16 +288,17 @@ const TRANSIENT: ReadonlySet<CampaignStatus> = new Set([
 /**
  * What the UI is allowed to say about a campaign's state.
  *
- * Written out rather than prettified from the enum, because several of these
- * need to say more than their name does. `held` in particular: a customer who
- * reads "Held" learns nothing, and a customer who reads that it will resume by
- * itself does not open a ticket.
+ * The labels and tones themselves live in `@relayd/ui`'s `CAMPAIGN_STATES`,
+ * which mirrors `design/relayd-ui.js`. What is here is only the *hint*: the
+ * sentence a state needs when its name does not carry its meaning. `held` in
+ * particular — a customer who reads "Held" learns nothing, and a customer who
+ * reads that it will resume by itself does not open a ticket.
  */
 export const STATUS_LABELS: Readonly<Record<CampaignStatus, { label: string; hint?: string }>> = {
   draft: { label: 'Draft' },
   scheduled: { label: 'Scheduled' },
-  validating: { label: 'Checking', hint: 'Taking a snapshot of the audience' },
-  queueing: { label: 'Starting', hint: 'Queueing the first recipients' },
+  validating: { label: 'Validating', hint: 'Taking a snapshot of the audience' },
+  queueing: { label: 'Queueing', hint: 'Queueing the first recipients' },
   sending: { label: 'Sending' },
   pausing: { label: 'Pausing', hint: 'Messages already at the provider will finish' },
   paused: { label: 'Paused' },
@@ -206,8 +310,105 @@ export const STATUS_LABELS: Readonly<Record<CampaignStatus, { label: string; hin
     hint: 'Some recipients could not be delivered to',
   },
   held: {
-    label: 'On hold',
+    label: 'Held',
     hint: 'Paused automatically — it will resume by itself once the reason clears',
   },
   failed: { label: 'Failed' },
 };
+
+/**
+ * G1's tabs, from the `TABS` table at the foot of `design/G Campaigns.dc.html`.
+ *
+ * Copied key for key rather than derived, because the groupings are a
+ * product decision and not a property of the state machine: `held` is filed
+ * under Scheduled because that is what a held campaign is waiting to be, and
+ * `cancelled` and `failed` are filed under Completed because they are over.
+ */
+export interface CampaignTab {
+  key: string;
+  label: string;
+  /** `null` is "All". */
+  states: readonly CampaignStatus[] | null;
+}
+
+export const CAMPAIGN_TABS: readonly CampaignTab[] = [
+  { key: 'all', label: 'All', states: null },
+  { key: 'drafts', label: 'Drafts', states: ['draft'] },
+  { key: 'scheduled', label: 'Scheduled', states: ['scheduled', 'held'] },
+  { key: 'sending', label: 'Sending', states: ['sending', 'validating', 'queueing', 'pausing', 'paused'] },
+  {
+    key: 'completed',
+    label: 'Completed',
+    states: ['completed', 'completed_with_errors', 'cancelled', 'failed'],
+  },
+];
+
+/**
+ * The row menu, per state, from the same script's `ACTIONS` map.
+ *
+ * Verbatim, including the two places it says "Duplicate" where a neighbour
+ * says "Clone" — the wording differs per state in the design and changing it
+ * here would be inventing copy.
+ */
+export const CAMPAIGN_ACTIONS: Readonly<Record<string, readonly string[]>> = {
+  draft: ['Edit', 'Duplicate', 'Delete'],
+  scheduled: ['Edit schedule', 'Unschedule', 'Duplicate'],
+  sending: ['Pause', 'Cancel', 'Clone'],
+  validating: ['Cancel'],
+  paused: ['Resume', 'Cancel', 'Clone'],
+  held: ['Update payment method', 'Cancel', 'Duplicate'],
+  completed: ['View analytics', 'Duplicate', 'Archive'],
+  completed_with_errors: ['Retry failed', 'View analytics', 'Duplicate'],
+  cancelled: ['Duplicate', 'Archive'],
+  failed: ['Retry', 'Duplicate', 'Archive'],
+};
+
+/** The design's fallback for a state the map does not name. */
+export const DEFAULT_CAMPAIGN_ACTIONS: readonly string[] = ['Duplicate'];
+
+export function actionsFor(status: CampaignStatus): readonly string[] {
+  return CAMPAIGN_ACTIONS[status] ?? DEFAULT_CAMPAIGN_ACTIONS;
+}
+
+/** `/Cancel|Delete/` — the design's own test for a destructive menu item. */
+export function isDestructiveAction(label: string): boolean {
+  return /Cancel|Delete/u.test(label);
+}
+
+/**
+ * G3's recipient filter chips, from the script's `RSTATE_FILTERS`.
+ *
+ * The state names are `campaign_recipients.state` values, so a chip filters
+ * by what the API returns rather than by a display word.
+ */
+export interface RecipientFilter {
+  key: string;
+  label: string;
+  states: readonly string[] | null;
+}
+
+export const RECIPIENT_FILTERS: readonly RecipientFilter[] = [
+  { key: 'all', label: 'All', states: null },
+  { key: 'delivered', label: 'Delivered', states: ['delivered'] },
+  { key: 'pending', label: 'Pending', states: ['pending', 'queued', 'sending'] },
+  {
+    key: 'bounced',
+    label: 'Bounced',
+    states: ['soft_bounced', 'hard_bounced', 'complained', 'failed'],
+  },
+  { key: 'uncertain', label: 'Uncertain', states: ['delivery_uncertain'] },
+];
+
+/**
+ * The click rate, exactly as `design/relayd-ui.js` computes it: unique
+ * clickers over delivered, one decimal, an em dash when either is missing.
+ *
+ * Over *delivered*, not over sent. Dividing by sent understates every
+ * campaign by its bounce rate, and the headline metric of the product should
+ * not move when a provider changes how it reports bounces.
+ */
+export function clickRate(clicks: number | null | undefined, delivered: number | undefined): string {
+  if (clicks === null || clicks === undefined) return '—';
+  if (delivered === undefined || delivered === 0) return '—';
+  return `${((clicks / delivered) * 100).toFixed(1)}%`;
+}

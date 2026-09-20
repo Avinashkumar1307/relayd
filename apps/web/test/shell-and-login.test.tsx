@@ -95,7 +95,8 @@ describe('the shell, signed in as an editor', () => {
     const crumbs = await screen.findByRole('navigation', { name: 'Breadcrumb' });
     expect(within(crumbs).getByText('NV')).toBeTruthy();
     expect(within(crumbs).getByText('Northwind Voyages')).toBeTruthy();
-    expect(within(crumbs).getByText('Campaigns')).toBeTruthy();
+    // The frames write the crumb as group then page: "Sending / Campaigns".
+    expect(within(crumbs).getByText('Sending / Campaigns')).toBeTruthy();
   });
 
   it('lists the other workspace in the switcher', async () => {
