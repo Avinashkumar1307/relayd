@@ -13,6 +13,7 @@
     { "path": "./packages/queue" },
     { "path": "./packages/testing" },
     { "path": "./packages/types" },
+    { "path": "./packages/ui" },
     { "path": "./packages/utils" },
     { "path": "./packages/validation" },
     { "path": "./apps/api" },

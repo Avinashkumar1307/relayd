@@ -2034,6 +2034,37 @@ migration says so in a comment, and
 `packages/testing/test/rls-coverage.isolation.test.ts` requires the exemption
 to be written down rather than inferred from the absence of a policy.
 
+### 2026-09-20 - the shell and shared components live in `packages/ui`, not `apps/web`
+
+docs/09 "Directory structure" puts the shell in `apps/web/src/components/layout/`
+(`AppShell, Sidebar, WorkspaceSwitcher, BillingBanner`) and the primitives in
+`apps/web/src/components/ui/`. CLAUDE.md section 15, added with the design
+handoff, says: "Build the shell and the components on the design-system sheet
+once, as `packages/ui`, and reuse them on every page." CLAUDE.md outranks
+docs/09, so `packages/ui` it is.
+
+The package is presentational and router-agnostic - the shell takes a `Link`
+component and `currentPath` rather than importing React Router - which is
+what docs/09 meant by "presentational only" and is also what makes it
+renderable in a test without a router.
+
+Tokens are `packages/ui/src/tokens.css`, imported by `apps/web/src/index.css`.
+The handoff said "the Tailwind config"; this repository is Tailwind v4, where
+the config is CSS, so the import is the config. The sheet resets Tailwind's
+default palette, type scale and radii to `initial` before declaring the
+design's own, so a utility for a colour or size the design does not have
+does not exist. That is "do not invent colours, type sizes, spacing or radii"
+enforced by tooling rather than by review.
+
+### 2026-09-20 - the design export commit type
+
+The handoff asked for the message `design: complete UI reference for all
+sections A-K (Claude Design export)`. commitlint (docs/13, enforced since
+Phase 1) rejects `design` as a type, so it landed as `docs(design): ...` with
+the wording kept. `design/**` is excluded from ESLint in the same commit:
+`support.js` is a generated browser runtime and the frames are reference,
+never code that ships.
+
 ---
 
 *End of Technical Design Document v0.1. Sections 0 through 26 complete.*

@@ -1,1 +1,13 @@
 @import 'tailwindcss';
+
+/*
+ * The design tokens, from packages/ui. In Tailwind v4 the theme is CSS, so
+ * this import *is* the Tailwind config: it defines the palette, type scale,
+ * radii and shadow, and resets Tailwind's defaults so nothing outside the
+ * design system exists as a utility (CLAUDE.md section 15).
+ */
+@import '@relayd/ui/tokens.css';
+
+/* Tailwind scans for class names; the shared components live outside
+   apps/web, so their sources are declared. */
+@source '../../../packages/ui/src';
