@@ -8,11 +8,12 @@ import type { Contact, ContactList, ContactStatus, Suppression, Tag } from './au
  * is shared with the segments work; this one belongs to the collections
  * pages (D1–D4, D7) and can be folded back in once both have landed.
  *
- * Several of the shapes here widen a type the API already returns: D1 draws
- * a Tags and a Lists column, D2 draws a consent block and an engagement
- * timeline, D3 draws a 30-day trend. What is still missing from the server
- * is marked `// BACKEND PENDING` at the call site and answered by the
- * preview server for now; everything unmarked is served for real.
+ * Every shape here is served by the real API. D1's Tags and Lists columns,
+ * D2's consent block, suppression strip and engagement timeline and D7's
+ * Source column are all read from Postgres; what is still missing is a
+ * single field, `SuppressionRow.addedBy`, and it is marked at its
+ * declaration rather than at a call site because the endpoint is real and
+ * only the column is not.
  *
  * Two fields the server deliberately does not compute, rather than having
  * forgotten to: `ListCard.growth30d` and `ListCard.trend` arrive as null and
@@ -25,7 +26,7 @@ import type { Contact, ContactList, ContactStatus, Suppression, Tag } from './au
  * which is a server decision, not a component one.
  */
 
-export type SuppressionReason = Suppression['reason'] | 'global_block';
+export type SuppressionReason = Suppression['reason'];
 
 /** The reason labels D7 prints, and the dot colour beside each one. */
 export const SUPPRESSION_REASONS: Readonly<
@@ -134,13 +135,14 @@ export interface TagRow extends Tag {
   segments: string[];
 }
 
-// `reason` is deliberately wider than the API client's Suppression: D7 also
-// shows `global_block`, the cross-workspace list, which that type predates.
-export interface SuppressionRow extends Omit<Suppression, 'reason'> {
-  reason: SuppressionReason;
-  /** The campaign that caused it, or null for a manual or global entry. */
-  source: string | null;
-  addedBy: string;
+export interface SuppressionRow extends Suppression {
+  /**
+   * BACKEND PENDING: `GET /suppressions` has no `addedBy` field. The
+   * endpoint, its three filters and every other column are real; this one
+   * needs a `suppressions.created_by` column, which does not exist, so the
+   * server sends null and D7's "Added by" reads "—".
+   */
+  addedBy: string | null;
 }
 
 export interface SuppressionSummary {
@@ -168,12 +170,6 @@ function search(filters: ContactFilters): string {
 }
 
 export const audienceExtraApi = {
-  /**
-   * BACKEND PENDING: `GET /contacts` returns the contact, not `tags`,
-   * `lists` or `lastEngaged`. The path, the filters and the paging are real;
-   * the three columns D1 adds are not, and they are answered by the preview
-   * server.
-   */
   listContacts: async (filters: ContactFilters) => {
     const envelope = await apiRequestEnvelope<ContactRow[]>(`/contacts${search(filters)}`, {
       method: 'GET',
@@ -199,11 +195,6 @@ export const audienceExtraApi = {
   createSavedView: (input: { label: string; filters?: SavedViewFilters }) =>
     api.post<SavedView>('/saved-views', input),
 
-  /**
-   * BACKEND PENDING: `GET /contacts/:id` returns the contact row only. D2's
-   * consent block, suppression strip and engagement timeline have no server
-   * behind them yet.
-   */
   getContact: (id: string) => api.get<ContactDetail>(`/contacts/${id}`),
 
   /**
@@ -264,9 +255,10 @@ export const audienceExtraApi = {
   /**
    * The options D7's Source chip offers, "Any campaign" first.
    *
-   * Empty beyond that until suppressions carry the campaign that caused
-   * them — the column exists (migration 0020) and nothing writes it yet, so
-   * the honest answer today is the one option that always applies.
+   * Served for real. Empty beyond that first option until suppressions
+   * carry the campaign that caused them — the column exists (migration
+   * 0020) and nothing writes it yet, so the honest answer today is the one
+   * option that always applies.
    */
   suppressionSources: () =>
     api.get<{ value: string; label: string }[]>('/suppressions/sources'),

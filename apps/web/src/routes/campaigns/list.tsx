@@ -127,6 +127,20 @@ export function CampaignsPage() {
     onSuccess: invalidate,
   });
 
+  /**
+   * G1's Archive action.
+   *
+   * `campaign:write`, not `campaign:launch`: archiving a finished campaign
+   * changes nothing about sending. The server refuses a campaign that is
+   * still running with a 409, which is why the item is not gated on state
+   * here — the list can be a few seconds stale and the guard that matters
+   * is the one in the repository.
+   */
+  const archive = useMutation({
+    mutationFn: (id: string) => campaignsApi.archive(id),
+    onSuccess: invalidate,
+  });
+
   const rows = campaigns.data?.items ?? [];
   const live = rows.some((row) => LIVE_STATES.has(row.status));
 
@@ -226,8 +240,12 @@ export function CampaignsPage() {
         case 'Update payment method':
           return { ...base, onSelect: () => navigate('/billing') };
         case 'Archive':
-          // BACKEND PENDING: POST /campaigns/:id/archive
-          return { ...base, tone: 'muted', disabled: true, reason: 'Archiving is not available yet' };
+          return {
+            ...base,
+            disabled: !canWrite,
+            reason: canWrite ? undefined : writeReason,
+            onSelect: () => archive.mutate(campaign.id),
+          };
         default:
           return base;
       }

@@ -54,9 +54,9 @@ export function ReportsPage() {
     queryFn: () => analyticsApi.overview(range),
   });
 
-  // BACKEND PENDING: GET /analytics/dashboard — only the bounce split and the
-  // auto-pause threshold are read from it here; without it the cards drop
-  // those two lines and every rate still renders.
+  // Only the bounce split and the auto-pause threshold are read from it
+  // here; if the call fails the cards drop those two lines and every rate
+  // still renders.
   const summary = useQuery({
     queryKey: analyticsKeys.dashboard(currentWorkspaceId),
     queryFn: () => analyticsApi.dashboard(),

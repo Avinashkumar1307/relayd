@@ -54,7 +54,6 @@ export function TagsPage() {
 
   const tags = useQuery({
     queryKey: audienceExtraKeys.tags(currentWorkspaceId),
-    // BACKEND PENDING: GET /audience/tags (contactCount, segments)
     queryFn: audienceExtraApi.listTags,
   });
 
@@ -71,7 +70,6 @@ export function TagsPage() {
   });
 
   const rename = useMutation({
-    // BACKEND PENDING: PATCH /audience/tags/:id
     mutationFn: ({ id, name }: { id: string; name: string }) => audienceExtraApi.renameTag(id, name),
     onSuccess: () => {
       invalidate();
@@ -80,7 +78,6 @@ export function TagsPage() {
   });
 
   const merge = useMutation({
-    // BACKEND PENDING: POST /audience/tags/merge
     mutationFn: (input: { keepId: string; mergeIds: string[] }) => audienceExtraApi.mergeTags(input),
     onSuccess: () => {
       invalidate();
@@ -495,7 +492,6 @@ function MergeDialog({
   const ids = list.map((tag) => tag.id);
   const keep = list.find((tag) => tag.id === (keepId ?? list[0]?.id));
 
-  // BACKEND PENDING: GET /audience/tags/merge-preview
   const preview = useQuery({
     queryKey: audienceExtraKeys.mergePreview(currentWorkspaceId, ids),
     queryFn: () => audienceExtraApi.mergePreview(ids),

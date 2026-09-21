@@ -37,15 +37,36 @@ export const workspaceSlugSchema = z
   .max(48)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u, 'Use lowercase letters, numbers and hyphens');
 
+/**
+ * Creating an account, with or without a first workspace.
+ *
+ * B2 "Create your account" collects a name, an address and a password and
+ * nothing else — B6a `/workspaces/new` is where a workspace is named — so the
+ * workspace pair is optional. It is still accepted, because the one-shot form
+ * (a seed script, a test, an integration that wants both in one call) is a
+ * real caller and splitting it would cost a round trip.
+ *
+ * Both or neither. A `workspaceName` with no slug is a request the server
+ * would have to invent half of, and a slug is the workspace's public URL —
+ * not something to guess from a display name behind the caller's back.
+ */
 export const registerSchema = z
   .object({
     email: emailSchema,
     name: z.string().min(1).max(120).trim(),
     password: passwordSchema,
-    workspaceName: z.string().min(1).max(120).trim(),
-    workspaceSlug: workspaceSlugSchema,
+    workspaceName: z.string().min(1).max(120).trim().optional(),
+    workspaceSlug: workspaceSlugSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.workspaceName === undefined) === (value.workspaceSlug === undefined)) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [value.workspaceName === undefined ? 'workspaceName' : 'workspaceSlug'],
+      message: 'Send both workspaceName and workspaceSlug, or neither',
+    });
+  });
 
 export const loginSchema = z
   .object({

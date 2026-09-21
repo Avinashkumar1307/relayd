@@ -1,6 +1,13 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
-import type { TagId, UserId, WorkspaceId } from '@relayd/types';
-import { contactSavedViews, exportJobs } from '../schema/audience.js';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import type { ContactId, ContactListId, TagId, UserId, WorkspaceId } from '@relayd/types';
+import {
+  contactListMembers,
+  contactLists,
+  contactSavedViews,
+  contactTags,
+  exportJobs,
+  tags,
+} from '../schema/audience.js';
 import type { WorkspaceScope } from '../scope.js';
 import { contactSearchPredicate } from '../helpers.js';
 import type { Executor } from './executor.js';
@@ -220,6 +227,36 @@ export interface SuppressionSourceRow {
   name: string;
 }
 
+/** One tag on one contact, for D1's Tags column and D2's header chips. */
+export interface ContactTagRow {
+  contactId: ContactId;
+  tagId: TagId;
+  name: string;
+  color: string | null;
+}
+
+/** One list membership, for D1's Lists column and D2's Lists section. */
+export interface ContactListNameRow {
+  contactId: ContactId;
+  listId: ContactListId;
+  name: string;
+}
+
+/**
+ * One line of D2's engagement timeline.
+ *
+ * Read from `campaign_recipients`, not `email_events`: the recipient row is
+ * the per-contact, per-campaign record and is indexed by contact, where the
+ * event table is partitioned by time and is the largest in the system. A
+ * drawer must not scan it.
+ */
+export interface ContactActivityRow {
+  id: string;
+  state: string;
+  at: Date;
+  campaignName: string;
+}
+
 /**
  * Aggregates for D1's header, D4's tag table and D7's summary.
  *
@@ -273,6 +310,111 @@ export class AudienceStatsRepository {
       suppressed: row?.suppressed ?? 0,
       matching: row?.matching ?? 0,
     };
+  }
+
+  /**
+   * The tags carried by a page of contacts, in one query.
+   *
+   * Taken as a batch rather than per row: D1 draws fifty contacts and a
+   * per-row read would be fifty round trips for one table.
+   */
+  async tagsForContacts(
+    scope: WorkspaceScope,
+    contactIds: readonly ContactId[],
+  ): Promise<ContactTagRow[]> {
+    if (contactIds.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        contactId: contactTags.contactId,
+        tagId: tags.id,
+        name: tags.name,
+        color: tags.color,
+      })
+      .from(contactTags)
+      .innerJoin(
+        tags,
+        and(eq(tags.id, contactTags.tagId), eq(tags.workspaceId, contactTags.workspaceId)),
+      )
+      .where(
+        and(
+          eq(contactTags.workspaceId, scope.workspaceId),
+          inArray(contactTags.contactId, [...contactIds]),
+        ),
+      )
+      .orderBy(tags.name);
+
+    return rows;
+  }
+
+  /** The lists a page of contacts belongs to, in one query. */
+  async listsForContacts(
+    scope: WorkspaceScope,
+    contactIds: readonly ContactId[],
+  ): Promise<ContactListNameRow[]> {
+    if (contactIds.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        contactId: contactListMembers.contactId,
+        listId: contactLists.id,
+        name: contactLists.name,
+      })
+      .from(contactListMembers)
+      .innerJoin(
+        contactLists,
+        and(
+          eq(contactLists.id, contactListMembers.listId),
+          eq(contactLists.workspaceId, contactListMembers.workspaceId),
+        ),
+      )
+      .where(
+        and(
+          eq(contactListMembers.workspaceId, scope.workspaceId),
+          inArray(contactListMembers.contactId, [...contactIds]),
+        ),
+      )
+      .orderBy(contactLists.name);
+
+    return rows;
+  }
+
+  /**
+   * D2's engagement timeline: what happened to this contact, newest first.
+   *
+   * `terminal_at` falls back to `sent_at` and then to the row's own
+   * `updated_at`, because a recipient that is still queued has neither of
+   * the first two and the drawer still has to place it on the timeline.
+   */
+  async contactActivity(
+    scope: WorkspaceScope,
+    contactId: ContactId,
+    options: { limit?: number } = {},
+  ): Promise<ContactActivityRow[]> {
+    const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
+
+    const { rows } = await this.db.execute<{
+      id: string;
+      state: string;
+      at: Date;
+      campaignName: string;
+    }>(sql`
+      SELECT r.id::text                                          AS "id",
+             r.state                                             AS "state",
+             COALESCE(r.terminal_at, r.sent_at, r.updated_at)    AS "at",
+             c.name                                              AS "campaignName"
+        FROM campaign_recipients r
+        JOIN campaigns c
+          ON c.id = r.campaign_id AND c.workspace_id = r.workspace_id
+       WHERE r.workspace_id = ${scope.workspaceId}
+         AND r.contact_id = ${contactId}
+       ORDER BY COALESCE(r.terminal_at, r.sent_at, r.updated_at) DESC
+       LIMIT ${limit}
+    `);
+
+    // node-postgres hands back `timestamptz` as a Date already; a driver
+    // that hands back a string would otherwise reach the formatter as one.
+    return rows.map((row) => ({ ...row, at: new Date(row.at) }));
   }
 
   /** How many contacts carry each tag, for D4's table and its merge dialog. */

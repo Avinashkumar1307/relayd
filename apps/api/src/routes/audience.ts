@@ -22,11 +22,13 @@ import {
   createTagSchema,
   listContactsQuerySchema,
   listMembershipSchema,
+  listSuppressionsQuerySchema,
   mergePreviewQuerySchema,
   mergeTagsSchema,
   renameListSchema,
   renameTagSchema,
   updateContactSchema,
+  updateSegmentSchema,
 } from '@relayd/validation';
 import { requirePrincipal, requireScope } from '../context.js';
 import { authenticate, requirePermission, requireWorkspace } from '../middleware/authorize.js';
@@ -191,6 +193,38 @@ export function audienceRoutes(options: AudienceRouterOptions): Router {
     },
   );
 
+  /**
+   * Bulk tag and untag, registered before every `/contacts/:id` route.
+   *
+   * Express matches in registration order, so `DELETE /contacts/:id` sitting
+   * first swallowed `DELETE /contacts/tags` as a contact whose id is the
+   * word "tags" — and answered 404 to every untag the browser ever sent.
+   * These two must stay above the parameterised paths.
+   */
+  router.post(
+    '/contacts/tags',
+    ...chain,
+    write,
+    validateBody(bulkTagSchema),
+    async (req: Request, res: Response) => {
+      const body = req.body as { contactIds: string[]; tagId: string };
+      const result = await audience.bulkTag(requireScope(), body.contactIds, body.tagId, 'add');
+      res.json({ data: result });
+    },
+  );
+
+  router.delete(
+    '/contacts/tags',
+    ...chain,
+    write,
+    validateBody(bulkTagSchema),
+    async (req: Request, res: Response) => {
+      const body = req.body as { contactIds: string[]; tagId: string };
+      const result = await audience.bulkTag(requireScope(), body.contactIds, body.tagId, 'remove');
+      res.json({ data: result });
+    },
+  );
+
   router.get('/contacts/:id', ...chain, read, async (req: Request, res: Response) => {
     const contact = await audience.getContact(requireScope(), req.params['id'] as ContactId);
     res.json({ data: contact });
@@ -215,30 +249,6 @@ export function audienceRoutes(options: AudienceRouterOptions): Router {
     await audience.deleteContact(requireScope(), req.params['id'] as ContactId);
     res.status(204).send();
   });
-
-  router.post(
-    '/contacts/tags',
-    ...chain,
-    write,
-    validateBody(bulkTagSchema),
-    async (req: Request, res: Response) => {
-      const body = req.body as { contactIds: string[]; tagId: string };
-      const result = await audience.bulkTag(requireScope(), body.contactIds, body.tagId, 'add');
-      res.json({ data: result });
-    },
-  );
-
-  router.delete(
-    '/contacts/tags',
-    ...chain,
-    write,
-    validateBody(bulkTagSchema),
-    async (req: Request, res: Response) => {
-      const body = req.body as { contactIds: string[]; tagId: string };
-      const result = await audience.bulkTag(requireScope(), body.contactIds, body.tagId, 'remove');
-      res.json({ data: result });
-    },
-  );
 
   // ------------------------------------------------------------------- lists
 
@@ -407,6 +417,28 @@ export function audienceRoutes(options: AudienceRouterOptions): Router {
     },
   );
 
+  /**
+   * D5b's "Save changes".
+   *
+   * Registered before `/segments/:id/preview` is irrelevant — they differ
+   * by method and by depth — but it sits beside DELETE so the two writes
+   * that name one segment read together.
+   */
+  router.patch(
+    '/segments/:id',
+    ...chain,
+    write,
+    validateBody(updateSegmentSchema),
+    async (req: Request, res: Response) => {
+      const segment = await audience.updateSegment(
+        requireScope(),
+        req.params['id'] as SegmentId,
+        req.body as { name?: string; definition?: unknown },
+      );
+      res.json({ data: segment });
+    },
+  );
+
   router.delete('/segments/:id', ...chain, write, async (req: Request, res: Response) => {
     await audience.deleteSegment(requireScope(), req.params['id'] as SegmentId);
     res.status(204).send();
@@ -443,8 +475,16 @@ export function audienceRoutes(options: AudienceRouterOptions): Router {
     res.json({ data: await audience.suppressionSources(requireScope()) });
   });
 
-  router.get('/suppressions', ...chain, read, async (_req, res) => {
-    res.json({ data: await audience.listSuppressions(requireScope()) });
+  /**
+   * D7's table.
+   *
+   * The query is parsed and passed on: the chips used to be read, validated
+   * and then dropped, so picking a reason changed the URL and returned the
+   * same rows.
+   */
+  router.get('/suppressions', ...chain, read, async (req: Request, res: Response) => {
+    const query = parseQuery(listSuppressionsQuerySchema, req);
+    res.json({ data: await audience.listSuppressions(requireScope(), query) });
   });
 
   router.post(
@@ -454,10 +494,12 @@ export function audienceRoutes(options: AudienceRouterOptions): Router {
     validateBody(createSuppressionSchema),
     async (req: Request, res: Response) => {
       const body = req.body as { email: string; reason: string; notes?: string };
-      const row = await audience.addSuppression(requireScope(), body);
-      // Null means already suppressed, which is the desired state, not a
-      // conflict — a bounce handler must never fail because it ran twice.
-      res.status(row === null ? 200 : 201).json({ data: row ?? { email: body.email, alreadySuppressed: true } });
+      const { row, created } = await audience.addSuppression(requireScope(), body);
+      // Already suppressed is the desired state, not a conflict — a bounce
+      // handler must never fail because it ran twice. It answers 200 rather
+      // than 201, with the suppression that already exists: a second body
+      // shape here is a branch every caller would have to write.
+      res.status(created ? 201 : 200).json({ data: row });
     },
   );
 

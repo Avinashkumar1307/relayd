@@ -247,15 +247,7 @@ function Editor({
   });
 
   const sendTest = useMutation({
-    // BACKEND PENDING: POST /templates/versions/:versionId/test
     mutationFn: () => templateApi.sendTest(version?.id ?? '', testTo),
-  });
-
-  const saveSettings = useMutation({
-    // BACKEND PENDING: PATCH /templates/:id accepts `name` only.
-    mutationFn: (next: { defaultSenderId: string; language: string }) =>
-      templateApi.updateSettings(templateId, next),
-    onSuccess: invalidate,
   });
 
   const canWrite = can('template:write') && !readOnly;
@@ -516,15 +508,17 @@ function Editor({
                 />
               </div>
 
-              {/* BACKEND PENDING: PATCH /templates/:id (defaultSenderId) */}
+              {/* BACKEND PENDING: PATCH /templates/:id serves no
+                  `defaultSenderId` field and its schema refuses one —
+                  `renameTemplateSchema` is `.strict()` and takes `name`
+                  alone, and `templates` has no column for this. Session
+                  only; saving it would 400 every time. */}
               <Select
                 label="Default sender"
                 value={settings.defaultSenderId}
                 disabled={!canWrite}
                 onChange={(event) => {
-                  const next = { ...settings, defaultSenderId: event.target.value };
-                  setSettings(next);
-                  saveSettings.mutate(next);
+                  setSettings((current) => ({ ...current, defaultSenderId: event.target.value }));
                 }}
               >
                 <option value="">Choose a sender…</option>
@@ -535,15 +529,14 @@ function Editor({
                 ))}
               </Select>
 
-              {/* BACKEND PENDING: PATCH /templates/:id (language) */}
+              {/* BACKEND PENDING: PATCH /templates/:id serves no `language`
+                  field either, and refuses one for the same reason. */}
               <Select
                 label="Language"
                 value={settings.language}
                 disabled={!canWrite}
                 onChange={(event) => {
-                  const next = { ...settings, language: event.target.value };
-                  setSettings(next);
-                  saveSettings.mutate(next);
+                  setSettings((current) => ({ ...current, language: event.target.value }));
                 }}
               >
                 {LANGUAGES.map((entry) => (

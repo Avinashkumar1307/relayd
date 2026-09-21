@@ -126,7 +126,7 @@ export function InvoicesPage() {
       }
       actions={
         empty ? undefined : (
-          // BACKEND PENDING: GET /billing/invoices.csv
+          // BACKEND PENDING: there is no GET /billing/invoices.csv route.
           <Button variant="secondary">Download all (CSV)</Button>
         )
       }

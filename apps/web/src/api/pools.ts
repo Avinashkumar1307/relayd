@@ -126,12 +126,24 @@ export const poolsApi = {
 
   remove: (id: string) => api.delete<void>(`/pools/${id}`),
 
+  /**
+   * Adds a sender, and answers with the pool's whole membership.
+   *
+   * Not the row just written: `POST /pools/:id/members` returns
+   * `{ members, sharedProviderAccounts }`, and the second half is the point
+   * — two members on one provider connection share one quota bucket, and
+   * the moment a customer adds the second one is the only moment they will
+   * read a warning about it (docs/07).
+   */
   addMember: (poolId: string, input: { senderAccountId: string; weight?: number; priority?: number }) =>
-    api.post<PoolMember>(`/pools/${poolId}/members`, {
-      senderAccountId: input.senderAccountId,
-      weight: input.weight ?? 1,
-      priority: input.priority ?? 0,
-    }),
+    api.post<{ members: PoolMember[]; sharedProviderAccounts: string[] }>(
+      `/pools/${poolId}/members`,
+      {
+        senderAccountId: input.senderAccountId,
+        weight: input.weight ?? 1,
+        priority: input.priority ?? 0,
+      },
+    ),
 
   removeMember: (poolId: string, senderAccountId: string) =>
     api.delete<void>(`/pools/${poolId}/members/${senderAccountId}`),

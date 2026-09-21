@@ -45,12 +45,16 @@ export interface Campaign {
   createdAt: string;
   updatedAt: string;
 
-  // ---- BACKEND PENDING: GET /campaigns returns none of these yet ---------
-  // G1 draws one row per campaign with its segmented bar, its click rate and
-  // the sentence under the name. Every one of those is a counter or a label
-  // the list endpoint does not carry today; computing them in the browser
-  // would mean a progress call per row, which is the `COUNT(*)`-in-a-request
-  // problem wearing a different hat (CLAUDE.md section 12).
+  // ---- BACKEND PENDING: GET /campaigns serves none of the seven fields
+  // below. The route is real and every field above it is served; what is
+  // missing is per-row reporting. G1 draws one row per campaign with its
+  // segmented bar, its click rate and the sentence under the name, and each
+  // of those is a counter or a label the list query does not join today —
+  // `campaign_counters` and `campaign_stats` per row, the way
+  // `analytics.dashboardCampaigns` already joins them for C1. Computing
+  // them in the browser would mean a progress call per row, which is the
+  // `COUNT(*)`-in-a-request problem wearing a different hat (CLAUDE.md
+  // section 12).
   /** The segmented bar's buckets, from `campaign_counters`. Never a COUNT(*). */
   counts?: SegmentCounts;
   /** Unique clickers. `null` while nothing has been delivered. */
@@ -81,9 +85,13 @@ export interface CampaignProgress {
   /** D3: terminal, unbilled, and its own number — never folded into failures. */
   deliveryUncertain: number;
 
-  // ---- BACKEND PENDING: GET /campaigns/:id/progress ----------------------
-  // G3's progress card and its six stat tiles read delivered, bounced and
-  // complained separately; `sent` alone cannot draw them.
+  // ---- BACKEND PENDING: GET /campaigns/:id/progress serves no `counts`,
+  // `clicks` or `openRate` field. Every field above it is served, by both
+  // `/progress` and the `counters` on `GET /campaigns/:id` — the two answer
+  // one shape. The three below come from `campaign_stats`, which the
+  // campaign service does not read: G3's progress card and its six stat
+  // tiles need delivered, bounced and complained separately, and `sent`
+  // alone cannot draw them.
   counts?: SegmentCounts;
   /** Unique clickers, for the headline click rate. */
   clicks?: number | null;
@@ -111,10 +119,13 @@ export interface Recipient {
   attemptCount: number;
   errorCode: string | null;
   sentAt: string | null;
-
-  // ---- BACKEND PENDING: GET /campaigns/:id/recipients --------------------
   /** G3's "Provider message ID" column — the join to the provider's own log. */
-  providerMessageId?: string | null;
+  providerMessageId: string | null;
+
+  // ---- BACKEND PENDING: GET /campaigns/:id/recipients serves no `lastEvent`
+  // or `senderUsed` field. Both are joins the recipient row does not carry:
+  // the last event is in `email_events` and the sender used is on the
+  // dispatch record. The route and every other column above are real.
   /** G3's "Last event" column: "Mailbox full · retry 13:15". */
   lastEvent?: string | null;
   /** G3's "Sender used" column: "offers@ · SendGrid". */
@@ -191,7 +202,10 @@ export interface PoolSummary {
   name: string;
   strategy: string;
 
-  // ---- BACKEND PENDING: GET /pools --------------------------------------
+  // ---- BACKEND PENDING: GET /pools serves no `detail`, `headroomLeft` or
+  // `headroomTotal` field. The route is real and answers the pool rows; the
+  // per-connection headroom behind these three is on `GET /pools/senders`,
+  // which the wizard does not call.
   /** "Round-robin · hello@ (SES) + offers@ (SendGrid) · 64 emails/s combined". */
   detail?: string;
   /** Today's remaining provider quota across the members, and its ceiling. */

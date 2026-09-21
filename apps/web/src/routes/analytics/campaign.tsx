@@ -65,9 +65,10 @@ import { requestIdOf } from './dashboard.js';
  *   delivery uncertain (D3) is its own number in the provider breakdown and
  *   is never folded into the bounce count.
  *
- * Four of the six requests are real. The provider breakdown and the
- * comparison line are BACKEND PENDING and marked at the call site: when they
- * are missing the page renders everything else rather than an error.
+ * All six requests are real. What is still missing is two fields rather
+ * than an endpoint — the comparison line on the campaign report and an
+ * hourly bucket on the timeseries, both marked at the call site. When a
+ * field is absent the page renders everything else rather than an error.
  */
 export function CampaignAnalyticsPage() {
   const { id = '' } = useParams();
@@ -83,9 +84,10 @@ export function CampaignAnalyticsPage() {
     queryFn: () => campaignsApi.get(id),
   });
 
-  // The frame's chart is "First 48 hours · hourly". The server buckets by day
-  // and ignores the parameter today.
-  // BACKEND PENDING: GET /analytics/campaigns/{id}/timeseries?bucket=hour
+  // BACKEND PENDING: GET /analytics/campaigns/{id}/timeseries accepts no
+  // `bucket` parameter — it buckets by day from `campaign_daily_stats` and
+  // ignores the one sent here. The frame's chart is "First 48 hours ·
+  // hourly", which needs an hourly rollup that does not exist.
   const series = useQuery({
     queryKey: analyticsKeys.timeseries(currentWorkspaceId, id, { bucket: 'hour' }),
     queryFn: () => analyticsApi.timeseries(id, { bucket: 'hour' }),
@@ -101,7 +103,6 @@ export function CampaignAnalyticsPage() {
     queryFn: () => analyticsApi.devices(id),
   });
 
-  // BACKEND PENDING: GET /analytics/campaigns/{id}/providers
   const providers = useQuery({
     queryKey: analyticsKeys.campaignProviders(currentWorkspaceId, id),
     queryFn: () => analyticsApi.campaignProviders(id),

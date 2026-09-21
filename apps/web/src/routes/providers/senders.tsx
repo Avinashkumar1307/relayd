@@ -442,13 +442,11 @@ export function DnsDrawer({
   const [removing, setRemoving] = useState(false);
   const state = verificationStyle(row.identity);
 
-  // BACKEND PENDING: GET /senders/:id/dns
   const dns = useQuery({
     queryKey: providerKeys.senderDns(workspaceId, row.sender.id),
     queryFn: () => providerApi.senderDns(row.sender.id),
   });
 
-  // BACKEND PENDING: POST /senders/:id/dns/check
   const recheck = useMutation({
     mutationFn: () => providerApi.checkSenderDns(row.sender.id),
     onSuccess: (fresh) => {

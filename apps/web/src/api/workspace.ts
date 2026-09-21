@@ -4,20 +4,18 @@ import { api } from './client.js';
 /**
  * Workspace, team and account endpoints (section J, part 1).
  *
- * `apps/api/src/routes/workspaces.ts` serves the workspace record, its
- * members and its invitations. It answers `{ id, name, slug, timezone, role }`
- * and nothing else, while J1 draws a created-by line, a data region, a plan
- * chip and a delete warning that counts what would be destroyed; J2a draws a
- * seat count, a name and a last-active time per member, and who sent each
- * invitation.
+ * `apps/api/src/routes/workspaces.ts` serves the workspace record, its members
+ * and its invitations; `routes/me.ts` serves the account half. The types below
+ * are the contract between the two, asserted end to end by
+ * `apps/api/test/contract-identity.test.ts` — anything declared required here
+ * is a key that test proves the API sends.
  *
- * Every field the frames need and the server does not send yet is optional
- * here and marked `BACKEND PENDING`, so the same page renders against the
- * preview backend (which supplies them) and the real one (which does not) —
- * degraded, never broken.
- *
- * The account half — `/me` and its sessions — is served for real now, so it
- * carries no pending markers.
+ * What is still missing is missing for a reason and says which: a field the
+ * `workspaces` table has no column for, or one that belongs to a domain this
+ * page does not own (the plan and the seat count are billing's; the delete
+ * counts are the audience's, the campaigns' and the providers'). Each of those
+ * is optional and named, and every page reads absent as "do not draw that
+ * row" rather than drawing an empty one.
  */
 
 export interface WorkspaceDetails {
@@ -27,25 +25,31 @@ export interface WorkspaceDetails {
   timezone: string;
   /** The caller's own role, so the UI can gate without a second request. */
   role?: WorkspaceRole | undefined;
-
-  /** BACKEND PENDING: GET /workspaces/current — J1's "Default sender" field. */
-  defaultSenderId?: string | null | undefined;
-  /** BACKEND PENDING: GET /workspaces/current — J1's plan chip. */
-  planName?: string | undefined;
-  /** BACKEND PENDING: GET /workspaces/current — J1's "Created" row. */
+  /** ISO 8601. J1's "Created" row. */
   createdAt?: string | undefined;
+  /** The owner's name. Absent when that account is gone. */
   createdByName?: string | undefined;
-  /** BACKEND PENDING: GET /workspaces/current — J1's "Data region" row. */
+
+  /**
+   * BACKEND PENDING — field, not endpoint: `GET /workspaces/current` exists
+   * and serves everything above. `workspaces` has no `default_sender_id`
+   * column (packages/db/src/schema/identity.ts), so J1's "Default sender"
+   * picker cannot be persisted without a migration.
+   */
+  defaultSenderId?: string | null | undefined;
+  /** BACKEND PENDING — field: J1's plan chip. Billing owns the plan name. */
+  planName?: string | undefined;
+  /** BACKEND PENDING — field: J1's "Data region" row. No column for either. */
   dataRegion?: string | undefined;
   analyticsRetentionMonths?: number | undefined;
-  /** BACKEND PENDING: GET /workspaces/current — J2a's "10 seats on Growth". */
+  /** BACKEND PENDING — field: J2a's "10 seats on Growth". A plan entitlement. */
   seatLimit?: number | undefined;
   /**
-   * BACKEND PENDING: GET /workspaces/current.
+   * BACKEND PENDING — field: what "Delete workspace" would destroy.
    *
-   * What "Delete workspace" would destroy. J1 names the numbers out loud
-   * rather than saying "all your data", because a number is the only thing
-   * that makes somebody stop and read.
+   * J1 names the numbers out loud rather than saying "all your data", because
+   * a number is the only thing that makes somebody stop and read. Counting
+   * them spans three other domains' tables.
    */
   counts?: { contacts: number; campaigns: number; providerConnections: number } | undefined;
 }
@@ -54,10 +58,14 @@ export interface WorkspaceMember {
   userId: string;
   role: WorkspaceRole;
   joinedAt: string;
-  /** BACKEND PENDING: GET /workspaces/current/members — J2a's Member column. */
-  name?: string | undefined;
-  email?: string | undefined;
-  /** BACKEND PENDING: J2a's "Last active" column, already worded. */
+  /** J2a's Member column. The id when the account behind it is gone. */
+  name: string;
+  /** J2a's Email column. Empty when the account behind it is gone. */
+  email: string;
+  /**
+   * J2a's "Last active", rendered by the server against its own clock.
+   * Absent for a member who has never signed in; the column draws an em dash.
+   */
   lastActiveLabel?: string | undefined;
 }
 
@@ -66,7 +74,7 @@ export interface WorkspaceInvitation {
   email: string;
   role: WorkspaceRole;
   expiresAt: string;
-  /** BACKEND PENDING: GET /workspaces/current/invitations — J2a's "Invited by". */
+  /** J2a's "Invited by". Absent when the inviter's account is gone. */
   invitedByName?: string | undefined;
 }
 
@@ -127,7 +135,24 @@ export const workspaceKeys = {
 export const workspaceApi = {
   details: () => api.get<WorkspaceDetails>('/workspaces/current'),
 
-  update: (input: { name?: string; slug?: string; timezone?: string; defaultSenderId?: string | null }) =>
+  /**
+   * J1's Save.
+   *
+   * Name and timezone only, because `updateWorkspaceSchema` on the server is
+   * `.strict()` and a body carrying anything else is a 400 that loses the two
+   * fields that would have saved.
+   *
+   * BACKEND PENDING — field: `slug`. The column exists and is editable in the
+   * frame, but `uq_workspaces_slug` is global while the `workspaces` RLS
+   * policy is not, so an update cannot see the row it would collide with and
+   * a taken slug would surface as a constraint violation. Answering it
+   * properly needs a cross-tenant lookup in
+   * `packages/db/repositories/global/`.
+   *
+   * BACKEND PENDING — field: `defaultSenderId`. No column; see
+   * `WorkspaceDetails`.
+   */
+  update: (input: { name?: string; timezone?: string }) =>
     api.patch<WorkspaceDetails>('/workspaces/current', input),
 
   remove: () => api.delete<void>('/workspaces/current'),

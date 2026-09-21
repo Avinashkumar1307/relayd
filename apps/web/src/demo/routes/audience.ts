@@ -197,6 +197,16 @@ export const routes: Route[] = [
   /* -------------------------------------------------------- suppressions -- */
 
   { method: 'GET', pattern: /^\/suppressions\/summary$/u, handler: () => suppressionSummary },
+  // D7's Source chip. "Any campaign" first, then the campaigns that have
+  // actually produced a suppression — which is what the real endpoint
+  // answers, so the chip cannot offer a filter that matches nothing.
+  { method: 'GET', pattern: /^\/suppressions\/sources$/u, handler: () => [
+    { value: 'any', label: 'Any campaign' },
+    ...[...new Set(state.suppressions
+      .map((row) => row['source'])
+      .filter((name): name is string => typeof name === 'string'))]
+      .map((name) => ({ value: name, label: name })),
+  ] },
   { method: 'GET', pattern: /^\/suppressions$/u, handler: () => state.suppressions },
   { method: 'POST', pattern: /^\/suppressions$/u, handler: (_m, body) => {
     const input = body as { email: string; reason?: string; notes?: string };

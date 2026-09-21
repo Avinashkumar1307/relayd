@@ -98,7 +98,6 @@ export function TemplatesPage() {
   });
 
   const duplicate = useMutation({
-    // BACKEND PENDING: POST /templates/:id/duplicate
     mutationFn: (id: string) => templateApi.duplicate(id),
     onSuccess: (created) => {
       invalidate();
@@ -107,7 +106,6 @@ export function TemplatesPage() {
   });
 
   const archive = useMutation({
-    // BACKEND PENDING: POST /templates/:id/archive, POST /templates/:id/unarchive
     mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
       archived ? templateApi.unarchive(id) : templateApi.archive(id),
     onSuccess: invalidate,

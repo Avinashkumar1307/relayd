@@ -253,6 +253,23 @@ export const createSegmentSchema = z
   })
   .strict();
 
+/**
+ * Saving an edit to a segment (D5b's "Save changes").
+ *
+ * Both fields optional so a rename does not have to resend the whole AST,
+ * but at least one of them must be present: a PATCH that changes nothing is
+ * a caller mistake and a silent 200 hides it.
+ */
+export const updateSegmentSchema = z
+  .object({
+    name: z.string().min(1).max(120).trim().optional(),
+    definition: z.unknown().optional(),
+  })
+  .strict()
+  .refine((value) => value.name !== undefined || value.definition !== undefined, {
+    message: 'Give a name or a definition to change',
+  });
+
 export const createSuppressionSchema = z
   .object({
     email: emailSchema,

@@ -17,6 +17,8 @@ export interface ImportJobRow {
   id: ImportJobId;
   workspaceId: WorkspaceId;
   originalFilename: string;
+  /** The uploaded file's size. Stored as text (bigint-safe), served as a number. */
+  byteSize: number;
   fileType: 'csv' | 'tsv' | 'xlsx';
   status: ImportStatus;
   columnMapping: Record<string, string> | null;
@@ -263,6 +265,9 @@ function toRow(row: typeof importJobs.$inferSelect): ImportJobRow {
     id: row.id,
     workspaceId: row.workspaceId,
     originalFilename: row.originalFilename,
+    // Stored as text so a 100 MB file is not at the mercy of the driver's
+    // bigint handling; Number is exact well past that.
+    byteSize: Number(row.byteSize),
     fileType: row.fileType,
     status: row.status,
     columnMapping: (row.columnMapping as Record<string, string> | null) ?? null,

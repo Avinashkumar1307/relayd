@@ -70,6 +70,16 @@ function buildApp(options: BuildOptions = {}): Express {
     async get() {
       return { id: WS, name: 'Northwind Voyages', slug: 'northwind', timezone: 'UTC' };
     },
+    async details() {
+      return {
+        id: WS,
+        name: 'Northwind Voyages',
+        slug: 'northwind',
+        timezone: 'UTC',
+        createdAt: '2026-02-14T06:00:00.000Z',
+        createdByName: 'Dana Haddad',
+      };
+    },
     async createWorkspace() {
       return { id: 'ws-new', name: 'Labs', slug: 'labs', timezone: 'UTC', role: 'owner' };
     },

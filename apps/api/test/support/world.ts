@@ -65,12 +65,33 @@ export function buildWorld(clock: () => Date = () => new Date('2026-09-17T12:00:
   const users: FakeUser[] = [];
   const sessions: FakeSession[] = [];
   const tokens: FakeToken[] = [];
-  const workspaces: { id: WorkspaceId; name: string; slug: string; ownerUserId: UserId }[] =
-    [];
+  /**
+   * `timezone`, `status` and `createdAt` are optional so the dozen existing
+   * suites that push `{ id, name, slug, ownerUserId }` keep compiling; the
+   * fake fills them in on the way out, which is what a real row would do.
+   */
+  const workspaces: {
+    id: WorkspaceId;
+    name: string;
+    slug: string;
+    ownerUserId: UserId;
+    timezone?: string;
+    status?: 'active' | 'past_due' | 'suspended' | 'cancelled' | 'deleted';
+    createdAt?: Date;
+  }[] = [];
   const members: { workspaceId: WorkspaceId; userId: UserId; role: string; joinedAt: Date }[] = [];
   const invitations: FakeInvitation[] = [];
   const auditEntries: (Record<string, unknown> & { workspaceId: WorkspaceId })[] = [];
   const now = clock;
+
+  /** A pushed workspace as a `WorkspaceRow`: every column the real one has. */
+  const hydrate = (w: (typeof workspaces)[number]) => ({
+    ...w,
+    status: w.status ?? ('active' as const),
+    timezone: w.timezone ?? 'UTC',
+    defaultCurrency: 'USD',
+    createdAt: w.createdAt ?? now(),
+  });
 
   const repos: Repositories = {
     users: {
@@ -266,22 +287,58 @@ export function buildWorld(clock: () => Date = () => new Date('2026-09-17T12:00:
     workspaces: {
       async create(
         _scope: unknown,
-        input: { id: WorkspaceId; name: string; slug: string; ownerUserId: UserId },
+        input: {
+          id: WorkspaceId;
+          name: string;
+          slug: string;
+          ownerUserId: UserId;
+          timezone?: string;
+        },
       ) {
         workspaces.push({
           id: input.id,
           name: input.name,
           slug: input.slug,
           ownerUserId: input.ownerUserId,
+          timezone: input.timezone ?? 'UTC',
+          status: 'active',
+          createdAt: now(),
         });
         return { id: input.id } as never;
       },
+      async createIfSlugAvailable(
+        scope: { workspaceId: WorkspaceId },
+        input: {
+          id: WorkspaceId;
+          name: string;
+          slug: string;
+          ownerUserId: UserId;
+          timezone?: string;
+        },
+      ) {
+        // The partial unique index, as the service sees it: a taken slug is
+        // null, not a throw.
+        if (workspaces.some((w) => w.slug === input.slug)) return null;
+        const row = {
+          id: input.id,
+          name: input.name,
+          slug: input.slug,
+          ownerUserId: input.ownerUserId,
+          timezone: input.timezone ?? 'UTC',
+          status: 'active' as const,
+          createdAt: now(),
+        };
+        workspaces.push(row);
+        void scope;
+        return { ...row, defaultCurrency: 'USD' };
+      },
       async findCurrent(scope: { workspaceId: WorkspaceId }) {
         const w = workspaces.find((x) => x.id === scope.workspaceId);
-        return w === undefined ? null : { ...w };
+        return w === undefined ? null : hydrate(w);
       },
       async findById(scope: { workspaceId: WorkspaceId }, id: WorkspaceId) {
-        return workspaces.find((w) => w.id === id && w.id === scope.workspaceId) ?? null;
+        const w = workspaces.find((x) => x.id === id && x.id === scope.workspaceId);
+        return w === undefined ? null : hydrate(w);
       },
       async updateDetails(
         scope: { workspaceId: WorkspaceId },
@@ -290,7 +347,19 @@ export function buildWorld(clock: () => Date = () => new Date('2026-09-17T12:00:
         const w = workspaces.find((x) => x.id === scope.workspaceId);
         if (w === undefined) return null;
         if (patch.name !== undefined) w.name = patch.name;
-        return { ...w };
+        if (patch.timezone !== undefined) w.timezone = patch.timezone;
+        return hydrate(w);
+      },
+      async transferOwnership(
+        scope: { workspaceId: WorkspaceId },
+        input: { fromUserId: UserId; toUserId: UserId },
+      ) {
+        const w = workspaces.find(
+          (x) => x.id === scope.workspaceId && x.ownerUserId === input.fromUserId,
+        );
+        if (w === undefined) return false;
+        w.ownerUserId = input.toUserId;
+        return true;
       },
       async softDelete(scope: { workspaceId: WorkspaceId }) {
         const index = workspaces.findIndex((w) => w.id === scope.workspaceId);

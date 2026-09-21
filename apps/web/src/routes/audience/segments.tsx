@@ -441,7 +441,8 @@ export function SegmentsPage() {
       key: 'lastUsed',
       header: 'Last used',
       width: '150px',
-      // BACKEND PENDING: GET /audience/segments (no last-used join yet).
+      // BACKEND PENDING: GET /segments has no `lastUsedLabel` field; nothing
+      // records which campaign last sent to a segment.
       cell: (segment) => <span className="block truncate text-text-2">{segment.lastUsedLabel ?? '—'}</span>,
     },
     {
@@ -615,8 +616,7 @@ export function SegmentBuilderPage() {
       if (definition === null) throw new Error('Add at least one condition');
       return isNew
         ? segmentApi.create({ name, definition })
-        : // BACKEND PENDING: PATCH /audience/segments/:id
-          segmentApi.update(segmentId, { name, definition });
+        : segmentApi.update(segmentId, { name, definition });
     },
     onSuccess: (segment) => {
       void queryClient.invalidateQueries({ queryKey: segmentKeys.all });

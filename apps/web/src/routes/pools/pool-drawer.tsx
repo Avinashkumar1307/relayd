@@ -63,7 +63,6 @@ export function PoolDrawer({ mode }: { mode: 'create' | 'edit' }) {
   });
 
   const senders = useQuery({
-    // BACKEND PENDING: GET /pools/senders
     queryKey: poolKeys.senders(currentWorkspaceId),
     queryFn: () => poolsApi.eligibleSenders(),
   });

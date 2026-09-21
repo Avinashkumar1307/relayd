@@ -13,11 +13,12 @@ import { api } from './client.js';
  * ## What the backend has, and what D5 needs that it does not
  *
  * `apps/api/src/routes/audience.ts` serves GET/POST `/segments`,
- * DELETE `/segments/:id`, POST `/segments/preview` and
- * POST `/segments/:id/preview`. The fields marked BACKEND PENDING
- * below are drawn on frame D5a/D5b and have no column or endpoint yet; they
- * are optional here so the page renders correctly against both the mocked
- * API, which supplies them, and the real one, which does not.
+ * PATCH/DELETE `/segments/:id`, POST `/segments/preview` and
+ * POST `/segments/:id/preview` — every call below reaches a real route.
+ * Two fields are still missing and are marked at their declarations:
+ * `Segment.lastUsedLabel` and `SegmentPreview.sample`. They are optional
+ * here so the page renders correctly against both the preview server,
+ * which supplies them, and the real API, which does not.
  */
 
 export interface Segment {
@@ -28,9 +29,13 @@ export interface Segment {
   cachedCount: number | null;
   cachedAt: string | null;
   createdAt: string;
-  /** BACKEND PENDING: GET /segments (no `updated_at` column yet). */
-  updatedAt?: string;
-  /** BACKEND PENDING: GET /segments (the D5a "Last used" column). */
+  /** Bumped on every save; D5a's "Updated" column. */
+  updatedAt: string;
+  /**
+   * BACKEND PENDING: `GET /segments` has no `lastUsedLabel` field. The
+   * endpoint is real; this one needs a record of which campaign last sent
+   * to a segment, which nothing writes, so D5a's "Last used" reads "-".
+   */
   lastUsedLabel?: string | null;
 }
 
@@ -46,9 +51,14 @@ export interface SegmentPreview {
   /** True when the count stopped at `cap`; the UI then says "up to". */
   capped: boolean;
   cap: number;
-  /** BACKEND PENDING: POST /segments/preview ("of 45,102 subscribed"). */
-  subscribedTotal?: number;
-  /** BACKEND PENDING: POST /segments/preview (the D5b sample panel). */
+  /** The denominator D5b prints: "of 45,102 subscribed". */
+  subscribedTotal: number;
+  /**
+   * BACKEND PENDING: `POST /segments/preview` has no `sample` field. The
+   * endpoint is real; a sample needs a compiler entry point that selects
+   * rows rather than counting them (`compilePreviewCount` only counts), so
+   * D5b's sample panel stays empty.
+   */
   sample?: SegmentSample[];
 }
 
@@ -58,7 +68,6 @@ export const segmentApi = {
   create: (input: { name: string; definition: SegmentNode }) =>
     api.post<Segment>('/segments', input),
 
-  /** BACKEND PENDING: PATCH /segments/:id — saving an edit. */
   update: (id: string, input: { name: string; definition: SegmentNode }) =>
     api.patch<Segment>(`/segments/${id}`, input),
 

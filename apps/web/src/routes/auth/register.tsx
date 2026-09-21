@@ -80,9 +80,9 @@ export function RegisterPage() {
         className="flex flex-col gap-5"
         onSubmit={form.handleSubmit(async (values) => {
           try {
-            // BACKEND PENDING: POST /auth/register accepting an account with
-            // no workspace. The implemented route requires workspaceName and
-            // workspaceSlug; B2 collects neither, because B6a does.
+            // No workspace: `registerSchema` takes the pair as both-or-
+            // neither, and B6a `/workspaces/new` is where one is named. The
+            // account comes back with an empty `memberships` list.
             await api.post(
               '/auth/register',
               { name: values.name, email: values.email, password: values.password },

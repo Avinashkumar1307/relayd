@@ -159,6 +159,17 @@ function buildWorld() {
       async suppressionSources() {
         return [{ id: 'cmp-1', name: 'September newsletter' }];
       },
+      // D1's Tags and Lists columns. Empty here: these tests are about
+      // which filter reaches the list, not what decorates its rows.
+      async tagsForContacts() {
+        return [];
+      },
+      async listsForContacts() {
+        return [];
+      },
+      async contactActivity() {
+        return [];
+      },
     } as unknown as AudienceRepositories['stats'],
 
     tagMerge: {

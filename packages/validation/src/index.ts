@@ -32,6 +32,7 @@ export {
   createListSchema,
   createTagSchema,
   createSegmentSchema,
+  updateSegmentSchema,
   createSuppressionSchema,
   bulkSuppressionSchema,
   createImportSchema,

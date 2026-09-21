@@ -15,8 +15,9 @@ import { api } from './client.js';
  * show a prorated charge, I8 edits the invoice address, I9 lists exactly
  * what cancelling costs. `apps/api/src/routes/billing.ts` serves the plan
  * catalogue, the overview, usage, invoices, checkout, the checkout status,
- * the portal, the downgrade pre-check, the plan change and the cancel — and
- * none of them carry money or an address, because the catalogue in
+ * the portal, the downgrade pre-check, the plan change, the cancel, the
+ * invoice details and the export. The address is real and arrives on the
+ * overview; what none of them carry is *money*, because the catalogue in
  * `@relayd/billing` has no prices in it.
  *
  * Every field the frames need and the server does not send is optional here
@@ -45,12 +46,12 @@ export interface PlanSummary {
   limits: Record<string, number | null>;
   flags: Record<string, boolean>;
 
-  /** BACKEND PENDING: GET /billing/plans (I2 prices each column). */
+  /** BACKEND PENDING: GET /billing/plans serves no `price` (I2 prices each column). */
   price?: PlanPrice;
-  /** BACKEND PENDING: GET /billing/plans (I2's "Overage per 1,000" row). */
+  /** BACKEND PENDING: GET /billing/plans serves no `overagePer1000` (I2's row). */
   overagePer1000?: number | null;
   /**
-   * BACKEND PENDING: GET /billing/plans.
+   * BACKEND PENDING: GET /billing/plans serves no `comparison`.
    *
    * The I2 rows the feature catalogue has no key for — provider
    * connections, complaint thresholds, SIEM export, SSO, support tier. A
@@ -96,16 +97,20 @@ export interface PaymentMethodSummary {
   last4: string | null;
   expMonth: number | null;
   expYear: number | null;
-  /** BACKEND PENDING: GET /billing (I8's "Default" badge). */
+  /** BACKEND PENDING: GET /billing's `paymentMethod` serves no `isDefault` (I8's badge). */
   isDefault?: boolean;
-  /** BACKEND PENDING: GET /billing (I8: "· Dana Haddad · added 14 Apr 2026"). */
+  /**
+   * BACKEND PENDING: GET /billing's `paymentMethod` serves no `holder` or
+   * `addedAt` (I8: "· Dana Haddad · added 14 Apr 2026"). Stripe owns the
+   * card and we mirror four fields of it; these two are not among them.
+   */
   holder?: string | null;
   addedAt?: string | null;
-  /** BACKEND PENDING: GET /billing (I1b prints the decline dates in red). */
+  /** BACKEND PENDING: GET /billing's `paymentMethod` serves no `declinedOn` (I1b). */
   declinedOn?: string[];
 }
 
-/** BACKEND PENDING: GET /billing — I1a's "Next invoice · estimate" card. */
+/** BACKEND PENDING: GET /billing serves no `nextInvoice`. I1a's estimate card. */
 export interface NextInvoiceEstimate {
   at: string;
   total: number;
@@ -118,7 +123,7 @@ export interface NextInvoiceEstimate {
   overagePer1000: number | null;
 }
 
-/** BACKEND PENDING: GET /billing — I1a's receipts line and I8's form. */
+/** I1a's receipts line and I8's form, served by GET /billing and PATCH /billing/details. */
 export interface BillingDetails {
   email: string;
   company: string;
@@ -126,7 +131,7 @@ export interface BillingDetails {
   taxId: string;
 }
 
-/** BACKEND PENDING: GET /billing — the I1b past-due card. */
+/** BACKEND PENDING: GET /billing serves no `dunning`. The I1b past-due card. */
 export interface DunningSummary {
   invoiceNumber: string;
   amount: number;
@@ -145,18 +150,26 @@ export interface BillingOverview {
   state: BillingState;
   usage: UsageRow[];
   paymentMethod: PaymentMethodSummary | null;
-  /** BACKEND PENDING: GET /billing. */
+  /** BACKEND PENDING: GET /billing serves no `nextInvoice` field. */
   nextInvoice?: NextInvoiceEstimate | null;
-  /** BACKEND PENDING: GET /billing. */
+  /**
+   * I8's invoice identity, as `GET /billing` serves it.
+   *
+   * Optional because an older deployment's response may not carry it; the
+   * current one always does, falling back to the owner's email for a
+   * workspace that has never opened the form.
+   */
   billingDetails?: BillingDetails | null;
-  /** BACKEND PENDING: GET /billing. */
+  /** BACKEND PENDING: GET /billing serves no `dunning` field. */
   dunning?: DunningSummary | null;
   /**
-   * BACKEND PENDING: GET /billing.
+   * BACKEND PENDING: GET /billing serves no `deliveryUncertain` field.
    *
    * Sends this period that reached `delivery_uncertain` and are therefore
    * unbilled (D3). I1a names the number, because a customer counting their
-   * own sends will otherwise find it missing.
+   * own sends will otherwise find it missing. The figure exists —
+   * `analytics.uncertainSince` sums it for C1 — but no billing read joins
+   * it.
    */
   deliveryUncertain?: number;
 }
@@ -174,9 +187,9 @@ export interface InvoiceRow {
   hostedInvoiceUrl: string | null;
   pdfUrl: string | null;
   createdAt: string;
-  /** BACKEND PENDING: GET /billing/invoices (I7's "Period · plan" column). */
+  /** BACKEND PENDING: GET /billing/invoices serves no `periodLabel` (I7's column). */
   periodLabel?: string;
-  /** BACKEND PENDING: GET /billing/invoices (I7's "Payment" column). */
+  /** BACKEND PENDING: GET /billing/invoices serves no `paymentLabel` (I7's column). */
   paymentLabel?: string | null;
 }
 
@@ -184,9 +197,9 @@ export interface DowngradeConflict {
   feature: string;
   current: number;
   targetLimit: number;
-  /** BACKEND PENDING: I3 prints a sentence under each blocked row. */
+  /** BACKEND PENDING: the preview's conflicts carry no `hint` (I3's sentence). */
   hint?: string;
-  /** BACKEND PENDING: I3's "Fix" column — a label and an in-app route. */
+  /** BACKEND PENDING: no `fixLabel` or `fixHref` on a conflict (I3's "Fix" column). */
   fixLabel?: string;
   fixHref?: string;
 }
@@ -196,9 +209,12 @@ export interface PlanChangePreview {
   to: string;
   blocked: boolean;
   conflicts: DowngradeConflict[];
-  /** BACKEND PENDING: the date a downgrade would take effect (I2/I3). */
+  /** BACKEND PENDING: GET /billing/plan-change/preview serves no `effectiveAt`. */
   effectiveAt?: string | null;
-  /** BACKEND PENDING: what an upgrade costs today (I2's caption, I4). */
+  /**
+   * BACKEND PENDING: the preview serves no `proration` — what an upgrade
+   * costs today (I2's caption, I4). Nothing local prices anything.
+   */
   proration?: { dueToday: number; currency: string; periodLabel: string } | null;
 }
 
@@ -212,15 +228,17 @@ export interface CheckoutStatus {
   ready: boolean;
   planCode?: string;
   action: 'poll' | 'fallback' | 'give_up' | 'done';
-  /** BACKEND PENDING: I5b names the plan and the moment Stripe confirmed. */
+  /**
+   * BACKEND PENDING: GET /billing/checkout/status serves `ready`,
+   * `planCode` and `action` only. The five below are I5b's and I5c's
+   * copy — the plan name, the moment Stripe confirmed, what was charged,
+   * the request id to quote to support and the invoice link.
+   */
   planName?: string;
   confirmedAt?: string;
-  /** BACKEND PENDING: I5b's "Charged today · prorated". */
   chargedToday?: number;
   currency?: string;
-  /** BACKEND PENDING: I5c quotes a request ID to support. */
   requestId?: string;
-  /** BACKEND PENDING: I5b's "View invoice". */
   invoiceUrl?: string | null;
 }
 

@@ -187,7 +187,24 @@ export const routes: Route[] = [
       };
 
       if (find(members(), row.id) === undefined) members().push(row);
-      return row;
+
+      // The real route answers with the pool's whole membership and the
+      // connections two members now share, not with the row just written
+      // (apps/api/src/services/pools.ts `addMember`).
+      return {
+        members: memberIdsOf(poolId).map((senderAccountId) => ({
+          poolId,
+          senderAccountId,
+          providerConnectionId: senderOf(senderAccountId)?.connection ?? '',
+          weight: 1,
+          priority: 0,
+          enabled: true,
+          status: 'active',
+          healthScore: 100,
+          cooldownUntil: null,
+        })),
+        sharedProviderAccounts: [],
+      };
     },
   },
 

@@ -41,10 +41,13 @@ export type WorkspaceEnforcement = 'active' | 'past_due' | 'restricted' | 'suspe
 /**
  * The non-billing conditions that raise a global banner.
  *
- * BACKEND PENDING: GET /workspaces/current does not return these yet — it
- * answers `{ id, name, slug, timezone, role }` (apps/api/src/routes/
- * workspaces.ts). Each field is optional and absent means "no banner", so
- * the shell degrades to no banner rather than to a wrong one.
+ * BACKEND PENDING — fields, not endpoint: `GET /workspaces/current` is served
+ * and answers `{ id, name, slug, timezone, role, createdAt, createdByName }`
+ * (apps/api/src/routes/workspaces.ts). None of `alerts` is in it: each of the
+ * three is owned by the enforcement side — the new-account cap, the complaint
+ * auto-pause and provider-credential failure — and none has a column or a
+ * service behind it yet. Each field is optional and absent means "no banner",
+ * so the shell degrades to no banner rather than to a wrong one.
  */
 export interface WorkspaceAlerts {
   /** K1d — the new-account sending cap, for the first 7 days. */
@@ -61,7 +64,15 @@ export interface WorkspaceRecord {
   slug: string;
   timezone: string;
   role?: string | undefined;
-  /** BACKEND PENDING: the enforcement state. Absent is read as `active`. */
+  /**
+   * BACKEND PENDING — field: the enforcement state.
+   *
+   * `workspaces.status` exists in the database but is not served, and it is
+   * not the same vocabulary: the column reads `active | past_due | suspended
+   * | cancelled | deleted` while the banner reads `active | past_due |
+   * restricted | suspended`. Serving the column raw would hand this a value
+   * it has no banner for. Absent is read as `active`.
+   */
   status?: WorkspaceEnforcement | undefined;
   alerts?: WorkspaceAlerts | undefined;
   /** How many items the "needs attention" rail holds — the bell's red dot. */

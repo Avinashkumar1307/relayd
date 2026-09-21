@@ -132,14 +132,15 @@ export function PoolsPage() {
       header: 'Combined /s',
       align: 'right',
       width: '120px',
-      // BACKEND PENDING: GET /pools does not return the combined rate.
+      // BACKEND PENDING: GET /pools serves no `combinedPerSecond` field.
       cell: (pool) => (pool.combinedPerSecond === undefined ? '—' : fmtCount(pool.combinedPerSecond)),
     },
     {
       key: 'headroom',
       header: 'Combined headroom today',
       width: '18%',
-      // BACKEND PENDING: GET /pools does not return the combined headroom.
+      // BACKEND PENDING: GET /pools serves no `headroom` field. The
+      // per-connection numbers behind it are on GET /pools/senders.
       cell: (pool) =>
         pool.headroom === undefined ? (
           <span className="text-text-2">—</span>
@@ -155,7 +156,7 @@ export function PoolsPage() {
       key: 'usedBy',
       header: 'Used by',
       width: '170px',
-      // BACKEND PENDING: GET /pools does not return the campaigns using a pool.
+      // BACKEND PENDING: GET /pools serves no `usedBy` field.
       cell: (pool) => (
         <span className="block truncate text-caption text-text-2">{usedByLabel(pool.usedBy)}</span>
       ),

@@ -84,13 +84,20 @@ export type {
   TagMergeResult,
   SuppressionSummaryRow,
   SuppressionSourceRow,
+  ContactTagRow,
+  ContactListNameRow,
+  ContactActivityRow,
 } from './audience-extras.js';
 
 export { SegmentRepository } from './segments.js';
 export type { SegmentRow, CompiledPreview } from './segments.js';
 
 export { SuppressionRepository } from './suppressions.js';
-export type { SuppressionRow, SuppressionReason } from './suppressions.js';
+export type {
+  SuppressionRow,
+  SuppressionReason,
+  ListSuppressionsOptions,
+} from './suppressions.js';
 
 export { ImportJobRepository, MAX_STORED_ROW_ERRORS } from './import-jobs.js';
 export type { ImportJobRow, ImportStatus, RowError } from './import-jobs.js';

@@ -42,12 +42,13 @@ import { CONSENT_SOURCE_LABELS, type ConsentSource } from '../../components/cons
  *
  * ## BACKEND PENDING
  *
- * D6b and D6c describe the file before it is imported — its row count, two
- * sample values per column, how many addresses are already known, how many
- * are already suppressed. None of that exists on the import job yet, so the
- * optional fields on `ImportJobView` are read when present and the page
- * degrades to what the browser can work out by itself when they are not.
- * Listed at each site as `BACKEND PENDING: GET /audience/imports/:id`.
+ * Every path this page calls is real and every field it declares on
+ * `ImportJob` is served. What is missing is the pre-flight analysis D6b and
+ * D6c draw — per-column samples, how many addresses are already known, how
+ * many are already suppressed — which is not computed anywhere and has no
+ * column on `import_jobs`. Each missing field is named at its declaration
+ * on `ImportJobView`; the page reads them when present and degrades to what
+ * the browser can work out by itself when they are not.
  */
 
 const ACTIVE: readonly ImportStatus[] = ['pending', 'mapping', 'validating', 'processing'];
@@ -66,28 +67,46 @@ export interface ImportColumnAnalysis {
 }
 
 export interface ImportJobView extends ImportJob {
-  /** BACKEND PENDING: GET /audience/imports/:id — the file's own facts. */
-  byteSize?: number;
+  /**
+   * BACKEND PENDING: `GET /imports/:id` has no `encoding`, `rowCount` or
+   * `columns` field. Nothing reads the file before the importer runs, so
+   * the browser parses the local copy instead. (`byteSize` and `totalRows`
+   * are served; `rowCount` is the pre-flight estimate, which is not.)
+   */
   encoding?: string;
   rowCount?: number;
   columns?: ImportColumnAnalysis[];
-  /** BACKEND PENDING: GET /audience/imports/:id — the pre-flight estimate. */
+  /**
+   * BACKEND PENDING: `GET /imports/:id` has no `invalidEmailCount`,
+   * `existingEmailCount`, `suppressedCount`, `contactsAfter` or
+   * `contactLimit` field — D6c's pre-flight estimate, which nothing
+   * computes.
+   */
   invalidEmailCount?: number;
   existingEmailCount?: number;
   suppressedCount?: number;
   contactsAfter?: number;
   contactLimit?: number;
-  /** BACKEND PENDING: GET /audience/imports — who attested, and to what. */
+  /**
+   * BACKEND PENDING: `GET /imports` has no `attestedBy` or
+   * `consentSourceLabel` field. The attestation is recorded
+   * (`consent_attestations`, written by `POST /imports/:id/mapping`) but
+   * the list does not join it.
+   */
   attestedBy?: string;
   consentSourceLabel?: string;
-  /** BACKEND PENDING: GET /audience/imports/:id — D6d's "about 40 seconds left". */
+  /**
+   * BACKEND PENDING: `GET /imports/:id` has no `etaSeconds` field — D6d's
+   * "about 40 seconds left". Nothing measures the importer's rate.
+   */
   etaSeconds?: number;
   /**
    * Columns already decided against.
    *
-   * BACKEND PENDING: GET /audience/imports/:id. `columnMapping` cannot say
-   * this: a column missing from it is a column nobody has answered for yet,
-   * and D6b draws those two differently — amber prompt against greyed row.
+   * BACKEND PENDING: `GET /imports/:id` has no `skippedColumns` field.
+   * `columnMapping` cannot say this: a column missing from it is a column
+   * nobody has answered for yet, and D6b draws those two differently —
+   * amber prompt against greyed row.
    */
   skippedColumns?: string[];
 }
@@ -338,7 +357,7 @@ function ImportHistory({ jobs }: { jobs: readonly ImportJobView[] }) {
       key: 'attested',
       header: 'Attested by',
       width: '16%',
-      // BACKEND PENDING: GET /audience/imports (no attestation join yet).
+      // BACKEND PENDING: GET /imports has no `attestedBy` field.
       cell: (job) => <span className="block truncate text-text-2">{job.attestedBy ?? '—'}</span>,
     },
     {
@@ -590,12 +609,13 @@ function UploadStage({ onReady }: { onReady: (draft: Draft) => void }) {
 
       setBusy('Reading the columns…');
       const local = await readColumns(file, fileType);
-      // BACKEND PENDING: GET /audience/imports/:id — row count, per-column
-      // samples and the pre-flight estimate D6b and D6c are drawn from.
+      // BACKEND PENDING: GET /imports/:id has no `rowCount`, `columns` or
+      // pre-flight estimate fields, so D6b and D6c fall back to the local
+      // parse below.
       const job: ImportJobView = await audienceApi.getImport(created.id);
 
       onReady({
-        job: { ...job, byteSize: job.byteSize ?? file.size, encoding: job.encoding ?? 'UTF-8' },
+        job: { ...job, encoding: job.encoding ?? 'UTF-8' },
         columns: job.columns ?? local,
       });
     } catch (cause) {
@@ -745,9 +765,9 @@ export async function readColumns(
  * `normaliseRow`). So Country is the target `country`, not a prefixed one —
  * a prefix would create an attribute with the prefix in its name.
  *
- * BACKEND PENDING: POST /audience/imports/:id/mapping — "Created at (keep
- * original)" has no first-class target. It lands in attributes as
- * `created_at` today; the importer does not backdate the contact.
+ * BACKEND PENDING: POST /imports/:id/mapping accepts no target for
+ * "Created at (keep original)". It lands in attributes as `created_at`
+ * today; the importer does not backdate the contact.
  */
 const TARGETS: readonly (readonly [string, string])[] = [
   ['email', 'Email'],
@@ -1433,8 +1453,8 @@ export function ImportRunPage() {
             <span className="text-ui text-text-2">
               {running
                 ? joinFacts([
-                    // BACKEND PENDING: GET /audience/imports/:id — no estimate
-                    // is returned yet, so the line degrades to the promise.
+                    // BACKEND PENDING: GET /imports/:id has no `etaSeconds`
+                    // field, so the line degrades to the promise.
                     row.etaSeconds === undefined ? null : `about ${count(row.etaSeconds)} seconds left`,
                     'you can leave this page',
                   ])

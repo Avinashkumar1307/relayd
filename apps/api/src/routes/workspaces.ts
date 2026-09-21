@@ -207,14 +207,12 @@ export function workspaceRoutes(options: WorkspaceRouterOptions): Router {
   );
 
   router.get('/current', auth, workspace, requirePermission('workspace:read'), async (_req, res) => {
-    const found = await workspaces.get(requireScope());
     res.json({
       data: {
-        id: found.id,
-        name: found.name,
-        slug: found.slug,
-        timezone: found.timezone,
+        ...(await workspaces.details(requireScope())),
         // The caller's own role, so the UI can gate without a second request.
+        // Not part of the workspace: it is a property of who is asking, which
+        // is why it is added here and not in the service.
         role: requireWorkspaceContext().role,
       },
     });
@@ -228,7 +226,11 @@ export function workspaceRoutes(options: WorkspaceRouterOptions): Router {
     validateBody(updateWorkspaceSchema),
     async (req: Request, res: Response) => {
       const updated = await workspaces.updateDetails(requireScope(), req.body as never);
-      res.json({ data: { id: updated.id, name: updated.name, timezone: updated.timezone } });
+      // Deliberately the same body GET answers with, role included: J1 writes
+      // the response back into the record the page is rendering from, and a
+      // narrower one would blank the workspace id, the slug and the read-only
+      // card the moment somebody renamed the workspace.
+      res.json({ data: { ...updated, role: requireWorkspaceContext().role } });
     },
   );
 
@@ -286,15 +288,10 @@ export function workspaceRoutes(options: WorkspaceRouterOptions): Router {
     workspace,
     requirePermission('member:invite'),
     async (_req, res) => {
-      const pending = await workspaces.listInvitations(requireScope());
-      res.json({
-        data: pending.map((invitation) => ({
-          id: invitation.id,
-          email: invitation.email,
-          role: invitation.role,
-          expiresAt: invitation.expiresAt,
-        })),
-      });
+      // The service already answers exactly J2a's row — id, address, role,
+      // expiry and who sent it — and never the token hash, so there is
+      // nothing here to strip.
+      res.json({ data: await workspaces.listInvitations(requireScope()) });
     },
   );
 

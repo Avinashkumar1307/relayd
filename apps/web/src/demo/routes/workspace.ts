@@ -15,11 +15,13 @@ import {
  *
  * DEMO ONLY.
  *
- * Half of what these answer does not exist on the server yet — there is no
- * `/me`, no session list and no `/audit-logs` router — which is exactly why
- * they are here: the J frames are reviewable against the preview before a
- * line of backend is written, and each page carries a `BACKEND PENDING`
- * marker at the call site so nobody mistakes the preview for the product.
+ * Every path here now has a real route behind it — `/me` and its sessions,
+ * `/audit-logs`, the workspace, its members and its invitations — and
+ * `apps/api/test/contract-identity.test.ts` is what keeps these fixtures and
+ * that API answering the same shape. What the preview still supplies and the
+ * server does not is a handful of named fields, each marked `BACKEND PENDING
+ * — field` where the client declares it; the preview is what lets the J
+ * frames be reviewed with those fields filled in.
  *
  * ## Seeing the states the frames draw
  *

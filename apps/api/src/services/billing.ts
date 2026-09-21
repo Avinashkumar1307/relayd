@@ -262,12 +262,15 @@ export class BillingService {
    */
   async overview(scope: WorkspaceScope) {
     return this.options.unitOfWork(async (repos) => {
-      const [subscription, state, usage, paymentMethod] = await Promise.all([
-        repos.billing.currentSubscription(scope),
-        repos.billing.readBillingState(scope),
-        repos.billing.usageForPeriod(scope),
-        repos.billing.defaultPaymentMethod(scope),
-      ]);
+      const [subscription, state, usage, paymentMethod, storedDetails, ownerEmail] =
+        await Promise.all([
+          repos.billing.currentSubscription(scope),
+          repos.billing.readBillingState(scope),
+          repos.billing.usageForPeriod(scope),
+          repos.billing.defaultPaymentMethod(scope),
+          repos.billing.billingDetails(scope),
+          repos.billing.billingEmail(scope),
+        ]);
 
       return {
         subscription:
@@ -294,6 +297,22 @@ export class BillingService {
           periodEnd: row.periodEnd,
         })),
         paymentMethod,
+        /**
+         * I8's invoice identity, on the payload the page already reads.
+         *
+         * The form on `/billing/payment-method` seeds itself from
+         * `overview.billingDetails` and saves through
+         * `PATCH /billing/details`. Leaving it off the overview meant a
+         * customer who had saved their VAT id came back to an empty form
+         * and could only conclude it had not been kept.
+         *
+         * Same fallback as `details()`: the owner's address is where
+         * receipts go, and `startCheckout` answers the same way, so a
+         * workspace that has never opened the form still sees a sensible
+         * email rather than a blank one.
+         */
+        billingDetails:
+          storedDetails ?? { email: ownerEmail ?? '', company: '', address: '', taxId: '' },
       };
     });
   }

@@ -41,11 +41,36 @@ export interface Tag {
   createdAt: string;
 }
 
+/**
+ * Every reason a row can come back with.
+ *
+ * Wider than `NEW_SUPPRESSION_REASONS` on purpose: `global_block` is the
+ * cross-workspace list and arrives on reads, but nobody may create one.
+ */
+export type SuppressionReason =
+  | 'unsubscribe'
+  | 'hard_bounce'
+  | 'complaint'
+  | 'manual'
+  | 'invalid'
+  | 'global_block';
+
+/** What `POST /suppressions` accepts, which is the read set minus the block list. */
+export type NewSuppressionReason = Exclude<SuppressionReason, 'global_block'>;
+
 export interface Suppression {
   id: string;
   email: string;
-  reason: 'unsubscribe' | 'hard_bounce' | 'complaint' | 'manual' | 'invalid';
+  reason: SuppressionReason;
   notes: string | null;
+  /**
+   * The campaign that caused it, by name, or null.
+   *
+   * Null on every row until the events worker writes
+   * `suppressions.source_campaign_id`; the join is real, so a row that has
+   * one is named.
+   */
+  source: string | null;
   createdAt: string;
 }
 
@@ -61,6 +86,8 @@ export type ImportStatus =
 export interface ImportJob {
   id: string;
   originalFilename: string;
+  /** The uploaded file's size, as recorded when the upload URL was issued. */
+  byteSize: number;
   fileType: 'csv' | 'tsv' | 'xlsx';
   status: ImportStatus;
   columnMapping: Record<string, string> | null;
@@ -134,14 +161,20 @@ export const audienceApi = {
   deleteTag: (id: string) => api.delete<void>(`/tags/${id}`),
 
   listSuppressions: () => api.get<Suppression[]>('/suppressions'),
-  createSuppression: (input: { email: string; reason?: Suppression['reason']; notes?: string }) =>
+  /**
+   * 201 for a new suppression, 200 when the address was already on the
+   * list — and a `Suppression` either way, so no caller has to branch on
+   * the body to find out which happened.
+   */
+  createSuppression: (input: { email: string; reason?: NewSuppressionReason; notes?: string }) =>
     api.post<Suppression>('/suppressions', input),
   deleteSuppression: (id: string) => api.delete<void>(`/suppressions/${id}`),
 
   listImports: () => api.get<ImportJob[]>('/imports'),
   getImport: (id: string) => api.get<ImportJob>(`/imports/${id}`),
   listImportErrors: (id: string) => api.get<ImportRowError[]>(`/imports/${id}/errors`),
-  cancelImport: (id: string) => api.post<ImportJob>(`/imports/${id}/cancel`),
+  /** 204. The cancelled job is re-read by the poller, not returned here. */
+  cancelImport: (id: string) => api.post<void>(`/imports/${id}/cancel`),
 
   createImport: (input: { filename: string; byteSize: number; fileType: 'csv' | 'tsv' | 'xlsx' }) =>
     api.post<{

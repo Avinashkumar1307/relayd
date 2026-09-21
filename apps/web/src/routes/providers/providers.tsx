@@ -59,9 +59,10 @@ export function ProvidersPage() {
   const readOnly = useReadOnly();
   const workspaceId = currentWorkspaceId ?? 'none';
 
-  // BACKEND PENDING: GET /providers does not return quotaNote, webhook or
-  // last24h yet. `quotaOf` and `webhookOf` derive a fallback from what it
-  // does return, so this call needs no change when they arrive.
+  // BACKEND PENDING: GET /providers serves no `quotaNote`, `webhook` or
+  // `last24h` field. The route is real and every other column is served;
+  // `quotaOf` and `webhookOf` derive a fallback from `quotaSnapshot` and
+  // `hasWebhookSecret`, so this call needs no change when they arrive.
   const connections = useQuery({
     queryKey: providerKeys.connections(workspaceId),
     queryFn: providerApi.list,

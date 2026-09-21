@@ -110,7 +110,6 @@ function PendingCard({
   const resend = async () => {
     setSending(true);
     try {
-      // BACKEND PENDING: POST /auth/resend-verification
       await resendVerification(email ?? undefined);
       cooldown.start();
     } catch (error) {
@@ -216,7 +215,6 @@ function ExpiredCard({ email }: { email: string | null }) {
   const resend = async () => {
     setSending(true);
     try {
-      // BACKEND PENDING: POST /auth/resend-verification
       await resendVerification(email ?? undefined);
       setSent(true);
     } catch (error) {

@@ -133,6 +133,18 @@ export const routes: Route[] = [
     return row;
   } },
 
+  // G1's Archive action. The real route answers with the campaign row and
+  // 409s on one that is still running; the preview only has to agree about
+  // the shape.
+  { method: 'POST', pattern: /^\/campaigns\/([^/]+)\/(archive|unarchive)$/u, handler: (m) => {
+    const row = find(state.campaigns, m[1] ?? '');
+    if (row !== undefined) {
+      row['archivedAt'] = m[2] === 'archive' ? nowIso() : null;
+      row['updatedAt'] = nowIso();
+    }
+    return row ?? {};
+  } },
+
   { method: 'PATCH', pattern: /^\/campaigns\/([^/]+)$/u, handler: (m, body) => {
     const row = find(state.campaigns, m[1] ?? '');
     if (row !== undefined) Object.assign(row, body as object, { updatedAt: nowIso() });

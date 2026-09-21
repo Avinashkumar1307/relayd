@@ -158,8 +158,9 @@ export interface Quota {
 /**
  * A connection's daily quota, and what the bar says about it.
  *
- * `quotaNote` is the sentence the frames write and the API does not send yet
- * (BACKEND PENDING), so a plain "N% used" stands in until it does.
+ * BACKEND PENDING: `GET /providers` serves no `quotaNote` field — the
+ * sentence the frames write — so a plain "N% used" derived from
+ * `quotaSnapshot` stands in until it does.
  */
 export function quotaOf(connection: Connection): Quota {
   const used = connection.quotaSnapshot?.sentLast24Hours ?? 0;

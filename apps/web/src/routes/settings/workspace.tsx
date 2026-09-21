@@ -157,13 +157,11 @@ function DetailsForm({ workspace, workspaceId }: { workspace: WorkspaceDetails; 
   });
 
   const save = useMutation({
-    mutationFn: () =>
-      workspaceApi.update({
-        name: form.name.trim(),
-        slug: form.slug.trim(),
-        timezone: form.timezone,
-        defaultSenderId: form.defaultSenderId === '' ? null : form.defaultSenderId,
-      }),
+    // Name and timezone only. The slug and the default sender are drawn
+    // because J1 draws them, and are read-only until the server can accept
+    // them — see `workspaceApi.update`. Sending them anyway would 400 the
+    // whole request on a strict schema and lose the rename too.
+    mutationFn: () => workspaceApi.update({ name: form.name.trim(), timezone: form.timezone }),
     onSuccess: async () => {
       toast.toast({ tone: 'success', title: 'Workspace updated' });
       await queryClient.invalidateQueries({ queryKey: workspaceKeys.details(workspaceId) });
@@ -185,11 +183,10 @@ function DetailsForm({ workspace, workspaceId }: { workspace: WorkspaceDetails; 
       ? undefined
       : 'Your role cannot change workspace settings';
 
-  const dirty =
-    form.name !== workspace.name ||
-    form.slug !== workspace.slug ||
-    form.timezone !== workspace.timezone ||
-    form.defaultSenderId !== (workspace.defaultSenderId ?? '');
+  // Only the two fields Save can actually send. Counting the read-only ones
+  // would light the button up for an edit that is silently discarded, which
+  // is worse than the field being obviously not editable.
+  const dirty = form.name !== workspace.name || form.timezone !== workspace.timezone;
 
   const zones = TIMEZONES.some((zone) => zone.value === workspace.timezone)
     ? TIMEZONES
@@ -198,7 +195,8 @@ function DetailsForm({ workspace, workspaceId }: { workspace: WorkspaceDetails; 
   // The frame says "Only verified senders are listed", and which senders
   // are verified is the server's answer, not a string this page matches on:
   // section H owns the status vocabulary and it is still moving.
-  // BACKEND PENDING: GET /senders?verified=true
+  // BACKEND PENDING — field: `GET /senders` exists but takes no `verified`
+  // filter, so this lists every sender the workspace has.
   const verified = senders.data ?? [];
 
   return (
@@ -225,11 +223,15 @@ function DetailsForm({ workspace, workspaceId }: { workspace: WorkspaceDetails; 
             <span className="flex h-full items-center border-r border-border bg-tint px-2.5 font-mono text-caption text-text-2">
               app.relayd.io/
             </span>
+            {/* Read-only until the server can answer "is this slug taken"
+                across tenants — see `workspaceApi.update`. Shown, because J1
+                shows it and the value is the workspace's public URL. */}
             <input
               id="workspace-slug"
               value={form.slug}
-              disabled={disabled}
-              title={reason}
+              disabled
+              readOnly
+              title="Renaming the workspace URL is not available yet"
               aria-describedby="workspace-slug-help"
               onChange={(event) => setForm({ ...form, slug: event.target.value })}
               className="h-full min-w-0 flex-1 border-0 bg-surface px-3 font-mono text-caption text-text outline-none disabled:cursor-not-allowed disabled:bg-tint disabled:text-text-3"
@@ -255,11 +257,13 @@ function DetailsForm({ workspace, workspaceId }: { workspace: WorkspaceDetails; 
           ))}
         </Select>
 
+        {/* Read-only for now: `workspaces` has no default-sender column, so
+            a choice made here has nowhere to be written. */}
         <Select
           label="Default sender"
           value={form.defaultSenderId}
-          disabled={disabled}
-          title={reason}
+          disabled
+          title="Choosing a workspace default sender is not available yet"
           help="Pre-selected in new campaigns. Only verified senders are listed."
           onChange={(event) => setForm({ ...form, defaultSenderId: event.target.value })}
         >

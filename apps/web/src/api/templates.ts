@@ -50,9 +50,14 @@ export interface Template {
   accent?: string;
   /** BACKEND PENDING: GET /templates (whether the thumbnail has a hero image). */
   hero?: boolean;
-  /** BACKEND PENDING: PATCH /templates/:id (F2b Settings). */
+  /**
+   * BACKEND PENDING: no route serves `defaultSenderId` or `language`, and
+   * `PATCH /templates/:id` refuses either — `renameTemplateSchema` is
+   * `.strict()` and takes `name` alone. F2b's Settings tab draws both and
+   * `templates` has no column for them, so they are session-only in the
+   * editor rather than sent to a route that would answer 400.
+   */
   defaultSenderId?: string | null;
-  /** BACKEND PENDING: PATCH /templates/:id (F2b Settings). */
   language?: string;
 }
 
@@ -136,15 +141,6 @@ export const templateApi = {
     ),
 
   rename: (id: string, name: string) => api.patch<Template>(`/templates/${id}`, { name }),
-
-  /**
-   * BACKEND PENDING: PATCH /templates/:id accepts `name` only.
-   *
-   * F2b's Settings tab also sets the default sender and the language, which
-   * have no column yet. Sent on the same route so there is one place to widen.
-   */
-  updateSettings: (id: string, input: { defaultSenderId?: string | null; language?: string }) =>
-    api.patch<Template>(`/templates/${id}`, input),
 
   remove: (id: string) => api.delete<void>(`/templates/${id}`),
 

@@ -149,10 +149,10 @@ export function CampaignDetailPage() {
 
   const recipients = useQuery({
     queryKey: campaignKeys.recipients(currentWorkspaceId, id, { filter, search }),
-    // BACKEND PENDING: GET /campaigns/:id/recipients?state=a,b — the schema
-    // takes one state, and three of G3's five chips name a set of them. The
-    // single-state chips filter server-side; the rest narrow the page here,
-    // which is honest for one page and wrong for pagination.
+    // BACKEND PENDING: GET /campaigns/:id/recipients takes a single `state`
+    // and has no way to express a set. Three of G3's five chips name a set
+    // of states, so the single-state chips filter server-side and the rest
+    // narrow the page here — honest for one page and wrong for pagination.
     queryFn: () =>
       campaignsApi.recipients(id, {
         ...(singleState === undefined ? {} : { state: singleState }),
@@ -168,7 +168,6 @@ export function CampaignDetailPage() {
 
   const timeline = useQuery({
     queryKey: campaignKeys.timeline(currentWorkspaceId, id),
-    // BACKEND PENDING: GET /campaigns/:id/timeline
     queryFn: () => campaignsApi.timeline(id),
     enabled: id !== '',
     retry: false,

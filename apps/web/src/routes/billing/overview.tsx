@@ -263,7 +263,9 @@ function NextInvoiceCard({ overview }: { overview: BillingOverview }) {
           —
         </div>
         <div className="mt-1.5 text-ui text-text-2">
-          {/* BACKEND PENDING: GET /billing (no invoice estimate on the payload). */}
+          {/* BACKEND PENDING: GET /billing serves no `nextInvoice` field.
+              Nothing local prices a period, so there is no estimate to
+              draw (see the note at the top of api/billing.ts). */}
           {subscription === null
             ? 'There is nothing to bill yet.'
             : `The estimate appears once the period has run. Renews ${formatDate(subscription.currentPeriodEnd)}.`}

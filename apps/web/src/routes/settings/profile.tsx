@@ -25,9 +25,9 @@ import { initialsOf } from './team.js';
  * gated by a workspace role or by K2's read-only state. A suspended
  * workspace must not stop somebody changing their own password.
  *
- * The whole page is BACKEND PENDING — `apps/api/src/routes/auth.ts` has no
- * `/me` and no session list — so it is built against the preview backend and
- * every call site says so.
+ * Served in full by `apps/api/src/routes/me.ts`: the profile, the password
+ * change, the two-step email change and the session list, all keyed off the
+ * verified token and reachable by a person but never by an API key.
  */
 
 export function ProfilePage() {
@@ -35,7 +35,6 @@ export function ProfilePage() {
 
   const profile = useQuery({
     queryKey: workspaceKeys.profile(),
-    // BACKEND PENDING: GET /me
     queryFn: () => accountApi.profile(),
   });
 
@@ -90,7 +89,6 @@ function IdentityCard({ profile, fallbackName }: { profile: AccountProfile; fall
   }, [profile.name]);
 
   const save = useMutation({
-    // BACKEND PENDING: PATCH /me
     mutationFn: () => accountApi.updateProfile({ name: name.trim() }),
     onSuccess: async () => {
       toast.toast({ tone: 'success', title: 'Profile updated' });
@@ -145,7 +143,10 @@ function IdentityCard({ profile, fallbackName }: { profile: AccountProfile; fall
               <Badge tone="warning">Unverified</Badge>
             )}
           </span>
-          {/* BACKEND PENDING: POST /me/email-change */}
+          {/* UI PENDING, not backend: `POST /me/email-change` is served and
+              `accountApi.changeEmail` calls it, but J5 draws no dialog to
+              collect the new address and the current password, so this still
+              sends the user to the verification screen. */}
           <a href="/verify" className="text-caption font-medium text-brand no-underline">
             Change email
           </a>
@@ -211,7 +212,6 @@ function ChangePassword() {
   const [error, setError] = useState<string | undefined>(undefined);
 
   const change = useMutation({
-    // BACKEND PENDING: POST /me/password
     mutationFn: () => accountApi.changePassword({ currentPassword: current, newPassword: next }),
     onSuccess: () => {
       toast.toast({ tone: 'success', title: 'Password updated' });
@@ -301,14 +301,12 @@ function ActiveSessions() {
 
   const sessions = useQuery({
     queryKey: workspaceKeys.sessions(),
-    // BACKEND PENDING: GET /me/sessions
     queryFn: () => accountApi.sessions(),
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: workspaceKeys.sessions() });
 
   const revoke = useMutation({
-    // BACKEND PENDING: DELETE /me/sessions/:id
     mutationFn: (id: string) => accountApi.revokeSession(id),
     onSuccess: async () => {
       toast.toast({ tone: 'success', title: 'Session signed out' });
@@ -323,7 +321,6 @@ function ActiveSessions() {
   });
 
   const revokeOthers = useMutation({
-    // BACKEND PENDING: DELETE /me/sessions
     mutationFn: () => accountApi.revokeOtherSessions(),
     onSuccess: async () => {
       toast.toast({ tone: 'success', title: 'Every other session signed out' });

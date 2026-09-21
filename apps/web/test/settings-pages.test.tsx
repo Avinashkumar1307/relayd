@@ -277,7 +277,15 @@ describe('the workspace settings page (J1)', () => {
     ).toBeTruthy();
   });
 
-  it('saves the changed fields and nothing else', async () => {
+  /**
+   * Only the two fields the server will accept.
+   *
+   * `updateWorkspaceSchema` is `.strict()` and takes `name` and `timezone`, so
+   * a body carrying `slug` or `defaultSenderId` is a 400 that loses the
+   * rename along with them. Both of those are drawn read-only until the API
+   * can store them — see `workspaceApi.update`.
+   */
+  it('saves the two fields the API accepts, and nothing else', async () => {
     workspaceStubs();
     responses.set('PATCH /workspaces/current', WORKSPACE);
     wrap(<WorkspaceSettingsPage />);
@@ -289,13 +297,20 @@ describe('the workspace settings page (J1)', () => {
 
     await waitFor(() => {
       const patch = sent.find((request) => request.method === 'PATCH');
-      expect(patch?.body).toEqual({
-        name: 'Northwind Travel',
-        slug: 'northwind-voyages',
-        timezone: 'Asia/Dubai',
-        defaultSenderId: 'snd_hello',
-      });
+      expect(patch?.body).toEqual({ name: 'Northwind Travel', timezone: 'Asia/Dubai' });
     });
+  });
+
+  it('does not offer to edit a slug or a default sender it cannot save', async () => {
+    workspaceStubs();
+    wrap(<WorkspaceSettingsPage />);
+
+    const slug = (await screen.findByLabelText('Slug')) as HTMLInputElement;
+    expect(slug.disabled).toBe(true);
+    expect(slug.title).toBe('Renaming the workspace URL is not available yet');
+
+    const sender = screen.getByLabelText('Default sender') as HTMLSelectElement;
+    expect(sender.disabled).toBe(true);
   });
 
   it('disables every write and says why when the role cannot update', async () => {

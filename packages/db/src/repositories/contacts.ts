@@ -29,6 +29,12 @@ export interface ContactRow {
   status: ContactStatus;
   source: ContactSource;
   consentStatus: ConsentStatus;
+  /** Where the contact said yes, as declared at import or by the form (D2). */
+  consentSource: string | null;
+  /** When that was recorded. Null when nobody ever attested to it. */
+  consentAt: Date | null;
+  /** Last open or click, from the events worker. Null for never engaged. */
+  lastEngagedAt: Date | null;
   attributes: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
@@ -416,6 +422,9 @@ function toRow(row: typeof contacts.$inferSelect): ContactRow {
     status: row.status,
     source: row.source,
     consentStatus: row.consentStatus,
+    consentSource: row.consentSource,
+    consentAt: row.consentAt,
+    lastEngagedAt: row.lastEngagedAt,
     attributes: (row.attributes ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

@@ -10,7 +10,7 @@ import {
   listCampaignsSchema,
   listRecipientsSchema,
   scheduleCampaignSchema,
-  testSendSchema,
+  testSendCampaignSchema,
   updateCampaignSchema,
 } from '@relayd/validation';
 import { requireScope } from '../context.js';
@@ -325,7 +325,10 @@ export function campaignRoutes(options: CampaignRouterOptions): Router {
     '/campaigns/:id/test-send',
     ...chain,
     write,
-    validateBody(testSendSchema),
+    // testSendCampaignSchema, not testSendSchema: the barrel gives the bare
+    // name to the PROVIDER schema, which requires a senderId this route takes
+    // from the campaign. Importing the wrong one 400s every test send.
+    validateBody(testSendCampaignSchema),
     async (req: Request, res: Response) => {
       const { to } = req.body as { to: string[] };
       res.json({ data: await campaigns.testSend(requireScope(), id(req), to) });

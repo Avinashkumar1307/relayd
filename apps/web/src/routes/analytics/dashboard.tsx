@@ -91,7 +91,6 @@ export function DashboardPage() {
     queryFn: () => analyticsApi.overview(range),
   });
 
-  // BACKEND PENDING: GET /analytics/dashboard
   const summary = useQuery({
     queryKey: analyticsKeys.dashboard(currentWorkspaceId),
     queryFn: () => analyticsApi.dashboard(),

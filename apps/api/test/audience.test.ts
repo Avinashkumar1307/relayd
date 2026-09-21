@@ -32,6 +32,7 @@ function buildAudienceWorld() {
   const tagRows: { id: TagId; name: string }[] = [];
   const tagLinks: { tagId: TagId; contactId: ContactId }[] = [];
   const suppressed = new Set<string>();
+  const suppressionRows: { id: string; email: string; reason: string }[] = [];
   const segments: { id: string; name: string; definition: unknown; cachedCount: number | null }[] = [];
   const imports: { id: string; status: string; s3Key: string }[] = [];
   const audit: Record<string, unknown>[] = [];
@@ -225,13 +226,21 @@ function buildAudienceWorld() {
     } as unknown as AudienceRepositories['segments'],
 
     suppressions: {
+      // The stored rows, so `findByEmail` can answer with the suppression
+      // that already exists rather than nothing.
       async isSuppressed(_s: unknown, email: string) {
         return suppressed.has(email.toLowerCase());
       },
       async add(_s: unknown, input: { id: string; email: string; reason: string }) {
         if (suppressed.has(input.email.toLowerCase())) return null;
         suppressed.add(input.email.toLowerCase());
+        suppressionRows.push({ id: input.id, email: input.email, reason: input.reason });
         return { id: input.id, email: input.email, reason: input.reason };
+      },
+      async findByEmail(_s: unknown, email: string) {
+        return (
+          suppressionRows.find((row) => row.email.toLowerCase() === email.toLowerCase()) ?? null
+        );
       },
       async list() {
         return [...suppressed].map((email) => ({ email }));
@@ -577,9 +586,12 @@ describe('suppressions', () => {
     // A bounce handler that fails because it ran twice leaves the address
     // sendable, which is the opposite of what it was called to do.
     await service.addSuppression(scope, { email: 'a@example.com', reason: 'hard_bounce' });
+    // The second call answers with the suppression that already exists, and
+    // says it did not create it — a second body shape here would be a branch
+    // every caller had to write.
     await expect(
       service.addSuppression(scope, { email: 'a@example.com', reason: 'hard_bounce' }),
-    ).resolves.toBeNull();
+    ).resolves.toMatchObject({ created: false, row: { email: 'a@example.com' } });
   });
 });
 

@@ -55,7 +55,6 @@ export function ListsPage() {
 
   const lists = useQuery({
     queryKey: audienceExtraKeys.lists(currentWorkspaceId),
-    // BACKEND PENDING: GET /audience/lists (archived, footnote, growth30d, trend)
     queryFn: audienceExtraApi.listCards,
   });
 
@@ -72,7 +71,6 @@ export function ListsPage() {
   });
 
   const rename = useMutation({
-    // BACKEND PENDING: PATCH /audience/lists/:id
     mutationFn: ({ id, name }: { id: string; name: string }) => audienceExtraApi.renameList(id, name),
     onSuccess: () => {
       invalidate();
@@ -81,7 +79,6 @@ export function ListsPage() {
   });
 
   const archive = useMutation({
-    // BACKEND PENDING: POST /audience/lists/:id/archive
     mutationFn: (id: string) => audienceExtraApi.archiveList(id),
     onSuccess: () => {
       invalidate();
@@ -89,7 +86,6 @@ export function ListsPage() {
     },
   });
 
-  // BACKEND PENDING: POST /audience/exports
   const exportList = useMutation({
     mutationFn: (id: string) => audienceExtraApi.startExport({ resource: 'list', ids: [id] }),
   });

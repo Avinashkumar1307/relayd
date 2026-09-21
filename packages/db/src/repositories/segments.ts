@@ -13,6 +13,8 @@ export interface SegmentRow {
   cachedCount: number | null;
   cachedAt: Date | null;
   createdAt: Date;
+  /** Bumped by `update`; D5a's "Updated" column reads it. */
+  updatedAt: Date;
 }
 
 /**
@@ -141,5 +143,6 @@ function toRow(row: typeof segments.$inferSelect): SegmentRow {
     cachedCount: row.cachedCount,
     cachedAt: row.cachedAt,
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }

@@ -28,6 +28,7 @@ import type {
   SavedViewRepository,
   SegmentRepository,
   SuppressionRepository,
+  SuppressionRow,
   TagMergeRepository,
   TagRepository,
   WorkspaceScope,
@@ -100,6 +101,85 @@ export interface SuppressionSummaryDto {
   total: number;
   byReason: { reason: string; count: number }[];
 }
+
+/** A tag as D1's Tags column and D2's header chips draw it. */
+export interface TagRefDto {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+/**
+ * A contact as D1's table draws it.
+ *
+ * The three added fields are columns on the frame, not decoration: without
+ * them `row.tags.map(...)` and `row.lists.length` throw before anything
+ * renders. `lastEngaged` is already a display string because it mixes
+ * relative and absolute forms against the workspace's clock, which is a
+ * server decision and not a component one.
+ */
+export interface ContactRowDto extends ContactRow {
+  tags: TagRefDto[];
+  lists: string[];
+  lastEngaged: string;
+}
+
+/** The strip under D2's drawer header. */
+export interface ContactSuppressionDto {
+  suppressed: boolean;
+  headline: string;
+  detail: string;
+  /** docs D7: only manual and invalid entries may be lifted. */
+  removable: boolean;
+}
+
+/** One line of D2's engagement timeline. */
+export interface ContactEventDto {
+  id: string;
+  /** A `RECIPIENT_STATES` key, straight from `campaign_recipients.state`. */
+  state: string;
+  when: string;
+  detail: string;
+}
+
+export interface ContactDetailDto extends ContactRowDto {
+  country: string | null;
+  language: string | null;
+  consentSource: string | null;
+  consentRecorded: string | null;
+  suppression: ContactSuppressionDto;
+  events: ContactEventDto[];
+}
+
+/** A suppression as D7's table draws it. */
+export interface SuppressionRowDto {
+  id: string;
+  email: string;
+  reason: string;
+  notes: string | null;
+  createdAt: Date;
+  /**
+   * The campaign that caused it, by name, or null.
+   *
+   * Null for every row until the events worker starts writing
+   * `suppressions.source_campaign_id`; the column and the join are both
+   * real, so a row that does carry one is named here.
+   */
+  source: string | null;
+  /**
+   * Who or what added it — D7's "Added by" column.
+   *
+   * Always null: `suppressions` has no `created_by`, and there is nowhere
+   * else the answer is written down. Sent as an explicit null rather than
+   * omitted so the field is part of the contract and the day the column
+   * arrives is a one-line change here, not a new field the browser has
+   * never seen.
+   */
+  addedBy: string | null;
+}
+
+/** The reasons a workspace may lift, per D7. */
+const REMOVABLE_REASONS: readonly string[] = ['manual', 'invalid'];
 
 export type AudienceUnitOfWork = <T>(
   fn: (repos: AudienceRepositories) => Promise<T>,
@@ -228,15 +308,63 @@ export class AudienceService {
       view?: string | undefined;
       q?: string | undefined;
     },
-  ) {
+  ): Promise<{ contacts: ContactRowDto[]; nextCursor?: string }> {
     return this.options.unitOfWork(async (repos) => {
       const filter = await this.resolveView(repos, scope, options);
-      return repos.contacts.list(scope, {
+      const page = await repos.contacts.list(scope, {
         ...(options.limit === undefined ? {} : { limit: options.limit }),
         ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
         ...filter,
       });
+
+      const decorated = await this.decorate(repos, scope, page.contacts);
+
+      return {
+        contacts: decorated,
+        ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+      };
     });
+  }
+
+  /**
+   * Attaches D1's Tags and Lists columns to a page of contacts.
+   *
+   * Two queries for the whole page rather than two per row: fifty contacts
+   * would otherwise be a hundred round trips for a table that renders in
+   * one.
+   */
+  private async decorate(
+    repos: AudienceRepositories,
+    scope: WorkspaceScope,
+    rows: readonly ContactRow[],
+  ): Promise<ContactRowDto[]> {
+    const ids = rows.map((row) => row.id);
+    const [tagRows, listRows] = await Promise.all([
+      repos.stats.tagsForContacts(scope, ids),
+      repos.stats.listsForContacts(scope, ids),
+    ]);
+
+    const tagsFor = new Map<string, TagRefDto[]>();
+    for (const row of tagRows) {
+      const key = String(row.contactId);
+      tagsFor.set(key, [
+        ...(tagsFor.get(key) ?? []),
+        { id: String(row.tagId), name: row.name, color: row.color },
+      ]);
+    }
+
+    const listsFor = new Map<string, string[]>();
+    for (const row of listRows) {
+      const key = String(row.contactId);
+      listsFor.set(key, [...(listsFor.get(key) ?? []), row.name]);
+    }
+
+    return rows.map((row) => ({
+      ...row,
+      tags: tagsFor.get(String(row.id)) ?? [],
+      lists: listsFor.get(String(row.id)) ?? [],
+      lastEngaged: formatSince(row.lastEngagedAt, this.options.now()),
+    }));
   }
 
   /**
@@ -363,11 +491,46 @@ export class AudienceService {
     });
   }
 
-  async getContact(scope: WorkspaceScope, id: ContactId): Promise<ContactRow> {
+  /**
+   * D2's drawer, in one call.
+   *
+   * The drawer reads `row.tags`, `row.lists`, `row.suppression.headline` and
+   * `row.events` without guarding any of them, so every one of those has to
+   * be present — an absent `suppression` is a thrown TypeError before a
+   * pixel is drawn, which is exactly the failure this endpoint used to have.
+   */
+  async getContact(scope: WorkspaceScope, id: ContactId): Promise<ContactDetailDto> {
     return this.options.unitOfWork(async (repos) => {
       const contact = await repos.contacts.findById(scope, id);
       if (contact === null) throw new AppError('not_found', 'Contact not found', 404);
-      return contact;
+
+      const [decorated] = await this.decorate(repos, scope, [contact]);
+      if (decorated === undefined) throw new AppError('not_found', 'Contact not found', 404);
+
+      const [suppression, activity] = await Promise.all([
+        repos.suppressions.findByEmail(scope, contact.email),
+        repos.stats.contactActivity(scope, contact.id, { limit: 20 }),
+      ]);
+
+      const now = this.options.now();
+
+      return {
+        ...decorated,
+        // D5's own field list treats country and language as attributes;
+        // neither is a column, and reading them from anywhere else would
+        // make the segment builder and the drawer disagree.
+        country: attributeString(contact.attributes, 'country'),
+        language: attributeString(contact.attributes, 'language'),
+        consentSource: contact.consentSource,
+        consentRecorded: contact.consentAt === null ? null : formatDay(contact.consentAt),
+        suppression: toSuppressionStrip(suppression, now),
+        events: activity.map((row) => ({
+          id: row.id,
+          state: row.state,
+          when: formatMoment(row.at, now),
+          detail: row.campaignName,
+        })),
+      };
     });
   }
 
@@ -752,6 +915,34 @@ export class AudienceService {
     return this.options.unitOfWork((repos) => repos.segments.list(scope));
   }
 
+  /**
+   * D5b's "Save changes".
+   *
+   * The definition is compiled before it is stored, for the same reason it
+   * is at create time: a definition that cannot compile would otherwise be
+   * accepted here and fail every time somebody opened it afterwards.
+   */
+  async updateSegment(
+    scope: WorkspaceScope,
+    id: SegmentId,
+    patch: { name?: string | undefined; definition?: unknown },
+  ) {
+    return this.options.unitOfWork(async (repos) => {
+      const before = await repos.segments.findById(scope, id);
+      if (before === null) throw new AppError('not_found', 'Segment not found', 404);
+
+      if (patch.definition !== undefined) this.assertCompilable(patch.definition, scope);
+
+      const updated = await repos.segments.update(scope, id, {
+        ...(patch.name === undefined ? {} : { name: patch.name }),
+        ...(patch.definition === undefined ? {} : { definition: patch.definition }),
+      });
+      if (updated === null) throw new AppError('not_found', 'Segment not found', 404);
+
+      return updated;
+    });
+  }
+
   async deleteSegment(scope: WorkspaceScope, id: SegmentId): Promise<void> {
     await this.options.unitOfWork(async (repos) => {
       if (!(await repos.segments.remove(scope, id))) {
@@ -769,7 +960,7 @@ export class AudienceService {
   async previewSegment(
     scope: WorkspaceScope,
     input: { segmentId?: SegmentId; definition?: unknown },
-  ): Promise<{ count: number; capped: boolean; cap: number }> {
+  ): Promise<{ count: number; capped: boolean; cap: number; subscribedTotal: number }> {
     return this.options.unitOfWork(async (repos) => {
       let definition = input.definition;
 
@@ -791,16 +982,29 @@ export class AudienceService {
         await repos.segments.cacheCount(scope, input.segmentId, result.count);
       }
 
-      return { ...result, cap };
+      // D5b prints "N contacts — of 45,102 subscribed". The denominator is
+      // the same number D1's header shows, read from the same query, so the
+      // two screens cannot disagree about how big the audience is.
+      const stats = await repos.stats.contactStats(scope, {});
+
+      return { ...result, cap, subscribedTotal: stats.subscribed };
     });
   }
 
   // ------------------------------------------------------------ suppressions
 
+  /**
+   * Adds an address to the suppression list.
+   *
+   * Answers the same `SuppressionRowDto` the table is built from, whether
+   * it created the row or found one, so `POST /suppressions` and
+   * `GET /suppressions` speak one shape. `created` is what the route turns
+   * into 201 or 200.
+   */
   async addSuppression(
     scope: WorkspaceScope,
     input: { email: string; reason: string; notes?: string },
-  ) {
+  ): Promise<{ row: SuppressionRowDto | null; created: boolean }> {
     return this.options.unitOfWork(async (repos) => {
       const row = await repos.suppressions.add(scope, {
         id: this.options.newId() as SuppressionId,
@@ -822,13 +1026,91 @@ export class AudienceService {
         after: { email: input.email, reason: input.reason },
       });
 
-      // Null means it was already suppressed, which is the desired state.
-      return row;
+      // Already suppressed is the desired state, not a conflict — but the
+      // caller still gets a suppression back rather than an object of a
+      // second shape it would have to branch on.
+      const stored = row ?? (await repos.suppressions.findByEmail(scope, input.email));
+
+      return {
+        row: stored === null ? null : await this.toSuppressionRow(repos, scope, stored),
+        created: row !== null,
+      };
     });
   }
 
-  async listSuppressions(scope: WorkspaceScope, options: { limit?: number } = {}) {
-    return this.options.unitOfWork((repos) => repos.suppressions.list(scope, options));
+  /**
+   * One suppression as D7's table wants it.
+   *
+   * The campaign lookup is the same list the Source chip is built from, so
+   * a name shown in a row and a name shown in the filter cannot disagree.
+   */
+  private async toSuppressionRow(
+    repos: AudienceRepositories,
+    scope: WorkspaceScope,
+    row: SuppressionRow,
+  ): Promise<SuppressionRowDto> {
+    const source =
+      row.sourceCampaignId === null
+        ? null
+        : ((await repos.stats.suppressionSources(scope)).find(
+            (candidate) => candidate.id === row.sourceCampaignId,
+          )?.name ?? null);
+
+    return {
+      id: row.id,
+      email: row.email,
+      reason: row.reason,
+      notes: row.notes,
+      createdAt: row.createdAt,
+      source,
+      addedBy: null,
+    };
+  }
+
+  /**
+   * D7's table, filtered by its three chips.
+   *
+   * The query was parsed and then thrown away before: every request read
+   * the whole list, so picking "Complaint" changed the chip and nothing
+   * else.
+   */
+  async listSuppressions(
+    scope: WorkspaceScope,
+    options: {
+      limit?: number | undefined;
+      reason?: SuppressionRow['reason'] | undefined;
+      source?: string | undefined;
+      q?: string | undefined;
+    } = {},
+  ): Promise<SuppressionRowDto[]> {
+    return this.options.unitOfWork(async (repos) => {
+      const rows = await repos.suppressions.list(scope, {
+        ...(options.limit === undefined ? {} : { limit: options.limit }),
+        ...(options.reason === undefined ? {} : { reason: options.reason }),
+        // `any` is D7's "Any campaign", which is the absence of a filter.
+        ...(options.source === undefined || options.source === 'any'
+          ? {}
+          : { sourceCampaignId: options.source }),
+        ...(options.q === undefined ? {} : { search: options.q }),
+      });
+
+      // One lookup for the page: the same list D7's Source chip is built
+      // from, so a name shown in the filter and a name shown in a row
+      // cannot disagree.
+      const sources = await repos.stats.suppressionSources(scope);
+      const nameFor = new Map(sources.map((row) => [row.id, row.name]));
+
+      return rows.map((row) => ({
+        id: row.id,
+        email: row.email,
+        reason: row.reason,
+        notes: row.notes,
+        createdAt: row.createdAt,
+        source:
+          row.sourceCampaignId === null ? null : (nameFor.get(row.sourceCampaignId) ?? null),
+        addedBy: null,
+      }));
+    });
   }
 
   /** D7's counts by reason, and the total it prints beside them. */
@@ -1193,6 +1475,80 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 function formatDay(value: Date): string {
   return `${value.getUTCDate()} ${MONTHS[value.getUTCMonth()] ?? ''} ${value.getUTCFullYear()}`;
+}
+
+/** "Today, 09:14", "8 Sep, 10:03" — D2's timeline column. UTC, as above. */
+function formatMoment(value: Date, now: Date): string {
+  const time = `${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}`;
+  const days = wholeDaysBetween(value, now);
+
+  if (days === 0) return `Today, ${time}`;
+  if (days === 1) return `Yesterday, ${time}`;
+  return `${value.getUTCDate()} ${MONTHS[value.getUTCMonth()] ?? ''}, ${time}`;
+}
+
+/** "Never", "Today", "Yesterday", "5 days ago", then the date. */
+function formatSince(value: Date | null, now: Date): string {
+  if (value === null) return 'Never';
+
+  const days = wholeDaysBetween(value, now);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 30) return `${days} days ago`;
+  return formatDay(value);
+}
+
+/** Calendar days apart in UTC, so "yesterday" does not depend on the hour. */
+function wholeDaysBetween(value: Date, now: Date): number {
+  const dayOf = (date: Date): number =>
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  return Math.round((dayOf(now) - dayOf(value)) / 86_400_000);
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/**
+ * A string-valued custom attribute, or null.
+ *
+ * Attributes are `unknown` by construction — the schema allows strings,
+ * numbers, booleans and null — and D2 prints this one straight into the
+ * profile grid, so anything that is not already text is reported as absent
+ * rather than stringified into `[object Object]`.
+ */
+function attributeString(attributes: Record<string, unknown>, key: string): string | null {
+  const value = attributes[key];
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
+/** D2's suppression strip: "Not suppressed." or the reason and the date. */
+function toSuppressionStrip(
+  row: { reason: string; createdAt: Date; notes: string | null } | null,
+  now: Date,
+): ContactSuppressionDto {
+  if (row === null) {
+    return {
+      suppressed: false,
+      headline: 'Not suppressed.',
+      detail: 'This contact is eligible for every campaign their lists and segments match.',
+      removable: false,
+    };
+  }
+
+  void now;
+  const removable = REMOVABLE_REASONS.includes(row.reason);
+
+  return {
+    suppressed: true,
+    headline: `Suppressed · ${row.reason.replace(/_/gu, ' ')} · ${formatDay(row.createdAt)}`,
+    detail:
+      row.notes ??
+      (removable
+        ? 'An admin can remove this suppression.'
+        : 'Complaint, bounce and unsubscribe suppressions cannot be removed.'),
+    removable,
+  };
 }
 
 function contentTypeFor(fileType: 'csv' | 'tsv' | 'xlsx'): string {

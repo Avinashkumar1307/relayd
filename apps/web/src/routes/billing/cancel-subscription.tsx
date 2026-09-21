@@ -298,7 +298,6 @@ export function CancelSubscriptionPage() {
               Ready in a few minutes; link emailed to {user?.email ?? 'your address'}.
             </div>
           </div>
-          {/* BACKEND PENDING: POST /billing/export */}
           <Button variant="secondary" onClick={() => exportAll.mutate()} pending={exportAll.isPending}>
             Export everything
           </Button>

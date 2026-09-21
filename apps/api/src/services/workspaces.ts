@@ -9,9 +9,13 @@ import type {
 } from '@relayd/types';
 import { generateToken, hashPassword, hashToken } from '@relayd/utils';
 import { workspaceScope } from '@relayd/db';
-import type { WorkspaceScope } from '@relayd/db';
+import type { UserRow, WorkspaceScope } from '@relayd/db';
 import type { Repositories } from './auth.js';
 import { AUDIT_ACTIONS, buildAuditEntry, type Actor, type AuditContext } from './audit.js';
+// The one relative-time renderer. J5's session list and J2a's "Last active"
+// column describe the same kind of instant against the same clock, and two
+// implementations of "2 hours ago" drift.
+import { relativeLabel } from './profile.js';
 
 /**
  * Workspace management: details, members, invitations.
@@ -76,10 +80,54 @@ export interface WorkspaceServiceOptions {
   currentContext?: () => AuditContext;
 }
 
+/**
+ * One row of J2a's Team table.
+ *
+ * `name` and `email` are the Member and Email columns. They come from `users`
+ * — a global table — because a membership is a role and a join date and
+ * nothing a person is called. Without them the table draws a raw uuid in the
+ * column a human is meant to recognise, and K3's "ask the Owner" cannot name
+ * anyone.
+ *
+ * `lastActiveLabel` is rendered here, against this server's clock, for the
+ * same reason J5's session list is: a browser twenty minutes fast would print
+ * "in 20 minutes" for somebody who is signed in right now. It is omitted, not
+ * blanked, for a member who has never signed in — the column draws an em dash
+ * for absent and the string "null" for null.
+ */
 export interface MemberView {
   userId: UserId;
   role: WorkspaceRole;
   joinedAt: Date;
+  name: string;
+  email: string;
+  lastActiveLabel?: string;
+}
+
+/** One row of J2a's pending-invitation table. */
+export interface PendingInvitationView {
+  id: WorkspaceInvitationId;
+  email: string;
+  role: InvitableRole;
+  expiresAt: Date;
+  invitedByName?: string;
+}
+
+/**
+ * J1's workspace card, editable half and read-only half.
+ *
+ * `role` is not here: it is the caller's, not the workspace's, and the route
+ * adds it from the membership the middleware already resolved.
+ */
+export interface WorkspaceDetailsView {
+  id: WorkspaceId;
+  name: string;
+  slug: string;
+  timezone: string;
+  /** ISO 8601. J1's "Created" row. */
+  createdAt: string;
+  /** The owner's display name, omitted when the account is gone. */
+  createdByName?: string;
 }
 
 /** Roles an invitation may offer. Ownership transfers, it is not invited. */
@@ -209,7 +257,27 @@ export class WorkspaceService {
     });
   }
 
-  async updateDetails(scope: WorkspaceScope, patch: { name?: string; timezone?: string }) {
+  /**
+   * J1's workspace card, in one read.
+   *
+   * `get` answers the raw row and several callers want exactly that; this
+   * answers what the page draws, including the owner's name, so the browser
+   * does not have to fetch the member list to render the "Created by" line.
+   */
+  async details(scope: WorkspaceScope): Promise<WorkspaceDetailsView> {
+    return this.options.unitOfWork(async (repos) => {
+      const workspace = await repos.workspaces.findCurrent(scope);
+      if (workspace === null) {
+        throw new AppError('not_found', 'Workspace not found', 404);
+      }
+      return toDetailsView(workspace, await ownerName(repos, workspace.ownerUserId));
+    });
+  }
+
+  async updateDetails(
+    scope: WorkspaceScope,
+    patch: { name?: string; timezone?: string },
+  ): Promise<WorkspaceDetailsView> {
     return this.options.unitOfWork(async (repos) => {
       // Read first, so the audit row shows what actually changed rather than
       // only what was requested.
@@ -227,7 +295,10 @@ export class WorkspaceService {
         after: { name: updated.name, timezone: updated.timezone },
       });
 
-      return updated;
+      // The same shape GET answers with. A PATCH that came back narrower
+      // would leave the page holding a record missing the fields it had a
+      // moment ago, and the read-only card below the form would empty out.
+      return toDetailsView(updated, await ownerName(repos, updated.ownerUserId));
     });
   }
 
@@ -249,9 +320,16 @@ export class WorkspaceService {
   }
 
   async listMembers(scope: WorkspaceScope): Promise<MemberView[]> {
+    const now = this.options.now();
+
     return this.options.unitOfWork(async (repos) => {
       const members = await repos.members.list(scope);
-      return members.map((m) => ({ userId: m.userId, role: m.role, joinedAt: m.joinedAt }));
+      const people = await peopleByUserId(
+        repos,
+        members.map((m) => m.userId),
+      );
+
+      return members.map((m) => toMemberView(m, people.get(m.userId), now));
     });
   }
 
@@ -268,6 +346,8 @@ export class WorkspaceService {
     userId: UserId,
     role: WorkspaceRole,
   ): Promise<MemberView> {
+    const now = this.options.now();
+
     return this.options.unitOfWork(async (repos) => {
       const member = await repos.members.findByUser(scope, userId);
       if (member === null) {
@@ -291,7 +371,10 @@ export class WorkspaceService {
         after: { role: updated.role },
       });
 
-      return { userId: updated.userId, role: updated.role, joinedAt: updated.joinedAt };
+      // The same row shape the list answers with: J2a writes the response
+      // straight back into the table it came from, and a narrower row would
+      // blank the Member and Email columns of whoever was just changed.
+      return toMemberView(updated, await repos.users.findById(userId), now);
     });
   }
 
@@ -343,6 +426,8 @@ export class WorkspaceService {
     scope: WorkspaceScope,
     input: { fromUserId: UserId; toUserId: UserId },
   ): Promise<{ previousOwner: MemberView; newOwner: MemberView }> {
+    const now = this.options.now();
+
     return this.options.unitOfWork(async (repos) => {
       if (input.fromUserId === input.toUserId) {
         throw new AppError('unprocessable', 'That member is already the owner', 422);
@@ -391,13 +476,11 @@ export class WorkspaceService {
         after: { ownerUserId: input.toUserId, previousOwnerRole: demoted.role },
       });
 
+      const people = await peopleByUserId(repos, [demoted.userId, promoted.userId]);
+
       return {
-        previousOwner: {
-          userId: demoted.userId,
-          role: demoted.role,
-          joinedAt: demoted.joinedAt,
-        },
-        newOwner: { userId: promoted.userId, role: promoted.role, joinedAt: promoted.joinedAt },
+        previousOwner: toMemberView(demoted, people.get(demoted.userId), now),
+        newOwner: toMemberView(promoted, people.get(promoted.userId), now),
       };
     });
   }
@@ -413,7 +496,17 @@ export class WorkspaceService {
   async invite(
     scope: WorkspaceScope,
     input: { email: string; role: InvitableRole; invitedBy: UserId; workspaceName: string },
-  ): Promise<{ id: WorkspaceInvitationId; email: string; role: InvitableRole }> {
+  ): Promise<{
+    id: WorkspaceInvitationId;
+    email: string;
+    role: InvitableRole;
+    /**
+     * When the link dies. J2a lists it next to the pending row, and `resend`
+     * already answers with it — an invitation that came back without one
+     * would render "Expires undefined" on the row it just created.
+     */
+    expiresAt: Date;
+  }> {
     const token = generateToken();
 
     const invitation = await this.options.unitOfWork(async (repos) => {
@@ -456,11 +549,43 @@ export class WorkspaceService {
       token,
     );
 
-    return { id: invitation.id, email: invitation.email, role: invitation.role };
+    return {
+      id: invitation.id,
+      email: invitation.email,
+      role: invitation.role,
+      expiresAt: invitation.expiresAt,
+    };
   }
 
-  async listInvitations(scope: WorkspaceScope) {
-    return this.options.unitOfWork((repos) => repos.invitations.listPending(scope));
+  /**
+   * The pending invitations, each with the name of whoever sent it.
+   *
+   * J2a's "Invited by" column is a person, not a uuid. The lookup is by id
+   * against `users`, which is not workspace-scoped — but every id here came
+   * from an invitation row inside the scope, so nothing is learned about
+   * anybody the caller could not already see.
+   */
+  async listInvitations(scope: WorkspaceScope): Promise<PendingInvitationView[]> {
+    return this.options.unitOfWork(async (repos) => {
+      const pending = await repos.invitations.listPending(scope);
+      const names = await namesByUserId(
+        repos,
+        pending.map((invitation) => invitation.invitedBy),
+      );
+
+      return pending.map((invitation) => {
+        const invitedByName = names.get(invitation.invitedBy);
+        return {
+          id: invitation.id,
+          email: invitation.email,
+          role: invitation.role,
+          expiresAt: invitation.expiresAt,
+          // Omitted rather than null when the inviter's account is gone: the
+          // column renders an em dash for absent, and "null" for null.
+          ...(invitedByName === undefined ? {} : { invitedByName }),
+        };
+      });
+    });
   }
 
   async revokeInvitation(scope: WorkspaceScope, id: WorkspaceInvitationId): Promise<void> {
@@ -807,6 +932,90 @@ export class WorkspaceService {
       );
     }
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Reading people out of the global users table                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What `users` holds about the people named by a set of ids.
+ *
+ * The ids always come from rows already inside the caller's workspace — a
+ * membership, an invitation's `invited_by`, the workspace's owner — so this
+ * never widens what the caller can see. `users` carries no RLS because a
+ * person is not owned by a tenant, which is exactly why the lookup has to be
+ * anchored on ids that were themselves read under scope.
+ *
+ * Distinct ids only, and one pass: a six-seat workspace should not issue six
+ * reads for the same admin who sent every invitation.
+ */
+async function peopleByUserId(
+  repos: WorkspaceRepositories,
+  userIds: readonly UserId[],
+): Promise<Map<UserId, UserRow>> {
+  const found = new Map<UserId, UserRow>();
+
+  for (const userId of new Set(userIds)) {
+    const user = await repos.users.findById(userId);
+    if (user !== null) found.set(userId, user);
+  }
+
+  return found;
+}
+
+async function namesByUserId(
+  repos: WorkspaceRepositories,
+  userIds: readonly UserId[],
+): Promise<Map<UserId, string>> {
+  const people = await peopleByUserId(repos, userIds);
+  return new Map([...people].map(([id, user]) => [id, user.name]));
+}
+
+async function ownerName(
+  repos: WorkspaceRepositories,
+  ownerUserId: UserId,
+): Promise<string | undefined> {
+  return (await repos.users.findById(ownerUserId))?.name;
+}
+
+function toDetailsView(
+  workspace: { id: WorkspaceId; name: string; slug: string; timezone: string; createdAt: Date },
+  createdByName: string | undefined,
+): WorkspaceDetailsView {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    slug: workspace.slug,
+    timezone: workspace.timezone,
+    createdAt: workspace.createdAt.toISOString(),
+    ...(createdByName === undefined ? {} : { createdByName }),
+  };
+}
+
+/**
+ * A membership row plus the person behind it.
+ *
+ * A missing user row is not an error: the membership is the record of who is
+ * in the workspace, and it outlives a deleted account by however long the
+ * deletion job takes. The row still draws, with the id in the name column,
+ * rather than taking the whole table down.
+ */
+function toMemberView(
+  member: { userId: UserId; role: WorkspaceRole; joinedAt: Date },
+  user: UserRow | null | undefined,
+  now: Date,
+): MemberView {
+  const lastLoginAt = user?.lastLoginAt ?? null;
+
+  return {
+    userId: member.userId,
+    role: member.role,
+    joinedAt: member.joinedAt,
+    name: user?.name ?? member.userId,
+    email: user?.email ?? '',
+    ...(lastLoginAt === null ? {} : { lastActiveLabel: relativeLabel(lastLoginAt, now) }),
+  };
 }
 
 /** Re-exported so routes can type their permission checks. */

@@ -11,6 +11,7 @@ import {
 } from '@relayd/campaigns';
 import type {
   AuditLogRepository,
+  CampaignCountersRow,
   CampaignEventRow,
   CampaignRepository,
   ConsentRepository,
@@ -152,8 +153,16 @@ export class CampaignService {
       if (campaign === null) throw new AppError('not_found', 'Campaign not found', 404);
 
       // Counters, never a count. See R13.
+      //
+      // Derived through the same function `progress` uses, because the
+      // browser types both as one `CampaignProgress` and reads whichever
+      // arrived first: `progress.data ?? campaign.counters`. Returning the
+      // bare counters row here meant that on the detail page's first paint
+      // — before the poll has answered — `outstanding`, `complete` and
+      // `deliveryUncertain` were all missing, and the uncertain tile read
+      // zero on a campaign that had some.
       const counters = await repos.campaigns.readCounters(scope, id);
-      return { campaign, counters };
+      return { campaign, counters: counters === null ? null : toProgress(counters) };
     });
   }
 
@@ -168,18 +177,7 @@ export class CampaignService {
       const counters = await repos.campaigns.readCounters(scope, id);
       if (counters === null) throw new AppError('not_found', 'Campaign not found', 404);
 
-      const outstanding = counters.pending + counters.queued + counters.sending;
-
-      return {
-        ...counters,
-        outstanding,
-        complete: outstanding === 0,
-        // Shown as its own number, not folded into failures. D3 makes these
-        // terminal and unbilled, and a customer looking at a report needs to
-        // know the difference between "we could not send" and "we do not
-        // know whether we sent".
-        deliveryUncertain: counters.uncertain,
-      };
+      return toProgress(counters);
     });
   }
 
@@ -675,6 +673,37 @@ export class CampaignService {
       }),
     );
   }
+}
+
+/* --------------------------------------------------------------- progress -- */
+
+/**
+ * The counters row as every caller reads it — `apps/web`'s `CampaignProgress`.
+ *
+ * One shape for `GET /campaigns/:id/progress` and for the `counters` on
+ * `GET /campaigns/:id`, because the browser assigns whichever arrived first
+ * to one variable. Two shapes behind one type is how a tile that is correct
+ * after the first poll is wrong on the first paint.
+ */
+export interface CampaignProgressView extends CampaignCountersRow {
+  outstanding: number;
+  complete: boolean;
+  deliveryUncertain: number;
+}
+
+export function toProgress(counters: CampaignCountersRow): CampaignProgressView {
+  const outstanding = counters.pending + counters.queued + counters.sending;
+
+  return {
+    ...counters,
+    outstanding,
+    complete: outstanding === 0,
+    // Shown as its own number, not folded into failures. D3 makes these
+    // terminal and unbilled, and a customer looking at a report needs to
+    // know the difference between "we could not send" and "we do not know
+    // whether we sent".
+    deliveryUncertain: counters.uncertain,
+  };
 }
 
 /* --------------------------------------------------------------- timeline -- */

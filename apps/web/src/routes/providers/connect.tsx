@@ -446,7 +446,6 @@ function Connected({ result, onDone }: { result: ConnectResult; onDone: () => vo
   const rate = result.quotaSnapshot?.maxSendRate ?? null;
 
   const testEvent = useMutation({
-    // BACKEND PENDING: POST /providers/:id/ingest/test
     mutationFn: () => providerApi.sendTestEvent(result.id),
   });
 

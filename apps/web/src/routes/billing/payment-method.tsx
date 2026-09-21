@@ -27,16 +27,18 @@ import {
  * that hands the customer to Stripe's hosted portal. Everything editable on
  * this screen is an invoice detail, which is ours to keep.
  *
- * BACKEND PENDING: PATCH /billing/details. The billing address, company name
- * and tax ID are drawn on I8 and have no endpoint yet; the form works
- * against the preview backend and reports the failure honestly against the
- * real one.
+ * The billing address, company name and tax ID are ours to keep: they are
+ * read from `GET /billing`'s `billingDetails` and written through
+ * `PATCH /billing/details`, which is owner-only and ungrantable to an API
+ * key.
  */
 
 /**
- * The schema is local rather than from `@relayd/validation`: there is no
- * billing-details endpoint yet, so there is no shared schema to import. It
- * moves there with the endpoint.
+ * Local rather than `@relayd/validation`'s `billingDetailsSchema`, which
+ * the endpoint parses with. The two agree on every field and this one is
+ * stricter on length; what is local is the wording, because these
+ * messages are written for a person filling in a form and the server's
+ * are written for an integrator reading a 400.
  */
 const detailsSchema = z.object({
   email: z.string().min(1, 'A billing email is required').email('That does not look like an email address'),
@@ -242,7 +244,6 @@ export function PaymentMethodPage() {
             />
 
             <div className="flex justify-end">
-              {/* BACKEND PENDING: PATCH /billing/details */}
               <Button
                 type="submit"
                 variant="secondary"

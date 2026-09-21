@@ -91,7 +91,9 @@ export function ContactsPage() {
   const [limit, setLimit] = useState(50);
   const [cursors, setCursors] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
-  const [dialog, setDialog] = useState<'add' | 'tag' | 'untag' | 'list' | 'suppress' | null>(null);
+  const [dialog, setDialog] = useState<
+    'add' | 'tag' | 'untag' | 'list' | 'suppress' | 'save-view' | null
+  >(null);
 
   const cursor = cursors[cursors.length - 1];
   const base = BASE_VIEWS.find((candidate) => candidate.key === view);
@@ -103,7 +105,6 @@ export function ContactsPage() {
     ...(base === undefined ? { view } : {}),
   };
 
-  // BACKEND PENDING: GET /audience/saved-views
   const savedViews = useQuery({
     queryKey: audienceExtraKeys.savedViews(currentWorkspaceId),
     queryFn: audienceExtraApi.savedViews,
@@ -114,7 +115,6 @@ export function ContactsPage() {
     queryFn: () => audienceExtraApi.listContacts(filters),
   });
 
-  // BACKEND PENDING: GET /audience/stats
   const stats = useQuery({
     queryKey: audienceExtraKeys.stats(currentWorkspaceId, filters),
     queryFn: () => audienceExtraApi.stats(filters),
@@ -181,15 +181,33 @@ export function ContactsPage() {
     },
   });
 
-  // BACKEND PENDING: POST /audience/exports
   const startExport = useMutation({
     mutationFn: (ids: string[]) =>
       audienceExtraApi.startExport({ resource: 'contacts', ...(ids.length === 0 ? {} : { ids }) }),
   });
 
-  // BACKEND PENDING: POST /audience/saved-views
+  /**
+   * "+ Save view" stores the current filter as a tab.
+   *
+   * It used to post to `/exports` with `resource: 'saved-view'`, which is
+   * not one of the five resources that endpoint accepts — every click was
+   * a 400 and no view was ever saved.
+   */
   const saveView = useMutation({
-    mutationFn: () => audienceExtraApi.startExport({ resource: 'saved-view' }),
+    mutationFn: (label: string) =>
+      audienceExtraApi.createSavedView({
+        label,
+        filters: {
+          ...(filters.status === undefined ? {} : { status: filters.status }),
+          ...(filters.q === undefined || filters.q === '' ? {} : { q: filters.q }),
+        },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: audienceExtraKeys.savedViews(currentWorkspaceId),
+      });
+      setDialog(null);
+    },
   });
 
   const changeView = (next: string): void => {
@@ -426,7 +444,7 @@ export function ContactsPage() {
               <IfPermitted permission="contact:write">
                 <button
                   type="button"
-                  onClick={() => saveView.mutate()}
+                  onClick={() => setDialog('save-view')}
                   className="h-11 cursor-pointer whitespace-nowrap border-0 bg-transparent px-2.5 text-ui font-medium text-brand"
                 >
                   + Save view
@@ -516,6 +534,14 @@ export function ContactsPage() {
         pending={bulkList.isPending}
         options={(lists.data ?? []).filter((list) => !list.archived).map((list) => ({ value: list.id, label: list.name }))}
         onConfirm={(listId) => bulkList.mutate(listId)}
+      />
+
+      <SaveViewDialog
+        open={dialog === 'save-view'}
+        onClose={() => setDialog(null)}
+        pending={saveView.isPending}
+        error={saveView.error}
+        onSubmit={(label) => saveView.mutate(label)}
       />
 
       <Modal
@@ -636,6 +662,60 @@ function AddContactDialog({
   );
 }
 
+/**
+ * "+ Save view".
+ *
+ * The label is asked for rather than derived: the server turns it into the
+ * view's key, and two tabs whose keys collide are a 409 the reader can only
+ * understand if they chose the words themselves.
+ */
+function SaveViewDialog({
+  open,
+  onClose,
+  pending,
+  error,
+  onSubmit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  pending: boolean;
+  error: unknown;
+  onSubmit: (label: string) => void;
+}) {
+  const [label, setLabel] = useState('');
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Save this view"
+      description="The current filter becomes a tab on this page for everyone in the workspace."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => onSubmit(label.trim())} pending={pending} disabled={label.trim() === ''}>
+            Save view
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <Field
+          label="Name"
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+          {...(error instanceof ApiError ? { error: error.fieldErrors()['label'] } : {})}
+        />
+        {error instanceof ApiError && Object.keys(error.fieldErrors()).length === 0 ? (
+          <p className="m-0 text-ui text-danger-text">{error.message}</p>
+        ) : null}
+      </div>
+    </Modal>
+  );
+}
+
 function PickDialog({
   open,
   onClose,
@@ -702,7 +782,6 @@ function ContactDrawer({ id, onClose }: { id: string; onClose: () => void }) {
 
   const contact = useQuery({
     queryKey: audienceExtraKeys.contact(currentWorkspaceId, id),
-    // BACKEND PENDING: GET /audience/contacts/:id (consent block, lists, tags and events)
     queryFn: () => audienceExtraApi.getContact(id),
   });
 

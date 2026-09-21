@@ -103,8 +103,15 @@ export interface RegisterInput {
   email: string;
   name: string;
   password: string;
-  workspaceName: string;
-  workspaceSlug: string;
+  /**
+   * The first workspace, when the caller is creating one in the same request.
+   *
+   * Optional, and both or neither: B2 collects an account and B6a collects a
+   * workspace, so the browser's registration carries no workspace at all and
+   * the account it makes has an empty `memberships` list until B6a runs.
+   */
+  workspaceName?: string;
+  workspaceSlug?: string;
 }
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -114,12 +121,19 @@ export class AuthService {
   constructor(private readonly options: AuthServiceOptions) {}
 
   /**
-   * Creates the user, their first workspace and the owner membership in one
-   * transaction, then issues an email-verification token.
+   * Creates the user — and, when the request names one, their first workspace
+   * and the owner membership — in one transaction, then issues an
+   * email-verification token.
    *
    * The workspace scope is constructed from the new workspace's own id, so
    * creation runs under the same RLS discipline as every other write rather
    * than as a special unscoped case.
+   *
+   * With no workspace in the request the account is created alone and
+   * `memberships` comes back empty. That is the browser's path: B2 creates the
+   * account, B3 verifies the address and B6a creates the workspace, and an
+   * account waiting at B6a is a normal state rather than the "half-registered"
+   * one docs/03 warns about — there is no partial write to repair.
    */
   async register(input: RegisterInput, context: SessionContext = {}): Promise<AuthTokens> {
     const passwordHash = await hashPassword(input.password);
@@ -143,21 +157,34 @@ export class AuthService {
         passwordHash,
       });
 
-      const newWorkspaceId = this.options.newId() as WorkspaceId;
-      const scope = workspaceScope(newWorkspaceId);
+      const workspaceName = input.workspaceName;
+      const workspaceSlug = input.workspaceSlug;
+      let membership: MembershipSummary | null = null;
 
-      await repos.workspaces.create(scope, {
-        id: newWorkspaceId,
-        name: input.workspaceName,
-        slug: input.workspaceSlug,
-        ownerUserId: userId,
-      });
+      if (workspaceName !== undefined && workspaceSlug !== undefined) {
+        const newWorkspaceId = this.options.newId() as WorkspaceId;
+        const scope = workspaceScope(newWorkspaceId);
 
-      await repos.members.create(scope, {
-        id: this.options.newId() as WorkspaceMemberId,
-        userId,
-        role: 'owner',
-      });
+        await repos.workspaces.create(scope, {
+          id: newWorkspaceId,
+          name: workspaceName,
+          slug: workspaceSlug,
+          ownerUserId: userId,
+        });
+
+        await repos.members.create(scope, {
+          id: this.options.newId() as WorkspaceMemberId,
+          userId,
+          role: 'owner',
+        });
+
+        membership = {
+          workspaceId: newWorkspaceId,
+          workspaceName,
+          workspaceSlug,
+          role: 'owner',
+        };
+      }
 
       await repos.userTokens.issue({
         id: this.options.newId(),
@@ -169,22 +196,14 @@ export class AuthService {
         ),
       });
 
-      return {
-        user: created,
-        membership: {
-          workspaceId: newWorkspaceId,
-          workspaceName: input.workspaceName,
-          workspaceSlug: input.workspaceSlug,
-          role: 'owner',
-        } satisfies MembershipSummary,
-      };
+      return { user: created, membership };
     });
 
     // Outside the transaction: an email provider is a network call, and
     // docs/03 is explicit that a transaction must never be held across one.
     await this.options.notifier.sendEmailVerification(user.email, verificationToken);
 
-    return this.#startSession(user, [membership], context);
+    return this.#startSession(user, membership === null ? [] : [membership], context);
   }
 
   /**

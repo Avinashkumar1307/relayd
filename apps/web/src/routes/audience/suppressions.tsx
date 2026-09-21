@@ -72,14 +72,19 @@ export function SuppressionsPage() {
 
   const suppressions = useQuery({
     queryKey: audienceExtraKeys.suppressions(currentWorkspaceId, filters),
-    // BACKEND PENDING: GET /audience/suppressions (source, addedBy, global_block)
+    // BACKEND PENDING: GET /suppressions has no `addedBy` field (it needs a
+    // `suppressions.created_by` column). Every other column is real.
     queryFn: () => audienceExtraApi.listSuppressions(filters),
   });
 
-  // BACKEND PENDING: GET /audience/suppressions/summary
   const summary = useQuery({
     queryKey: audienceExtraKeys.suppressionSummary(currentWorkspaceId),
     queryFn: audienceExtraApi.suppressionSummary,
+  });
+
+  const sources = useQuery({
+    queryKey: audienceExtraKeys.suppressionSources(currentWorkspaceId),
+    queryFn: audienceExtraApi.suppressionSources,
   });
 
   const invalidate = (): void => {
@@ -103,7 +108,6 @@ export function SuppressionsPage() {
     },
   });
 
-  // BACKEND PENDING: POST /audience/exports
   const startExport = useMutation({
     mutationFn: () => audienceExtraApi.startExport({ resource: 'suppressions' }),
   });
@@ -210,7 +214,7 @@ export function SuppressionsPage() {
       width: '140px',
       cell: (row) => (
         <span className="flex items-center justify-between gap-2">
-          <span className="truncate text-text-2">{row.addedBy}</span>
+          <span className="truncate text-text-2">{row.addedBy ?? '—'}</span>
           {REMOVABLE_REASONS.includes(row.reason) ? (
             <IfPermitted permission="contact:write">
               <button
@@ -236,7 +240,7 @@ export function SuppressionsPage() {
   const filterBar = (
     <>
       <FilterChip label="Reason" value={reason} options={REASON_OPTIONS} onChange={setReason} />
-      <FilterChip label="Source" value={source} options={SOURCE_OPTIONS} onChange={setSource} />
+      <FilterChip label="Source" value={source} options={sources.data ?? DEFAULT_SOURCE_OPTIONS} onChange={setSource} />
       <span className="flex-1" />
       <SearchInput
         label="Search email"
@@ -285,7 +289,7 @@ export function SuppressionsPage() {
                 </span>
               </div>
               <div className="mt-2 text-caption text-text-2">
-                {row.source ?? 'No campaign'} · {formatDay(row.createdAt)} · {row.addedBy}
+                {row.source ?? 'No campaign'} · {formatDay(row.createdAt)} · {row.addedBy ?? '—'}
               </div>
             </li>
           ))}
@@ -405,18 +409,15 @@ export function SuppressionsPage() {
 }
 
 /**
- * The Source filter's options.
+ * What the Source chip falls back to before its query lands.
  *
- * Fixed rather than fetched: the real endpoint returns the campaigns that
- * have produced a suppression, which is a different query from "campaigns",
- * and it does not exist yet.
+ * The real options come from `GET /suppressions/sources`, which lists the
+ * campaigns that have actually produced a suppression — a different query
+ * from "campaigns", and the only one that cannot offer a filter matching
+ * nothing. "Any campaign" is the option that always applies.
  */
-// BACKEND PENDING: GET /audience/suppressions/sources
-const SOURCE_OPTIONS: readonly { value: string; label: string }[] = [
+const DEFAULT_SOURCE_OPTIONS: readonly { value: string; label: string }[] = [
   { value: 'any', label: 'Any campaign' },
-  { value: 'cmp_september_newsletter', label: 'September newsletter — EU edition' },
-  { value: 'cmp_eid_flash_sale', label: 'Eid al-Etihad flash sale' },
-  { value: 'cmp_loyalty_notice', label: 'Loyalty tier upgrade notice' },
 ];
 
 /* -------------------------------------------------------------- header -- */

@@ -357,10 +357,13 @@ export function CampaignWizardPage() {
           : 'List-Unsubscribe header added at send',
     });
 
-    // BACKEND PENDING: POST /campaigns/:id/preflight — the phishing lint and
-    // the link-reputation check are server-side (CLAUDE.md section 11) and
-    // cannot be answered here. Shown as pass rather than hidden: the customer
-    // is told the checks exist, and the launch re-runs them for real.
+    // BACKEND PENDING: `POST /campaigns/:id/preflight` exists and answers
+    // these two for real — it runs the same `runLaunchPreflight` the launch
+    // runs, and returns a `checks` row per key — `content` carries the
+    // phishing lint and `links` the reputation feed. This wizard does not
+    // call it yet, so the two rows below are asserted rather than measured.
+    // Shown as pass rather than hidden: the customer is told the checks
+    // exist, and the launch runs them for real.
     rows.push({
       key: 'phishing',
       outcome: 'pass',
@@ -710,8 +713,9 @@ function DetailsStep({
         className="max-w-140"
       />
 
-      {/* BACKEND PENDING: PATCH /campaigns/:id (tags) — `campaigns` has no
-          tag column yet, so these live for the session only. */}
+      {/* BACKEND PENDING: PATCH /campaigns/:id serves no `tags` field, and
+          `createCampaignSchema` does not accept one — `campaigns` has no tag
+          column. These live for the session only. */}
       <div className="flex max-w-140 flex-col gap-1.5">
         <span className="font-medium">Internal tags</span>
         <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-control border border-border px-2 py-1">
@@ -750,7 +754,8 @@ function DetailsStep({
         <span className="text-caption text-text-2">Used for filtering and reports.</span>
       </div>
 
-      {/* BACKEND PENDING: PATCH /campaigns/:id (notes) */}
+      {/* BACKEND PENDING: PATCH /campaigns/:id serves no `notes` field, and
+          `campaigns` has no notes column. Session only, like the tags. */}
       <Textarea
         label={
           <>
@@ -1172,8 +1177,10 @@ function ContentStep({
           help={`Overrides the template subject for this campaign. ${draft.subject.length} characters · merge tags resolve per recipient.`}
         />
 
-        {/* BACKEND PENDING: PATCH /campaigns/:id (preheader) is accepted on
-            create but not returned, so this does not survive a reload yet. */}
+        {/* BACKEND PENDING: `preheader` is accepted by the create and update
+            schemas and then dropped — `campaigns` has no preheader column
+            and no route serves the field back — so this does not survive a
+            reload. */}
         <Field
           label="Preheader"
           value={draft.preheader}
