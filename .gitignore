@@ -24,3 +24,7 @@ pnpm-debug.log*
 
 # Workflow scripts for multi-agent runs; derived, never committed
 .workflows/
+
+# Local development keys. Never committed.
+.secrets/
+.env

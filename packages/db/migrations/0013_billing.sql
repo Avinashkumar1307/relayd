@@ -385,7 +385,11 @@ CREATE TABLE payment_webhook_events (
 -- a duplicate delivery must be a no-op rather than a second state change.
 CREATE UNIQUE INDEX uq_pwe_provider_event
   ON payment_webhook_events (provider, provider_event_id);
-CREATE INDEX ix_pwe_unprocessed ON payment_webhook_events (received_at)
+-- `ix_payment_webhook_unprocessed`, not `ix_pwe_unprocessed`: 0006 already
+-- took that name for provider_webhook_events, and both tables abbreviate to
+-- "pwe". Index names are unique per schema in Postgres, so the short form
+-- made this migration fail with 42P07 on any database built from scratch.
+CREATE INDEX ix_payment_webhook_unprocessed ON payment_webhook_events (received_at)
   WHERE processed_at IS NULL;
 
 -- R17: the coalescing queue. One row per object, not per event.

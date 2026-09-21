@@ -84,9 +84,27 @@ export const ciEnv = z.object({
  * the failure looks like random logouts under load rather than a
  * misconfiguration.
  */
+/**
+ * A PEM carried in a single environment variable.
+ *
+ * `scripts/lib/load-env.sh` reads one key per line and an ECS task definition
+ * holds one string per key, so neither can carry the 28 real newlines a PEM
+ * has. The convention everywhere this problem exists is to write the newlines
+ * escaped and unescape them on read, which is what this does. A value that
+ * already contains real newlines passes through untouched, so a key injected
+ * as a mounted file still works.
+ */
+const pem = z
+  .string()
+  .min(1)
+  .transform((value) => value.replace(/\\n/gu, '\n'))
+  .refine((value) => value.includes('-----BEGIN') && value.includes('-----END'), {
+    message: 'must be a PEM block; write its newlines escaped',
+  });
+
 export const authEnv = z.object({
-  JWT_PRIVATE_KEY: z.string().min(1),
-  JWT_PUBLIC_KEY: z.string().min(1),
+  JWT_PRIVATE_KEY: pem,
+  JWT_PUBLIC_KEY: pem,
   /** Identifies which key signed a token, so keys can be rotated. */
   JWT_KEY_ID: z.string().min(1).default('k1'),
   /** Short by design: 15 minutes, per docs/06. */
