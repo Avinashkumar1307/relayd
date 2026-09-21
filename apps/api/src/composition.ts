@@ -66,6 +66,14 @@ export interface CompositionOptions {
   appBaseUrl: string;
   /** Cookies are Secure everywhere but plain-http local development. */
   secureCookies: boolean;
+  /**
+   * Log the body of every development email, link included.
+   *
+   * There is no inbox on a laptop and the token is stored hashed, so without
+   * this a flow that ends in an emailed link cannot be completed locally at
+   * all. False in production, where it would put a redeemable token in a log.
+   */
+  revealEmailBodies: boolean;
 }
 
 /**
@@ -139,7 +147,9 @@ export function composeDependencies(options: CompositionOptions): AppDependencie
   // verification and invitation links, to the log — which is what makes
   // signing up possible on a laptop with no mail server.
   const notifier = new Notifier({
-    mailer: new LoggingMailer(logger.child({ name: 'mailer' })),
+    mailer: new LoggingMailer(logger.child({ name: 'mailer' }), {
+      revealBody: options.revealEmailBodies,
+    }),
     appBaseUrl: options.appBaseUrl,
   });
 

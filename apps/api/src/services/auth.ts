@@ -524,13 +524,12 @@ export class AuthService {
     const userId = user.id;
 
     await this.options.unitOfWork(async (repos) => {
-      if (previousHash !== undefined) {
-        const previous = await repos.sessions.findByRefreshTokenHash(previousHash);
-        if (previous !== null) {
-          await repos.sessions.markReplacedBy(previous.id, sessionId);
-        }
-      }
-
+      // The successor is created BEFORE the predecessor points at it.
+      // `sessions.replaced_by` is a foreign key to `sessions.id`, so marking
+      // first violates it against a row that does not exist yet — which made
+      // every refresh 500 and, because the browser refreshes on load, ended
+      // the session it was trying to extend. Both statements are in one
+      // transaction, so nothing observes the moment where both look live.
       await repos.sessions.create({
         id: sessionId,
         userId,
@@ -540,6 +539,13 @@ export class AuthService {
         ...(context.userAgent === undefined ? {} : { userAgent: context.userAgent }),
         ...(context.ip === undefined ? {} : { ip: context.ip }),
       });
+
+      if (previousHash !== undefined) {
+        const previous = await repos.sessions.findByRefreshTokenHash(previousHash);
+        if (previous !== null) {
+          await repos.sessions.markReplacedBy(previous.id, sessionId);
+        }
+      }
     });
 
     const accessToken = await this.options.tokens.issueAccessToken({

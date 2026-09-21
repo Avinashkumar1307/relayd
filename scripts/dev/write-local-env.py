@@ -48,8 +48,9 @@ ACCESS_TOKEN_TTL_SECONDS=900
 REFRESH_TOKEN_TTL_DAYS=30
 
 # Where the browser reaches the SPA. Verification and invitation emails build
-# their links from it, so a wrong value produces links that 404.
-APP_BASE_URL=http://localhost:5173
+# their links from it, so if you run Vite on another port this must follow it
+# or the emailed links point somewhere nothing is listening.
+APP_BASE_URL=http://127.0.0.1:5173
 """
 
 

@@ -31,6 +31,7 @@ const deps = composeDependencies({
   refreshTtlDays: env.REFRESH_TOKEN_TTL_DAYS,
   appBaseUrl: env.APP_BASE_URL,
   secureCookies: env.NODE_ENV === 'production',
+  revealEmailBodies: env.NODE_ENV !== 'production',
 });
 
 const app = createApp(deps);
