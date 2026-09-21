@@ -32,6 +32,8 @@ const deps = composeDependencies({
   appBaseUrl: env.APP_BASE_URL,
   secureCookies: env.NODE_ENV === 'production',
   revealEmailBodies: env.NODE_ENV !== 'production',
+  secretsRoot: '.secrets/store',
+  environmentName: env.NODE_ENV,
 });
 
 const app = createApp(deps);

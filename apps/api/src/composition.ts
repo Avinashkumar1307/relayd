@@ -1,9 +1,34 @@
+import { randomBytes } from 'node:crypto';
 import { createDatabase, scoped, uuidv7 } from '@relayd/db';
 import {
+  AnalyticsRepository,
+  ApiKeyRepository,
+  AudienceStatsRepository,
   AuditLogRepository,
+  AuditQueryRepository,
+  CampaignRepository,
+  ConsentRepository,
+  ContactListRepository,
+  ContactRepository,
+  EnforcementRepository,
+  EntitlementsRepository,
   GlobalInvitationRepository,
   GlobalMembershipRepository,
+  ExportJobRepository,
+  ImportJobRepository,
+  MeteringRepository,
+  OutboundWebhookRepository,
+  ProviderConnectionRepository,
+  SavedViewRepository,
+  SenderAccountRepository,
+  SenderIdentityRepository,
+  SegmentRepository,
+  SendingPoolRepository,
   SessionRepository,
+  SuppressionRepository,
+  TagMergeRepository,
+  TagRepository,
+  TemplateRepository,
   UserRepository,
   UserTokenRepository,
   WorkspaceInvitationRepository,
@@ -14,12 +39,21 @@ import type { Database, DatabasePool } from '@relayd/db';
 import type { RedisConnection } from '@relayd/queue';
 import type { Logger } from '@relayd/logger';
 import { LoggingMailer, Notifier } from '@relayd/notifications';
+import { AnalyticsService } from './services/analytics.js';
+import { AudienceService } from './services/audience.js';
+import { ApiKeyService } from './services/api-keys.js';
+import { AuditLogService } from './services/audit-log.js';
+import { OutboundWebhookService } from './services/outbound-webhooks.js';
+import { ProviderService } from './services/providers.js';
 import { AuthService } from './services/auth.js';
+import { PoolService } from './services/pools.js';
 import { ProfileService } from './services/profile.js';
+import { TemplateService } from './services/templates.js';
 import { WorkspaceService } from './services/workspaces.js';
 import { TokenService } from './services/tokens.js';
 import { currentActor, requireScope } from './context.js';
 import type { AppDependencies } from './app.js';
+import { LocalSecretStore, UnavailableFileStorage } from './local-infrastructure.js';
 
 /**
  * The composition root: where repositories, services and routers are actually
@@ -66,6 +100,10 @@ export interface CompositionOptions {
   appBaseUrl: string;
   /** Cookies are Secure everywhere but plain-http local development. */
   secureCookies: boolean;
+  /** Where LocalSecretStore keeps provider and webhook secrets, off the database. */
+  secretsRoot: string;
+  /** Names the secret path, matching the Secrets Manager layout in CLAUDE.md. */
+  environmentName: string;
   /**
    * Log the body of every development email, link included.
    *
@@ -198,6 +236,121 @@ export function composeDependencies(options: CompositionOptions): AppDependencie
     currentActor: actor,
   });
 
+  // ---------------------------------------------------------------- reads
+  // and writes that need nothing but the database. Each takes the scoped
+  // unit of work, so RLS resolves to the request's workspace.
+
+  const templates = new TemplateService({
+    unitOfWork: unitOfWorkFor(db, (tx) => ({
+      templates: new TemplateRepository(tx),
+      auditLogs: new AuditLogRepository(tx),
+    })),
+    newId: uuidv7,
+    currentActor: actor,
+  });
+
+  const pools = new PoolService({
+    unitOfWork: unitOfWorkFor(db, (tx) => ({
+      pools: new SendingPoolRepository(tx),
+      auditLogs: new AuditLogRepository(tx),
+    })),
+    newId: uuidv7,
+    currentActor: actor,
+  });
+
+  const analytics = new AnalyticsService({
+    unitOfWork: unitOfWorkFor(db, (tx) => ({
+      analytics: new AnalyticsRepository(tx),
+      workspaces: new WorkspaceRepository(tx),
+      connections: new ProviderConnectionRepository(tx),
+      entitlements: new EntitlementsRepository(tx),
+      metering: new MeteringRepository(tx),
+      enforcement: new EnforcementRepository(tx),
+      suppressions: new SuppressionRepository(tx),
+      campaigns: new CampaignRepository(tx),
+      pools: new SendingPoolRepository(tx),
+    })),
+  });
+
+  const apiKeys = new ApiKeyService({
+    unitOfWork: unitOfWorkFor(db, (tx) => ({
+      apiKeys: new ApiKeyRepository(tx),
+      auditLogs: new AuditLogRepository(tx),
+    })),
+    newId: uuidv7,
+  });
+
+  // Everything in this domain but the CSV upload runs off the database; the
+  // upload needs object storage and says so (see local-infrastructure).
+  const audience = new AudienceService({
+    unitOfWork: unitOfWorkFor(db, (tx) => ({
+      contacts: new ContactRepository(tx),
+      lists: new ContactListRepository(tx),
+      tags: new TagRepository(tx),
+      segments: new SegmentRepository(tx),
+      suppressions: new SuppressionRepository(tx),
+      imports: new ImportJobRepository(tx),
+      auditLogs: new AuditLogRepository(tx),
+      consent: new ConsentRepository(tx),
+      savedViews: new SavedViewRepository(tx),
+      exports: new ExportJobRepository(tx),
+      stats: new AudienceStatsRepository(tx),
+      tagMerge: new TagMergeRepository(tx),
+    })),
+    storage: new UnavailableFileStorage(),
+    newId: uuidv7,
+    now: () => new Date(),
+    currentActor: actor,
+  });
+
+  // Provider and webhook secrets live on disk, never in the database
+  // (CLAUDE.md section 11). Secrets Manager is the real implementation; the
+  // paths are identical so nothing above this line knows the difference.
+  const secrets = new LocalSecretStore(options.secretsRoot);
+
+  const providers = new ProviderService({
+    unitOfWork: unitOfWorkFor(db, (tx) => ({
+      connections: new ProviderConnectionRepository(tx),
+      identities: new SenderIdentityRepository(tx),
+      senders: new SenderAccountRepository(tx),
+      auditLogs: new AuditLogRepository(tx),
+    })),
+    // No adapter is built here. Every one needs credentials for a real
+    // provider account, and connecting validates them against that provider,
+    // so an adapter with nothing behind it could only lie. The service
+    // answers null with "<type> is not supported", which is exactly true of
+    // this deployment; listing connections and senders is unaffected.
+    adapterFor: () => null,
+    secrets,
+    credentialPathFor: ({ workspaceId, connectionId }) =>
+      `relayd/${options.environmentName}/ws/${workspaceId}/conn/${connectionId}`,
+    ingestBaseUrl: options.appBaseUrl,
+    newId: uuidv7,
+    now: () => new Date(),
+    currentActor: actor,
+  });
+
+  const outboundWebhooks = new OutboundWebhookService({
+    unitOfWork: unitOfWorkFor(db, (tx) => ({
+      webhooks: new OutboundWebhookRepository(tx),
+      auditLogs: new AuditLogRepository(tx),
+    })),
+    newId: uuidv7,
+    storeSecret: async ({ workspaceId, endpointId }) => {
+      // The row stores the reference; the secret itself never goes near it.
+      const ref = `relayd/${options.environmentName}/ws/${workspaceId}/webhook/${endpointId}`;
+      const secret = `whsec_${randomBytes(24).toString('base64url')}`;
+      await secrets.write(ref, secret);
+      return { ref, secret };
+    },
+  });
+
+  const auditLogs = new AuditLogService({
+    unitOfWork: unitOfWorkFor(db, (tx) => ({
+      auditQuery: new AuditQueryRepository(tx),
+    })),
+  });
+
   return {
     pool,
     redis,
@@ -210,5 +363,13 @@ export function composeDependencies(options: CompositionOptions): AppDependencie
       memberships,
       lookupUserEmail: async () => null,
     },
+    templates: { templates, tokens, memberships },
+    pools: { pools, tokens, memberships },
+    analytics: { analytics, tokens, memberships },
+    apiKeys: { apiKeys, tokens, memberships },
+    audit: { auditLogs, tokens, memberships },
+    audience: { audience, tokens, memberships },
+    providers: { providers, tokens, memberships },
+    outboundWebhooks: { webhooks: outboundWebhooks, tokens, memberships },
   };
 }
