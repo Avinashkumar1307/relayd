@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ProviderService, addressCoveredBy, newEndpointToken } from '../src/services/providers.js';
 import type { ProviderRepositories } from '../src/services/providers.js';
 import type { WorkspaceScope } from '@relayd/db';
-import { createFakeProvider } from '@relayd/email-providers';
+import { createFakeProvider } from '@relayd/email-providers/testing';
 import type { ProviderCredentials } from '@relayd/email-providers';
 import type { ProviderConnectionId, SenderAccountId, SenderIdentityId } from '@relayd/types';
 

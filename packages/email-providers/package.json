@@ -13,6 +13,10 @@
     "./webhooks": {
       "types": "./dist/webhooks.d.ts",
       "default": "./dist/webhooks.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {

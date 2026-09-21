@@ -79,3 +79,31 @@ export class UnavailableFileStorage implements FileStorage {
     );
   }
 }
+
+/**
+ * Campaign engine ports that refuse.
+ *
+ * `CampaignService` reaches for these in exactly four places — preflight,
+ * launch, the pause/resume/cancel lifecycle, and retrying failures. Listing
+ * campaigns, reading one, its progress, its timeline and its recipients, and
+ * creating, editing, scheduling or cloning a draft all go straight to the
+ * repositories and need none of them.
+ *
+ * Launching needs the send path: the dispatcher, the rate limiter, the
+ * provider adapters and the queues behind them. None of that is running here,
+ * and a launch that enqueued into nothing would leave a campaign in `sending`
+ * for ever with no dispatcher to finish it — a far worse outcome than a
+ * refusal. So the domain is mounted with these, the whole read surface works,
+ * and anything that would actually send says why it cannot.
+ */
+export function unavailableCampaignPort<T extends object>(action: string): T {
+  const refuse = (): never => {
+    throw new AppError(
+      'service_unavailable',
+      `${action} needs the send path — the dispatcher, queues and provider adapters — which is not running in this deployment.`,
+      503,
+    );
+  };
+
+  return new Proxy({} as T, { get: () => refuse });
+}

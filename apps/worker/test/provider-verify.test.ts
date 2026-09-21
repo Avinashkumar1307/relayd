@@ -5,7 +5,7 @@ import {
   type ConnectionToVerify,
   type ProviderVerifyPort,
 } from '../src/jobs/provider-verify.js';
-import { createFakeProvider } from '@relayd/email-providers';
+import { createFakeProvider } from '@relayd/email-providers/testing';
 import type { ProviderConnectionId, WorkspaceId } from '@relayd/types';
 import type { ProviderCredentials } from '@relayd/email-providers';
 

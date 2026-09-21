@@ -30,13 +30,9 @@ export {
 export { sendWithLimits } from './send-with-limits.js';
 export type { RateLimiter, SendContext } from './send-with-limits.js';
 
-// Test support. Exported from the package so other packages can drive the
-// port without a real provider, and so an adapter's own tests can run the
-// shared contract.
-export { createFakeProvider, signFakeWebhook } from './testing/fake-provider.js';
-export type { FakeProvider, FakeProviderScript } from './testing/fake-provider.js';
-export { runProviderContract, outboundMessage } from './testing/contract.js';
-export type { ContractHarness } from './testing/contract.js';
+// Test support lives at `@relayd/email-providers/testing`, NOT here. It
+// imports vitest, so re-exporting it from this barrel made every production
+// value import pull vitest into the running process.
 
 export {
   CredentialCache,

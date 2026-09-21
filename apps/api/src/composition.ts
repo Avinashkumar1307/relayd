@@ -37,12 +37,15 @@ import {
 } from '@relayd/db';
 import type { Database, DatabasePool } from '@relayd/db';
 import type { RedisConnection } from '@relayd/queue';
+import { ERROR_POLICY } from '@relayd/email-providers';
+import { AppError } from '@relayd/types';
 import type { Logger } from '@relayd/logger';
 import { LoggingMailer, Notifier } from '@relayd/notifications';
 import { AnalyticsService } from './services/analytics.js';
 import { AudienceService } from './services/audience.js';
 import { ApiKeyService } from './services/api-keys.js';
 import { AuditLogService } from './services/audit-log.js';
+import { CampaignService } from './services/campaigns.js';
 import { OutboundWebhookService } from './services/outbound-webhooks.js';
 import { ProviderService } from './services/providers.js';
 import { AuthService } from './services/auth.js';
@@ -53,7 +56,11 @@ import { WorkspaceService } from './services/workspaces.js';
 import { TokenService } from './services/tokens.js';
 import { currentActor, requireScope, tryGetWorkspaceContext } from './context.js';
 import type { AppDependencies } from './app.js';
-import { LocalSecretStore, UnavailableFileStorage } from './local-infrastructure.js';
+import {
+  LocalSecretStore,
+  UnavailableFileStorage,
+  unavailableCampaignPort,
+} from './local-infrastructure.js';
 
 /**
  * The composition root: where repositories, services and routers are actually
@@ -368,6 +375,32 @@ export function composeDependencies(options: CompositionOptions): AppDependencie
     },
   });
 
+  const campaigns = new CampaignService({
+    unitOfWork: unitOfWorkFor(db, (tx) => ({
+      campaigns: new CampaignRepository(tx),
+      auditLogs: new AuditLogRepository(tx),
+      consent: new ConsentRepository(tx),
+    })),
+    newId: uuidv7,
+    currentActor: actor,
+    ports: {
+      launch: () => unavailableCampaignPort('Launching a campaign'),
+      lifecycle: () => unavailableCampaignPort('Pausing, resuming or cancelling a campaign'),
+      retry: () => unavailableCampaignPort('Retrying failed recipients'),
+    },
+    errorPolicy: ERROR_POLICY,
+    // Unreachable while the launch port refuses, since it runs only after a
+    // launch succeeds. It throws rather than resolving quietly so that if the
+    // ports are ever wired and this is not, the gap is loud.
+    enqueueDispatch: async () => {
+      throw new AppError(
+        'service_unavailable',
+        'Dispatch needs the send queue, which is not running in this deployment.',
+        503,
+      );
+    },
+  });
+
   const auditLogs = new AuditLogService({
     unitOfWork: unitOfWorkFor(db, (tx) => ({
       auditQuery: new AuditQueryRepository(tx),
@@ -393,6 +426,7 @@ export function composeDependencies(options: CompositionOptions): AppDependencie
     audit: { auditLogs, tokens, memberships },
     audience: { audience, tokens, memberships },
     providers: { providers, tokens, memberships },
+    campaigns: { campaigns, tokens, memberships },
     outboundWebhooks: { webhooks: outboundWebhooks, tokens, memberships },
   };
 }
