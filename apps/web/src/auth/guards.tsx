@@ -15,7 +15,7 @@ import { LockedPage } from '../routes/system/locked-page.js';
  */
 
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { status } = useAuth();
+  const { status, memberships } = useAuth();
   const location = useLocation();
 
   if (status === 'loading') return <RouteSkeleton pathname={location.pathname} />;
@@ -23,6 +23,23 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   if (status === 'anonymous') {
     // Remember where they were headed so login can return them there.
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  /**
+   * Signed in, but belongs to no workspace yet.
+   *
+   * docs/09's route map has this case — "authed, no workspace: create first
+   * workspace" — and nothing implemented it, so registering without a
+   * workspace name landed on the dashboard. Every page inside this layout is
+   * workspace-scoped and sends `x-workspace-id`, which such a person has no
+   * value for, so the dashboard fired eleven requests and got eleven 400s
+   * and its error state: "something went wrong on our side", for a person
+   * who had simply not made a workspace yet.
+   *
+   * B6a is that page, and it lives outside this layout, so this cannot loop.
+   */
+  if (memberships.length === 0) {
+    return <Navigate to="/workspaces/new" replace />;
   }
 
   return <>{children}</>;

@@ -51,7 +51,7 @@ import { ProfileService } from './services/profile.js';
 import { TemplateService } from './services/templates.js';
 import { WorkspaceService } from './services/workspaces.js';
 import { TokenService } from './services/tokens.js';
-import { currentActor, requireScope } from './context.js';
+import { currentActor, requireScope, tryGetWorkspaceContext } from './context.js';
 import type { AppDependencies } from './app.js';
 import { LocalSecretStore, UnavailableFileStorage } from './local-infrastructure.js';
 
@@ -151,6 +151,29 @@ function unscopedUnitOfWorkFor<R>(db: Database, build: (tx: Tx) => R) {
 }
 
 /**
+ * Scoped when the request resolved a workspace, plain when it did not.
+ *
+ * WorkspaceService needs both and cannot be split: creating a workspace runs
+ * on a route with no workspace to resolve, while invitations, members and
+ * ownership all run inside one. Giving it the scoped form made POST
+ * /workspaces answer "Route requires a workspace but no workspace middleware
+ * ran"; giving it the unscoped form would silently drop RLS on every other
+ * method, which is far worse.
+ *
+ * This never removes a scope that exists - it only declines to demand one.
+ * The create path is still safe, because `WorkspaceRepository` adopts the new
+ * workspace's scope before inserting it, and the policy checks the row.
+ */
+function optionallyScopedUnitOfWorkFor<R>(db: Database, build: (tx: Tx) => R) {
+  return async <T>(fn: (repos: R) => Promise<T>): Promise<T> => {
+    const workspace = tryGetWorkspaceContext();
+    return workspace === undefined
+      ? db.transaction(async (tx) => fn(build(tx)))
+      : scoped(db, workspace.scope, async (tx) => fn(build(tx)));
+  };
+}
+
+/**
  * The actor for an audit row.
  *
  * `currentActor()` is undefined only outside a request, which for a service
@@ -209,8 +232,8 @@ export function composeDependencies(options: CompositionOptions): AppDependencie
 
   // Before a workspace exists, or across every workspace a person has.
   const identityUnscoped = unscopedUnitOfWorkFor(db, identityRepos);
-  // Inside the workspace the request resolved.
-  const identityScoped = unitOfWorkFor(db, identityRepos);
+  // Inside the workspace the request resolved, when there is one.
+  const identityOptionallyScoped = optionallyScopedUnitOfWorkFor(db, identityRepos);
 
   const auth = new AuthService({
     unitOfWork: identityUnscoped,
@@ -229,7 +252,7 @@ export function composeDependencies(options: CompositionOptions): AppDependencie
   });
 
   const workspaces = new WorkspaceService({
-    unitOfWork: identityScoped,
+    unitOfWork: identityOptionallyScoped,
     notifier,
     newId: uuidv7,
     now: () => new Date(),
