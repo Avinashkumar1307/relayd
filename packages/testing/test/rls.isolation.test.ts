@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runMigrations, uuidv7 } from '@relayd/db';
+import { GLOBAL_JOB_TYPES, QUEUE_NAMES, isGlobalJob } from '@relayd/queue';
 import { requireContainers, startPostgres } from '../src/containers.js';
 import type { StartedPostgres } from '../src/containers.js';
 
@@ -72,7 +73,12 @@ describeIntegration('tenant isolation against real Postgres', () => {
       );
       await admin.query(
         'INSERT INTO workspaces (id, name, slug, owner_user_id) VALUES ($1, $2, $3, $4)',
-        [workspace, name, workspace.slice(0, 12), user],
+        // The slug comes from the END of the id, not the start. These are
+        // UUIDv7s: the leading characters are the timestamp, so two ids
+        // minted in the same millisecond share their first twelve and the
+        // pair collided on uq_workspaces_slug, failing this suite in its
+        // setup before a single isolation assertion ran.
+        [workspace, name, workspace.slice(-12), user],
       );
       await admin.query(
         'INSERT INTO workspace_members (id, workspace_id, user_id, role) VALUES ($1, $2, $3, $4)',
@@ -246,19 +252,97 @@ describeIntegration('tenant isolation against real Postgres', () => {
     });
 
     /**
-     * TRIPWIRE. There are no job consumers until Phase 5, so the queue half of
-     * part 5 cannot be tested yet. This fails the moment global-jobs.ts gains
-     * an allowlist, forcing whoever adds the first consumer to write the real
-     * test rather than leaving a gap that looks covered.
+     * The queue half of part 5, which replaces the Phase 5 tripwire.
+     *
+     * The tripwire here asserted that `global-jobs.ts` did not exist, so that
+     * whoever added the first cross-tenant job had to write these tests
+     * instead of leaving a gap that looked covered. The file exists now, so
+     * this is the test it was holding the place for.
+     *
+     * The property under test is F20's: a job that bypasses RLS reduces the
+     * four-layer isolation story to one layer, so the set of jobs allowed to
+     * do that must be small, deliberate, and enumerable.
      */
-    it('has no queue consumers yet: write the queue isolation test at Phase 5', async () => {
-      const { readdir } = await import('node:fs/promises');
-      const queueSrc = path.resolve(
-        path.dirname(fileURLToPath(import.meta.url)),
-        '../../queue/src',
+    it('the cross-tenant allowlist is exactly the three reviewed entries', () => {
+      // Pinned by value, not by length. Adding a job here is a diff that says
+      // "this job can now read every customer's data" AND turns this test
+      // red, which is the review conversation global-jobs.ts asks for.
+      expect([...GLOBAL_JOB_TYPES].sort()).toEqual([
+        'billing-reconcile',
+        'enforcement-sweep',
+        'partition-maintenance',
+      ]);
+    });
+
+    it('every allowlisted name is a real queue, and nothing else is global', () => {
+      // A typo would otherwise be a silent no-op: isGlobalJob('parition-...')
+      // returns false, the job quietly gets an RLS-enforced connection and
+      // reads nothing. Safe, but baffling to debug.
+      for (const name of GLOBAL_JOB_TYPES) {
+        expect(QUEUE_NAMES, `${name} is not a queue`).toContain(name);
+      }
+
+      for (const name of QUEUE_NAMES) {
+        expect(isGlobalJob(name), `${name} global?`).toBe(GLOBAL_JOB_TYPES.includes(name));
+      }
+
+      // Fails closed for anything it has never heard of.
+      expect(isGlobalJob('not-a-queue')).toBe(false);
+      expect(isGlobalJob('')).toBe(false);
+    });
+
+    it('relayd_global really does see across tenants and relayd_app does not', async () => {
+      // The role flags are asserted above; this asserts the behaviour the
+      // flags are supposed to produce, which is the thing the design rests
+      // on. Both workspaces exist, so the counts differ by role.
+      await admin.query("ALTER ROLE relayd_global WITH PASSWORD 'test-only'");
+      const url = new URL(postgres.url);
+      url.username = 'relayd_global';
+      url.password = 'test-only';
+
+      const global = new pg.Client({ connectionString: url.toString() });
+      await global.connect();
+      try {
+        // No scope set at all, and it still sees both.
+        const { rows } = await global.query<{ id: string }>('SELECT id FROM workspaces');
+        const ids = rows.map((r) => r.id);
+        expect(ids).toContain(workspaceA);
+        expect(ids).toContain(workspaceB);
+      } finally {
+        await global.end();
+      }
+
+      // The same query as relayd_app with scope set sees exactly one.
+      const scoped = await asWorkspace<{ id: string }>(workspaceA, 'SELECT id FROM workspaces');
+      expect(scoped.map((r) => r.id)).toEqual([workspaceA]);
+    });
+
+    /**
+     * TRIPWIRE, the second one.
+     *
+     * The allowlist is declared but nothing reads it yet: `isGlobalJob` has
+     * no callers, and config exposes no connection string for the bypass
+     * role. Every job therefore runs as `relayd_app`, RLS enforced — the safe
+     * state, reached by there being no other option rather than by a choice.
+     *
+     * That changes the day someone adds a global connection. This fails then,
+     * and what it asks for is the test that the *chooser* is correct: that a
+     * job type off the allowlist cannot obtain the bypass connection however
+     * it is invoked. Assert it at the point the connection is picked; a list
+     * that is right and a chooser that ignores it is F20 all over again.
+     */
+    it('no process can connect as relayd_global yet: test the chooser when one can', async () => {
+      const { readFile } = await import('node:fs/promises');
+      const schema = await readFile(
+        path.resolve(
+          path.dirname(fileURLToPath(import.meta.url)),
+          '../../config/src/schema.ts',
+        ),
+        'utf8',
       );
-      const files = await readdir(queueSrc);
-      expect(files).not.toContain('global-jobs.ts');
+
+      const databaseKeys = [...schema.matchAll(/^\s*(DATABASE_\w+):/gmu)].map((m) => m[1]);
+      expect(databaseKeys.sort()).toEqual(['DATABASE_DIRECT_URL', 'DATABASE_URL']);
     });
   });
 });
