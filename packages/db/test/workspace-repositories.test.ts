@@ -63,9 +63,44 @@ describe('creating a workspace', () => {
       ownerUserId: OWNER,
     });
 
-    expect(statements).toHaveLength(1);
-    expect(sql(statements)).toContain('insert into "workspaces"');
+    // No SELECT: that is the whole point. Two statements, not one, because
+    // the insert is preceded by adopting the new workspace's scope — the
+    // policy on `workspaces` is applied to the INSERT, so without it the
+    // row is refused and no workspace can ever be created.
+    expect(sql(statements)).not.toContain('select "id"');
+    expect(statements).toHaveLength(2);
+    expect(statements[0]?.text).toContain('set_config');
+    expect(statements[1]?.text).toContain('insert into "workspaces"');
     expect(sql(statements)).toContain('on conflict do nothing');
+  });
+
+  it('adopts the new workspace as the scope before inserting it', async () => {
+    // RLS reads `app.workspace_id`, not the scope argument, so creation has
+    // to set it. Transaction-local, so it cannot outlive the transaction.
+    // The fake answers every statement with these rows, set_config included,
+    // which is harmless: only the insert's result is read.
+    const { db, statements } = capturing([
+      {
+        id: 'ws-1',
+        name: 'Acme',
+        slug: 'acme',
+        owner_user_id: OWNER,
+        status: 'active',
+        timezone: 'UTC',
+        default_currency: 'usd',
+        created_at: new Date('2026-09-01T00:00:00.000Z'),
+      },
+    ]);
+
+    await new WorkspaceRepository(db).create(SCOPE, {
+      id: 'ws-1' as WorkspaceId,
+      name: 'Acme',
+      slug: 'acme',
+      ownerUserId: OWNER,
+    });
+
+    expect(statements[0]?.text).toContain("set_config('app.workspace_id'");
+    expect(statements[0]?.text).toContain('true');
   });
 
   it('answers null when the slug is taken rather than throwing', async () => {

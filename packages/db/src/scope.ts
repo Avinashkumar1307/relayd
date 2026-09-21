@@ -46,7 +46,30 @@ export async function scoped<T>(
   fn: (tx: Transaction) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select set_config('app.workspace_id', ${scope.workspaceId}, true)`);
+    await adoptScope(tx, scope);
     return fn(tx);
   });
+}
+
+/**
+ * Points `app.workspace_id` at a workspace inside a transaction already open.
+ *
+ * This exists for exactly one caller: creating a workspace. That write cannot
+ * happen inside a transaction already scoped to it, because the id does not
+ * exist until the caller invents it — and `workspaces_tenant` is an ALL
+ * policy with no WITH CHECK, so PostgreSQL applies its USING expression
+ * (`id = current_setting(...)`) to the INSERT and refuses a row when the
+ * setting is unset. Without this, registration could never create anything.
+ *
+ * It lives here rather than in the repository that needs it because R36
+ * requires every write of `app.workspace_id` to be in this one file, so that
+ * "what can change the tenant scope" has a single, readable answer. The
+ * setting is transaction-local, so it ends with the transaction and cannot
+ * follow the connection back to the pool.
+ */
+export async function adoptScope(
+  tx: Database | Transaction,
+  scope: WorkspaceScope,
+): Promise<void> {
+  await tx.execute(sql`select set_config('app.workspace_id', ${scope.workspaceId}, true)`);
 }

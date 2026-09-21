@@ -92,6 +92,9 @@ importers:
       '@relayd/logger':
         specifier: workspace:^
         version: link:../../packages/logger
+      '@relayd/notifications':
+        specifier: workspace:^
+        version: link:../../packages/notifications
       '@relayd/queue':
         specifier: workspace:^
         version: link:../../packages/queue

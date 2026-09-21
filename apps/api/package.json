@@ -18,6 +18,7 @@
     "@relayd/db": "workspace:^",
     "@relayd/email-providers": "workspace:^",
     "@relayd/logger": "workspace:^",
+    "@relayd/notifications": "workspace:^",
     "@relayd/queue": "workspace:^",
     "@relayd/types": "workspace:^",
     "@relayd/utils": "workspace:^",

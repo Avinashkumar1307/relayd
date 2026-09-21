@@ -19,6 +19,9 @@
       "path": "../../packages/logger"
     },
     {
+      "path": "../../packages/notifications"
+    },
+    {
       "path": "../../packages/types"
     },
     {

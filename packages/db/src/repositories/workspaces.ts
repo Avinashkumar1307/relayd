@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { UserId, WorkspaceId } from '@relayd/types';
 import { workspaces } from '../schema/identity.js';
+import { adoptScope } from '../scope.js';
 import type { WorkspaceScope } from '../scope.js';
 import type { Executor } from './executor.js';
 
@@ -48,6 +49,9 @@ export class WorkspaceRepository {
       throw new Error('createWorkspace: scope must name the workspace being created');
     }
 
+    // R36 keeps every scope write in scope.ts; this is its one caller.
+    await adoptScope(this.db, scope);
+
     const [row] = await this.db
       .insert(workspaces)
       .values({
@@ -82,6 +86,9 @@ export class WorkspaceRepository {
     if (input.id !== scope.workspaceId) {
       throw new Error('createWorkspace: scope must name the workspace being created');
     }
+
+    // R36 keeps every scope write in scope.ts; this is its one caller.
+    await adoptScope(this.db, scope);
 
     const [row] = await this.db
       .insert(workspaces)
